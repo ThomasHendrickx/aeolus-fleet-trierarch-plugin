@@ -33,13 +33,15 @@ function aTrierarch(shipId: ShipId, overrides: Partial<PlacementTrierarch> = {})
   return { shipId, commissionedAt: EARLY, details: details(), assigned: 0, ...overrides };
 }
 
-function aRequest(shipId: ShipId, settings: Record<string, unknown> = {}, overrides: Partial<PlacementRequest> = {}): PlacementRequest {
+/** A request for a worktree of aeolus-fleet on Claude Code with opus; `settings` changes some of them. */
+function aRequest(shipId: ShipId, overrides: Partial<Omit<PlacementRequest, 'settings'>> & { settings?: Record<string, unknown> } = {}): PlacementRequest {
+  const { settings = {}, ...rest } = overrides;
   return {
     shipId,
     requestedAt: EARLY,
-    settings: { harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: { model: 'opus' }, ...settings },
     reason: null,
-    ...overrides,
+    ...rest,
+    settings: { harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: { model: 'opus' }, ...settings },
   };
 }
 
@@ -49,7 +51,7 @@ describe('placement (docs/trierarch.md, Assignment)', () => {
   });
 
   it('assigns a folder request to a trierarch that offers the folder', () => {
-    expect(place([aRequest(SCOUT, { workspace: { kind: 'folder', name: 'notes' } })], [aTrierarch(MAC)])).toEqual([{ kind: 'assign', shipId: SCOUT, trierarchShipId: MAC }]);
+    expect(place([aRequest(SCOUT, { settings: { workspace: { kind: 'folder', name: 'notes' } } })], [aTrierarch(MAC)])).toEqual([{ kind: 'assign', shipId: SCOUT, trierarchShipId: MAC }]);
   });
 
   it('of several that fit, picks the most room as a percentage of its cap', () => {
@@ -67,8 +69,8 @@ describe('placement (docs/trierarch.md, Assignment)', () => {
   });
 
   it('serves the oldest request first: it takes the last room', () => {
-    const newer = aRequest(LOOKOUT, {}, { requestedAt: LATER });
-    const older = aRequest(SCOUT, {}, { requestedAt: EARLY });
+    const newer = aRequest(LOOKOUT, { requestedAt: LATER });
+    const older = aRequest(SCOUT, { requestedAt: EARLY });
 
     expect(place([newer, older], [aTrierarch(MAC, { assigned: 3 })])).toEqual([
       { kind: 'assign', shipId: SCOUT, trierarchShipId: MAC },
@@ -77,8 +79,8 @@ describe('placement (docs/trierarch.md, Assignment)', () => {
   });
 
   it('counts what it assigns in the same pass against the room', () => {
-    const first = aRequest(SCOUT, {}, { requestedAt: EARLY });
-    const second = aRequest(LOOKOUT, {}, { requestedAt: LATER });
+    const first = aRequest(SCOUT, { requestedAt: EARLY });
+    const second = aRequest(LOOKOUT, { requestedAt: LATER });
     const mac = aTrierarch(MAC, { details: details({ caps: { ships: 2, running: 1 } }) });
     const linux = aTrierarch(LINUX, { details: details({ caps: { ships: 2, running: 1 } }), commissionedAt: LATER });
 
@@ -89,19 +91,39 @@ describe('placement (docs/trierarch.md, Assignment)', () => {
   });
 
   it.each([
-    ['no trierarch reports', [], {}, 'no trierarch reports yet'],
-    ['none offers the harness', [aTrierarch(MAC)], { harness: 'codex' }, 'no trierarch offers harness codex'],
-    ['none offering it has the repository', [aTrierarch(MAC)], { workspace: { kind: 'worktree', repository: 'hemma' } }, 'no trierarch offering claude-code has repository hemma'],
-    ['none offering it has the folder', [aTrierarch(MAC)], { workspace: { kind: 'folder', name: 'drafts' } }, 'no trierarch offering claude-code has folder drafts'],
-    ['none takes the options', [aTrierarch(MAC)], { options: { model: 'haiku' } }, 'no trierarch takes these options for claude-code: options.model: Invalid option: expected one of "opus"|"sonnet"'],
-    ['none takes an unknown option', [aTrierarch(MAC)], { options: { effort: 'max' } }, 'no trierarch takes these options for claude-code: options: Unrecognized key: "effort"'],
-    ['none has room', [aTrierarch(MAC, { assigned: 4 }), aTrierarch(LINUX, { assigned: 4 })], {}, 'no trierarch with room: all 2 that fit are full'],
-  ])('leaves a request unassigned with the reason when %s', (_label, trierarchs, settings, reason) => {
-    expect(place([aRequest(SCOUT, settings)], trierarchs)).toEqual([{ kind: 'explain', shipId: SCOUT, reason }]);
+    { label: 'no trierarch reports', trierarchs: [], settings: {}, reason: 'no trierarch reports yet' },
+    { label: 'none offers the harness', trierarchs: [aTrierarch(MAC)], settings: { harness: 'codex' }, reason: 'no trierarch offers harness codex' },
+    {
+      label: 'none offering it has the repository',
+      trierarchs: [aTrierarch(MAC)],
+      settings: { workspace: { kind: 'worktree', repository: 'hemma' } },
+      reason: 'no trierarch offering claude-code has repository hemma',
+    },
+    {
+      label: 'none offering it has the folder',
+      trierarchs: [aTrierarch(MAC)],
+      settings: { workspace: { kind: 'folder', name: 'drafts' } },
+      reason: 'no trierarch offering claude-code has folder drafts',
+    },
+    {
+      label: 'none takes the options',
+      trierarchs: [aTrierarch(MAC)],
+      settings: { options: { model: 'haiku' } },
+      reason: 'no trierarch takes these options for claude-code: options.model: Invalid option: expected one of "opus"|"sonnet"',
+    },
+    {
+      label: 'none takes an unknown option',
+      trierarchs: [aTrierarch(MAC)],
+      settings: { options: { effort: 'max' } },
+      reason: 'no trierarch takes these options for claude-code: options: Unrecognized key: "effort"',
+    },
+    { label: 'none has room', trierarchs: [aTrierarch(MAC, { assigned: 4 }), aTrierarch(LINUX, { assigned: 4 })], settings: {}, reason: 'no trierarch with room: all 2 that fit are full' },
+  ])('leaves a request unassigned with the reason when $label', ({ trierarchs, settings, reason }) => {
+    expect(place([aRequest(SCOUT, { settings })], trierarchs)).toEqual([{ kind: 'explain', shipId: SCOUT, reason }]);
   });
 
   it('leaves a request whose settings are not crew settings unassigned with the reason', () => {
-    expect(place([aRequest(SCOUT, { flags: ['--yolo'] })], [aTrierarch(MAC)])).toEqual([{ kind: 'explain', shipId: SCOUT, reason: 'settings are not valid crew settings: Unrecognized key: "flags"' }]);
+    expect(place([aRequest(SCOUT, { settings: { flags: ['--yolo'] } })], [aTrierarch(MAC)])).toEqual([{ kind: 'explain', shipId: SCOUT, reason: 'settings are not valid crew settings: Unrecognized key: "flags"' }]);
   });
 
   it('counts a trierarch whose options schema it cannot read as not taking the options', () => {
@@ -111,6 +133,6 @@ describe('placement (docs/trierarch.md, Assignment)', () => {
   });
 
   it('does not write a reason again that still holds', () => {
-    expect(place([aRequest(SCOUT, { harness: 'codex' }, { reason: 'no trierarch offers harness codex' })], [aTrierarch(MAC)])).toEqual([]);
+    expect(place([aRequest(SCOUT, { settings: { harness: 'codex' }, reason: 'no trierarch offers harness codex' })], [aTrierarch(MAC)])).toEqual([]);
   });
 });
