@@ -1,0 +1,54 @@
+{
+  "name": "@aeolus-fleet/trierarch-plugin",
+  "version": "0.0.0",
+  "description": "Aeolus trierarch plugin: brings machines into the fleet and assigns crew requests to their trierarchs, as a ship of the fleet.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ThomasHendrickx/aeolus-fleet.git",
+    "directory": "packages/trierarch-plugin"
+  },
+  "engines": {
+    "node": ">=26"
+  },
+  "exports": {
+    ".": {
+      "@aeolus-fleet/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "aeolus-trierarch-plugin": "dist/bin/aeolus-trierarch-plugin.js"
+  },
+  "files": [
+    "dist",
+    "prisma.config.ts",
+    "src/adapters/prisma/schema.prisma",
+    "src/adapters/prisma/migrations"
+  ],
+  "scripts": {
+    "generate": "prisma generate",
+    "build": "tsc --project tsconfig.build.json",
+    "typecheck": "tsc --project tsconfig.json",
+    "dev": "tsx watch --conditions=@aeolus-fleet/source --env-file-if-exists=.env src/bin/aeolus-trierarch-plugin.ts start",
+    "start": "node dist/bin/aeolus-trierarch-plugin.js start",
+    "db:migrate": "tsx --conditions=@aeolus-fleet/source --env-file-if-exists=.env src/bin/aeolus-trierarch-plugin.ts migrate"
+  },
+  "dependencies": {
+    "@aeolus-fleet/common": "0.0.0",
+    "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "^7.10.0",
+    "@trpc/server": "^11.19.0",
+    "fastify": "^5.12.5",
+    "pg": "^8.23.0",
+    "prisma": "^7.10.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@aeolus-fleet/core": "0.0.0",
+    "@testcontainers/postgresql": "^12.2.0",
+    "@types/pg": "^8.23.1"
+  }
+}

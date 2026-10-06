@@ -1,0 +1,58 @@
+// The trierarch plugin's tables, in its own small database (decision 0030): per
+// fleet only its connection and its switch, and the installation's requests.
+// Everything else (crew requests, statuses, machines) lives in the fleet, which
+// it reaches only through its public API, as the ship it crews.
+//
+// Timestamps have no database default: the application's Clock port sets every
+// one of them, so tests control time.
+
+generator client {
+  provider            = "prisma-client"
+  output              = "./generated"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+  runtime             = "nodejs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// The crew token the trierarch plugin holds for each fleet's plugin ship, so a
+/// restart crews it again without a new secret. One row per fleet: one install
+/// serves many fleets.
+model Connection {
+  fleetId   String   @id @map("fleet_id")
+  shipId    String   @map("ship_id")
+  shipName  String   @map("ship_name")
+  /// Null while the plugin is not connected: the fleet and ship stay, as the last connection.
+  crewToken String?  @map("crew_token")
+  crewedAt  DateTime @map("crewed_at") @db.Timestamptz(3)
+
+  @@map("connections")
+}
+
+/// Whether the hosting service switched the trierarch plugin on for a fleet
+/// (decisions 0021, 0030). None before the first switch.
+model FleetSwitch {
+  fleetId   String   @id @map("fleet_id")
+  enabled   Boolean
+  changedAt DateTime @map("changed_at") @db.Timestamptz(3)
+
+  @@map("fleet_switches")
+}
+
+/// The installation's requests, by the caller's request id, so a replay answers
+/// what the first call answered. A switch names its fleet and goes with it; a
+/// delete keeps only the request's hash, so nothing of the deleted fleet stays.
+model InstallationRequest {
+  requestId   String   @id @map("request_id")
+  kind        String
+  requestHash String   @map("request_hash")
+  fleetId     String?  @map("fleet_id")
+  enabled     Boolean?
+  at          DateTime @db.Timestamptz(3)
+
+  @@index([fleetId])
+  @@map("installation_requests")
+}
