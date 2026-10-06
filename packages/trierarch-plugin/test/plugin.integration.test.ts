@@ -10,6 +10,10 @@ import { FLEET_URL, OPERATOR, operatorCaller, secretOf } from '../../core/test/s
 import { createMigratedDatabase } from '../../core/test/support/database.js';
 import { newKey } from '../../core/test/support/keys.js';
 import { unwrap } from '../../core/test/support/result.js';
+import { createRestFleet } from '../../trierarch/src/adapters/rest-fleet.js';
+import { EMPTY_STATE } from '../../trierarch/src/core/entry.js';
+import { createReportSelf } from '../../trierarch/src/core/report-self.js';
+import { machineOutputSchema } from '../src/adapters/trpc/router.js';
 import { createTrierarchPluginApp, type TrierarchPluginApp } from '../src/app.js';
 import { connectPlugin, mutate, query, signIn } from './support/connection.js';
 import { createPluginDatabase } from './support/database.js';
@@ -155,6 +159,50 @@ describe('a machine joining', () => {
     const address = await connected();
 
     await expect(mutate(address, { procedure: 'machines.join', cookie: 'aeolus_session=forged', body: { name: 'mac-studio' } }).then((response) => response.status)).resolves.toBe(401);
+  });
+});
+
+describe('a joined machine reporting', () => {
+  it("reaches the trierarch plugin: the machines list shows its trierarch's report and details", async () => {
+    const address = await connected();
+    const joined = joinedSchema.parse(await (await mutate(address, { procedure: 'machines.join', cookie, body: { name: 'mac-studio' } })).json()).result.data;
+    const machineShipId = z.templateLiteral(['shp_', z.string()]).parse(joined.shipId);
+    // The machine's trierarch, as init and run make it: registered with the secret the join answered, then reporting as its own ship.
+    const { crewToken } = await createRestFleet({ fleetUrl, crewToken: '' }).registerSelf({ shipId: machineShipId, secret: joined.secret });
+    const configuration = {
+      caps: { ships: 6, running: 3 },
+      repositories: { 'aeolus-fleet': { path: '/home/thomas/Projects/aeolus-fleet' } },
+      folders: {},
+      harnesses: { 'claude-code': { flags: ['--remote-control'], options: {} } },
+    };
+    const reportSelf = createReportSelf({
+      fleet: createRestFleet({ fleetUrl, crewToken }),
+      processes: { list: () => Promise.resolve([]), stop: () => Promise.resolve() },
+      state: { load: () => Promise.resolve(EMPTY_STATE), save: () => Promise.resolve() },
+      setup: { configuration, version: '0.19.0', adapterFlags: {} },
+    });
+
+    await reportSelf();
+
+    const listed = z.object({ result: z.object({ data: z.array(machineOutputSchema) }) }).parse(await (await query(address, { procedure: 'machines.list', cookie })).json()).result.data;
+    // When it was last seen and reported is the fleet's clock: present, not compared.
+    expect(listed.map((machine) => ({ ...machine, lastSeenAt: machine.lastSeenAt !== null, report: machine.report && { ...machine.report, reportedAt: null } }))).toEqual([
+      {
+        shipId: joined.shipId,
+        name: 'mac-studio',
+        status: 'crewed',
+        lastSeenAt: true,
+        report: { state: 'idle', note: '0 of 6 running', reportedAt: null },
+        details: {
+          harnesses: [{ harness: 'claude-code', options: { type: 'object', properties: {}, additionalProperties: false }, flags: ['--remote-control'] }],
+          workspaces: { repositories: ['aeolus-fleet'], folders: [] },
+          caps: { ships: 6, running: 3 },
+          kept: [],
+          orphans: [],
+          version: '0.19.0',
+        },
+      },
+    ]);
   });
 });
 
