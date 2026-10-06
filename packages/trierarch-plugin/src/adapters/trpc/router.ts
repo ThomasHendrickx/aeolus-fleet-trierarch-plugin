@@ -159,6 +159,8 @@ export const machineOutputSchema = z.object({
   name: z.string(),
   status: z.enum(['awaitingCrew', 'crewed']),
   lastSeenAt: z.iso.datetime().nullable(),
+  /** Its trierarch's last seen is older than the threshold: it gets no new requests, and keeps those it holds. */
+  isSilent: z.boolean(),
   report: z.object({ state: z.string(), note: z.string().nullable(), reportedAt: z.iso.datetime() }).nullable(),
   details: trierarchReportDetailsSchema.nullable(),
 });

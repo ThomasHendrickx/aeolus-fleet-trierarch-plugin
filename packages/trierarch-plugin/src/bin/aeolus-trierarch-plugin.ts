@@ -3,7 +3,8 @@
  * `aeolus-trierarch-plugin start`: migrates the trierarch plugin's database,
  * connects again to every fleet with its kept crew token (a fleet without one
  * is not connected until its operator connects the trierarch plugin in the
- * console), then serves until SIGINT or SIGTERM. `aeolus-trierarch-plugin
+ * console), then serves and runs an assignment pass every interval until
+ * SIGINT or SIGTERM. `aeolus-trierarch-plugin
  * migrate`: migrates the database alone.
  */
 import { MigrationError, migrateDatabase } from '../adapters/prisma/migrate.js';
@@ -19,6 +20,7 @@ async function start(): Promise<void> {
     databaseUrl: config.databaseUrl,
     fleetUrl: config.fleetUrl,
     logger: { level: config.logLevel },
+    silentAfterMs: config.silentAfterMs,
     ...(config.installationToken === undefined ? {} : { installationToken: config.installationToken }),
   });
   const restored = await app.restoreConnections();
@@ -28,6 +30,8 @@ async function start(): Promise<void> {
   if (restored.length === 0) {
     app.server.log.warn('connected to no fleet: an operator connects the trierarch plugin in the console');
   }
+
+  app.startAssigning(config.passIntervalMs);
 
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.once(signal, () => {

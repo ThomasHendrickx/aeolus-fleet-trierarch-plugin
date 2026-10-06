@@ -16,7 +16,13 @@ describe('loadConfig', () => {
       port: 4200,
       logLevel: 'info',
       installationToken: undefined,
+      silentAfterMs: 300_000,
+      passIntervalMs: 10_000,
     });
+  });
+
+  it('reads the silent threshold and the pass interval in seconds', () => {
+    expect(loadConfig({ ...environment, TRIERARCH_SILENT_AFTER_SECONDS: '60', TRIERARCH_PASS_INTERVAL_SECONDS: '2' })).toMatchObject({ silentAfterMs: 60_000, passIntervalMs: 2_000 });
   });
 
   it('reads the installation token, which turns on the installation procedures', () => {
@@ -33,6 +39,7 @@ describe('loadConfig', () => {
     ['no database', { ...environment, DATABASE_URL: undefined }],
     ['a fleet URL that is not http', { ...environment, FLEET_URL: 'ftp://fleet.example.com' }],
     ['an installation token shorter than 32 characters', { ...environment, INSTALLATION_TOKEN: 'x'.repeat(31) }],
+    ['a silent threshold of no seconds', { ...environment, TRIERARCH_SILENT_AFTER_SECONDS: '0' }],
   ])('refuses %s', (_label, invalid) => {
     expect(() => loadConfig(invalid)).toThrow(ConfigError);
   });

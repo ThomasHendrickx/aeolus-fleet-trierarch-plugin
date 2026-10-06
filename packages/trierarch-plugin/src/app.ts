@@ -20,6 +20,7 @@ import type { InstallationMode } from './core/installation/ports.js';
 import { createReadFleet } from './core/installation/read-fleet.js';
 import { createIsServed } from './core/installation/served.js';
 import { createSetFleetEnabled } from './core/installation/set-fleet-enabled.js';
+import { createAssignCrews, type AssignOutcome } from './core/assignment/assign-crews.js';
 import { createJoinMachine } from './core/machines/join-machine.js';
 import { createListMachines } from './core/machines/list-machines.js';
 import { createAuthenticateOperator } from './core/operator/authenticate-operator.js';
@@ -36,9 +37,16 @@ export interface TrierarchPluginApp {
    * which ship.
    */
   restoreConnections: () => Promise<{ fleetId: FleetId; ship: string }[]>;
+  /** One assignment pass for every fleet it serves and is connected to; each fleet's refusal is logged, never thrown. */
+  assignOnce: () => Promise<{ fleetId: FleetId; outcome: AssignOutcome }[]>;
+  /** Runs an assignment pass every interval until the app closes. */
+  startAssigning: (intervalMs: number) => void;
   /** Stops the server and disconnects the database. */
   close(): Promise<void>;
 }
+
+/** A trierarch is silent once its last seen is older than this, unless the configuration says otherwise. */
+const DEFAULT_SILENT_AFTER_MS = 300_000;
 
 /**
  * The trierarch plugin wired to its own database and to the fleet's public
@@ -52,6 +60,8 @@ export function createTrierarchPluginApp(options: {
   logger?: FastifyServerOptions['logger'];
   /** The installation token (decision 0021): unset, the installation is open and every fleet is served. */
   installationToken?: string;
+  /** A trierarch whose last seen is older than this is silent; five minutes unless given. */
+  silentAfterMs?: number;
 }): TrierarchPluginApp {
   const prisma = createPrismaClient(options.databaseUrl);
   const server = Fastify({ logger: options.logger ?? true });
@@ -102,7 +112,25 @@ export function createTrierarchPluginApp(options: {
   const deleteFleet = createDeleteFleet({ forgetter: createPrismaFleetForgetter(prisma), requests, hasher: sha256RequestHasher, clock });
   const connect = createConnect({ door, store: connections, clock });
   const joinMachine = createJoinMachine({ door, connections, keys: randomIdempotencyKeys, fleetUrl: options.fleetUrl });
-  const listMachines = createListMachines({ door, connections });
+  const silentAfterMs = options.silentAfterMs ?? DEFAULT_SILENT_AFTER_MS;
+  const listMachines = createListMachines({ door, connections, clock, silentAfterMs });
+  const assignCrews = createAssignCrews({ door, connections, clock, silentAfterMs });
+  const assignOnce = async (): Promise<{ fleetId: FleetId; outcome: AssignOutcome }[]> => {
+    const done: { fleetId: FleetId; outcome: AssignOutcome }[] = [];
+    for (const crew of await connections.connected()) {
+      if (!(await isServed(crew.fleetId))) {
+        continue;
+      }
+      const assigned = await assignCrews(crew.fleetId);
+      if (assigned.isOk) {
+        done.push({ fleetId: crew.fleetId, outcome: assigned.value });
+      } else {
+        server.log.warn({ fleet: crew.fleetId, refusal: assigned.error }, 'assignment pass refused; the next pass tries again');
+      }
+    }
+    return done;
+  };
+  let assigning: NodeJS.Timeout | undefined;
 
   const trpc: FastifyTRPCPluginOptions<TrierarchPluginRouter> = {
     prefix: '/trpc',
@@ -134,6 +162,7 @@ export function createTrierarchPluginApp(options: {
   void server.register(fastifyTRPCPlugin, trpc);
 
   server.addHook('onClose', async () => {
+    clearInterval(assigning);
     await prisma.$disconnect();
   });
 
@@ -152,6 +181,31 @@ export function createTrierarchPluginApp(options: {
         }
       }
       return restored;
+    },
+    assignOnce,
+    startAssigning: (intervalMs) => {
+      // One pass at a time: a pass that outlasts the interval makes the next one wait.
+      let isPassing = false;
+      assigning = setInterval(() => {
+        if (isPassing) {
+          return;
+        }
+        isPassing = true;
+        assignOnce()
+          .then((done) => {
+            for (const { fleetId, outcome } of done) {
+              if (outcome.assigned + outcome.explained + outcome.lost > 0) {
+                server.log.info({ fleet: fleetId, ...outcome }, 'assignment pass');
+              }
+            }
+          })
+          .catch((error: unknown) => {
+            server.log.error({ err: error }, 'assignment pass failed; the next pass tries again');
+          })
+          .finally(() => {
+            isPassing = false;
+          });
+      }, intervalMs);
     },
     close: () => server.close(),
   };

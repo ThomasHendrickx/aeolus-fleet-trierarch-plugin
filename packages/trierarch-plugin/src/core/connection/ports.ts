@@ -27,14 +27,19 @@ export interface ListedShip {
   status: 'awaitingCrew' | 'crewed' | 'retired';
   /** When its session last called the fleet; null while no session crews it. */
   lastSeenAt: Date | null;
+  /** Its crew request, without its settings; null when it holds none. */
+  crewRequest: { requestedAt: Date; assignedTo: ShipId | null; reason: string | null } | null;
 }
 
 /** A ship as `fleet.ship` shows it: what the trierarch plugin reads of it. */
 export interface FleetShip {
   status: 'awaitingCrew' | 'crewed' | 'retired';
   scopes: string[];
+  commissionedAt: Date;
   /** Its crew's last report, details included as the fleet holds them; null until its crew reports. */
   report: { state: string; note: string | null; reportedAt: Date; details: unknown } | null;
+  /** Its crew request's settings, unread; null when it holds no crew request. */
+  crewSettings: unknown;
 }
 
 /**
@@ -60,6 +65,10 @@ export interface FleetDoor {
   ): Promise<Result<{ shipId: ShipId } & IssuedPrompt, FleetRefusal>>;
   /** Every ship of the fleet, retired ones included (fleet:read). */
   listShips(crewToken: string): Promise<Result<ListedShip[], FleetRefusal>>;
+  /** Claims a ship's crew request for a trierarch (crew:assign), only while it is unassigned: a lost claim is CONFLICT. */
+  assignCrew(crewToken: string, claim: { shipId: ShipId; trierarchShipId: ShipId }): Promise<Result<undefined, FleetRefusal>>;
+  /** Writes why no trierarch can take a ship's unassigned crew request (crew:assign). */
+  explainCrewRequest(crewToken: string, explanation: { shipId: ShipId; reason: string | null }): Promise<Result<undefined, FleetRefusal>>;
 }
 
 /** The crew token the trierarch plugin holds for its ship in a fleet, and when it got it. */
