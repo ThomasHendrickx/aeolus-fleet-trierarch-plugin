@@ -36,7 +36,7 @@ beforeEach(async () => {
 
 /** A crewed trierarch that reported the details, last seen as given. */
 function aTrierarch(shipId: ShipId, at: { lastSeenAt?: Date; details?: TrierarchReportDetails } = {}): void {
-  fleet.state.ships.push({ shipId, name: `machine-${shipId.slice(-2)}`, type: 'trierarch', status: 'crewed', lastSeenAt: at.lastSeenAt ?? RECENTLY, crewRequest: null });
+  fleet.state.ships.push({ shipId, name: `machine-${shipId.slice(-2)}`, type: 'trierarch', status: 'crewed', lastSeenAt: at.lastSeenAt ?? RECENTLY, crewRequest: null, labels: [] });
   fleet.state.reports.set(shipId, { state: 'idle', note: '0 of 2 running', reportedAt: RECENTLY, details: at.details ?? DETAILS });
 }
 
@@ -49,6 +49,7 @@ function aRequest(shipId: ShipId, at: { status?: 'awaitingCrew' | 'crewed'; assi
     status: at.status ?? 'awaitingCrew',
     lastSeenAt: null,
     crewRequest: { requestedAt: at.requestedAt ?? AT, assignedTo: at.assignedTo ?? null, reason: null },
+    labels: [],
   });
   fleet.state.settings.set(shipId, SETTINGS);
 }
@@ -117,7 +118,7 @@ describe("a pass of the trierarch plugin's assignment", () => {
   });
 
   it('considers no trierarch that has not reported details yet', async () => {
-    fleet.state.ships.push({ shipId: MAC, name: 'mac-studio', type: 'trierarch', status: 'awaitingCrew', lastSeenAt: null, crewRequest: null });
+    fleet.state.ships.push({ shipId: MAC, name: 'mac-studio', type: 'trierarch', status: 'awaitingCrew', lastSeenAt: null, crewRequest: null, labels: [] });
     aRequest(SCOUT);
 
     await pass();

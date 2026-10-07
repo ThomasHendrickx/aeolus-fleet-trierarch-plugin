@@ -35,7 +35,7 @@ export async function readPlacement(
     const details = trierarchReportDetailsSchema.safeParse(read.value.report?.details);
     if (isTrierarch && details.success) {
       const assigned = listed.value.filter((each) => each.crewRequest?.assignedTo === ship.shipId).length;
-      trierarchs.push({ shipId: ship.shipId, commissionedAt: read.value.commissionedAt, details: details.data, assigned });
+      trierarchs.push({ shipId: ship.shipId, commissionedAt: read.value.commissionedAt, details: details.data, assigned, labelValueIds: ship.labels.map((label) => label.valueId) });
     }
     if (isRequest && ship.crewRequest !== null) {
       requests.push({ shipId: ship.shipId, requestedAt: ship.crewRequest.requestedAt, settings: read.value.crewSettings, reason: ship.crewRequest.reason });

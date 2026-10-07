@@ -30,8 +30,12 @@ function details(overrides: Partial<TrierarchReportDetails> = {}): TrierarchRepo
 }
 
 function aTrierarch(shipId: ShipId, overrides: Partial<PlacementTrierarch> = {}): PlacementTrierarch {
-  return { shipId, commissionedAt: EARLY, details: details(), assigned: 0, ...overrides };
+  return { shipId, commissionedAt: EARLY, details: details(), assigned: 0, labelValueIds: [], ...overrides };
 }
+
+const MACOS = 'lbv_01m3tbfspe96yf1rnr4ank9h3a';
+const LINUX_OS = 'lbv_01m3tbfspe96yf1rnr4ank9h3b';
+const ARM64 = 'lbv_01m3tbfspe96yf1rnr4ank9h3c';
 
 /** A request for a worktree of aeolus-fleet on Claude Code with opus; `settings` changes some of them. */
 function aRequest(shipId: ShipId, overrides: Partial<Omit<PlacementRequest, 'settings'>> & { settings?: Record<string, unknown> } = {}): PlacementRequest {
@@ -132,6 +136,23 @@ describe('placement (docs/trierarch.md, Assignment)', () => {
     expect(place([aRequest(SCOUT)], [unreadable])).toMatchObject([{ kind: 'explain', shipId: SCOUT }]);
   });
 
+  it('assigns a request with machine labels only to a trierarch whose ship carries every one (#102)', () => {
+    const mac = aTrierarch(MAC, { labelValueIds: [MACOS, ARM64], assigned: 1 });
+    const linux = aTrierarch(LINUX, { labelValueIds: [LINUX_OS, ARM64], details: details({ caps: { ships: 8, running: 4 } }) });
+
+    expect(place([aRequest(SCOUT, { settings: { machineLabels: [MACOS, ARM64] } })], [linux, mac])).toEqual([{ kind: 'assign', shipId: SCOUT, trierarchShipId: MAC }]);
+  });
+
+  it('leaves a request whose machine labels no trierarch carries all of unassigned, with the reason', () => {
+    const mac = aTrierarch(MAC, { labelValueIds: [MACOS] });
+
+    expect(place([aRequest(SCOUT, { settings: { machineLabels: [MACOS, ARM64] } })], [mac])).toEqual([{ kind: 'explain', shipId: SCOUT, reason: 'no machine matches its labels' }]);
+  });
+
+  it('places a request without machine labels on any machine, labelled or not', () => {
+    expect(place([aRequest(SCOUT)], [aTrierarch(MAC, { labelValueIds: [MACOS] })])).toEqual([{ kind: 'assign', shipId: SCOUT, trierarchShipId: MAC }]);
+  });
+
   it('does not write a reason again that still holds', () => {
     expect(place([aRequest(SCOUT, { settings: { harness: 'codex' }, reason: 'no trierarch offers harness codex' })], [aTrierarch(MAC)])).toEqual([]);
   });
@@ -166,6 +187,10 @@ describe('checking settings before a request (#245)', () => {
 
   it('says there is no room when every trierarch that fits is full: the request would wait', () => {
     expect(checkPlacement(settings(), [aTrierarch(MAC, { assigned: 4 })])).toEqual({ kind: 'noRoom', reason: 'no trierarch with room: all 1 that fit are full' });
+  });
+
+  it('says a request whose machine labels no machine carries would wait, as Q8 allows it (#102)', () => {
+    expect(checkPlacement(settings({ machineLabels: [LINUX_OS] }), [aTrierarch(MAC, { labelValueIds: [MACOS] })])).toEqual({ kind: 'noRoom', reason: 'no machine matches its labels' });
   });
 
   it('says there is no room while no trierarch reports yet', () => {

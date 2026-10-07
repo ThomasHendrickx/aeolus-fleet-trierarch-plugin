@@ -21,6 +21,7 @@ import { createReadFleet } from './core/installation/read-fleet.js';
 import { createIsServed } from './core/installation/served.js';
 import { createSetFleetEnabled } from './core/installation/set-fleet-enabled.js';
 import { createAssignCrews, type AssignOutcome } from './core/assignment/assign-crews.js';
+import { createLabelMachines } from './core/machines/label-machines.js';
 import { createCheckCrewSettings } from './core/assignment/check-crew-settings.js';
 import { createJoinMachine } from './core/machines/join-machine.js';
 import { createListMachines } from './core/machines/list-machines.js';
@@ -38,7 +39,7 @@ export interface TrierarchPluginApp {
    * which ship.
    */
   restoreConnections: () => Promise<{ fleetId: FleetId; ship: string }[]>;
-  /** One assignment pass for every fleet it serves and is connected to; each fleet's refusal is logged, never thrown. */
+  /** One assignment pass for every fleet it serves and is connected to, machine labels first; each fleet's refusal is logged, never thrown. */
   assignOnce: () => Promise<{ fleetId: FleetId; outcome: AssignOutcome }[]>;
   /** Runs an assignment pass every interval until the app closes. */
   startAssigning: (intervalMs: number) => void;
@@ -116,6 +117,29 @@ export function createTrierarchPluginApp(options: {
   const silentAfterMs = options.silentAfterMs ?? DEFAULT_SILENT_AFTER_MS;
   const listMachines = createListMachines({ door, connections, clock, silentAfterMs });
   const assignCrews = createAssignCrews({ door, connections, clock, silentAfterMs });
+  const labelMachines = createLabelMachines({ door, connections });
+  /** The fleets whose machine labels were last skipped, so the reason is logged once, not every pass. */
+  const skippedLabels = new Set<FleetId>();
+  /** Labels each trierarch ship from its machine before placement reads the labels; a refusal is logged and assignment goes on. */
+  const labelOnce = async (fleetId: FleetId): Promise<void> => {
+    const labelled = await labelMachines(fleetId);
+    if (!labelled.isOk) {
+      server.log.warn({ fleet: fleetId, refusal: labelled.error }, 'machine labels refused; the next pass tries again');
+      return;
+    }
+    const { skipped, ...outcome } = labelled.value;
+    if (skipped !== undefined) {
+      if (!skippedLabels.has(fleetId)) {
+        server.log.warn({ fleet: fleetId }, `machine labels skipped: ${skipped}`);
+      }
+      skippedLabels.add(fleetId);
+      return;
+    }
+    skippedLabels.delete(fleetId);
+    if (outcome.defined + outcome.assigned + outcome.unassigned > 0) {
+      server.log.info({ fleet: fleetId, ...outcome }, 'machine labels');
+    }
+  };
   const checkCrewSettings = createCheckCrewSettings({ door, connections, clock, silentAfterMs });
   const assignOnce = async (): Promise<{ fleetId: FleetId; outcome: AssignOutcome }[]> => {
     const done: { fleetId: FleetId; outcome: AssignOutcome }[] = [];
@@ -123,6 +147,7 @@ export function createTrierarchPluginApp(options: {
       if (!(await isServed(crew.fleetId))) {
         continue;
       }
+      await labelOnce(crew.fleetId);
       const assigned = await assignCrews(crew.fleetId);
       if (assigned.isOk) {
         done.push({ fleetId: crew.fleetId, outcome: assigned.value });

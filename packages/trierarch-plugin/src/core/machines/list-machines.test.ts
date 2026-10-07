@@ -29,9 +29,9 @@ beforeEach(async () => {
   fleet.state.liveTokens.add('aeolus_ct_v1_plugin');
   await connections.save({ fleetId: FLEET_ID, shipId: SHIP_ID, name: 'trierarch-plugin', crewToken: 'aeolus_ct_v1_plugin', crewedAt: AT });
   fleet.state.ships.push(
-    { shipId: MACHINE, name: 'mac-studio', type: 'trierarch', status: 'crewed', lastSeenAt: SEEN, crewRequest: null },
-    { shipId: AGENT, name: 'implementer-1', type: 'implementer', status: 'crewed', lastSeenAt: SEEN, crewRequest: null },
-    { shipId: RETIRED, name: 'old-box', type: 'trierarch', status: 'retired', lastSeenAt: null, crewRequest: null },
+    { shipId: MACHINE, name: 'mac-studio', type: 'trierarch', status: 'crewed', lastSeenAt: SEEN, crewRequest: null, labels: [] },
+    { shipId: AGENT, name: 'implementer-1', type: 'implementer', status: 'crewed', lastSeenAt: SEEN, crewRequest: null, labels: [] },
+    { shipId: RETIRED, name: 'old-box', type: 'trierarch', status: 'retired', lastSeenAt: null, crewRequest: null, labels: [] },
   );
 });
 
@@ -67,7 +67,7 @@ describe('listing the machines', () => {
   });
 
   it('never flags a machine silent that no session crews yet', async () => {
-    fleet.state.ships.splice(0, 1, { shipId: MACHINE, name: 'mac-studio', type: 'trierarch', status: 'awaitingCrew', lastSeenAt: null, crewRequest: null });
+    fleet.state.ships.splice(0, 1, { shipId: MACHINE, name: 'mac-studio', type: 'trierarch', status: 'awaitingCrew', lastSeenAt: null, crewRequest: null, labels: [] });
 
     await expect(list(new Date(NOW.getTime() + SILENT_AFTER_MS))).resolves.toMatchObject({ isOk: true, value: [{ shipId: MACHINE, isSilent: false }] });
   });
