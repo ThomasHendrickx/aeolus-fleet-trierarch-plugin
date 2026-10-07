@@ -24,8 +24,9 @@ export function mutate(address: string, request: { procedure: string; cookie: st
 }
 
 /** Calls one of the trierarch plugin's queries with the operator's cookie. */
-export function query(address: string, request: { procedure: string; cookie: string }): Promise<Response> {
-  return fetch(`${address}/trpc/${request.procedure}`, { headers: { cookie: request.cookie } });
+export function query(address: string, request: { procedure: string; cookie: string; input?: unknown }): Promise<Response> {
+  const search = request.input === undefined ? '' : `?input=${encodeURIComponent(JSON.stringify(request.input))}`;
+  return fetch(`${address}/trpc/${request.procedure}${search}`, { headers: { cookie: request.cookie } });
 }
 
 /** Connects the trierarch plugin with its ship's secret, as the console's server does. */
