@@ -87,7 +87,7 @@ export function createRestFleetDoor(fleetUrl: string): FleetDoor {
       return ok({ shipId, prompt, crewLines, secret });
     },
     listShips: async (crewToken) => {
-      const listed = await call(fleetUrl, { path: '/fleet/list', method: 'GET', crewToken, answers: fleetListOutputSchema });
+      const listed = await call(fleetUrl, { path: '/fleet/list', method: 'POST', crewToken, body: {}, answers: fleetListOutputSchema });
       return listed.isOk
         ? ok(
             listed.value.map(({ id, name, type, status, lastSeenAt, crewRequest }) => ({
