@@ -20,7 +20,7 @@ import { createPluginDatabase } from './support/database.js';
 
 // The trierarch plugin against a real fleet: it starts not connected, with no
 // secret anywhere; the operator connects it as its ship (fleet:read,
-// fleet:manage, crew:assign), keeps the crew token in its own database and is
+// fleet:manage, crew:assign, labels:define, labels:assign), keeps the crew token in its own database and is
 // connected again after a restart. Machines join through it.
 
 let fleetDatabase: PrismaClient;
@@ -40,7 +40,12 @@ beforeEach(async () => {
   useCases = createUseCases({ prisma: fleetDatabase });
   argo = operatorCaller(unwrap(await useCases.initialiseFleet({ name: 'home fleet', ...OPERATOR })));
   const commissioned = unwrap(
-    await useCases.commissionShip(argo, { idempotencyKey: newKey(), name: 'trierarch-plugin', type: 'trierarch-plugin', fleetScopes: ['fleet:read', 'fleet:manage', 'crew:assign'] }),
+    await useCases.commissionShip(argo, {
+      idempotencyKey: newKey(),
+      name: 'trierarch-plugin',
+      type: 'trierarch-plugin',
+      fleetScopes: ['fleet:read', 'fleet:manage', 'crew:assign', 'labels:define', 'labels:assign'],
+    }),
   );
   shipId = commissioned.shipId;
   secret = secretOf(commissioned.secret);
@@ -245,6 +250,49 @@ describe('assignment against a real fleet', () => {
     await apps[0]?.assignOnce();
 
     await expect(fleetDatabase.crewRequest.findUniqueOrThrow({ where: { shipId: scout.shipId } })).resolves.toMatchObject({ assignedTo: null, reason: 'no trierarch reports yet' });
+  });
+});
+
+describe('machine labels against a real fleet (#102)', () => {
+  it('labels a machine from the machine its trierarch reports, and places a request only on a machine that carries its labels', async () => {
+    const address = await connected();
+    const joined = joinedSchema.parse(await (await mutate(address, { procedure: 'machines.join', cookie, body: { name: 'mac-studio' } })).json()).result.data;
+    const machineShipId = z.templateLiteral(['shp_', z.string()]).parse(joined.shipId);
+    const { crewToken } = await createRestFleet({ fleetUrl, crewToken: '' }).registerSelf({ shipId: machineShipId, secret: joined.secret });
+    await createReportSelf({
+      fleet: createRestFleet({ fleetUrl, crewToken }),
+      processes: { list: () => Promise.resolve([]), stop: () => Promise.resolve() },
+      state: { load: () => Promise.resolve(EMPTY_STATE), save: () => Promise.resolve() },
+      setup: {
+        configuration: { caps: { ships: 4, running: 2 }, repositories: { 'aeolus-fleet': { path: '/srv/aeolus-fleet' } }, folders: {}, harnesses: { 'claude-code': { flags: [], options: {} } } },
+        version: '0.20.0',
+        adapterFlags: {},
+        riskyFlags: {},
+        machine: { os: 'macos', arch: 'arm64' },
+      },
+    })();
+
+    await apps[0]?.assignOnce();
+
+    const labels = await useCases.listLabels(argo);
+    expect(labels.map((label) => ({ key: label.key, values: label.values.map((value) => value.value), owner: label.owner.name }))).toEqual([
+      { key: 'arch', values: ['arm64', 'amd64'], owner: 'trierarch-plugin' },
+      { key: 'os', values: ['macos', 'linux', 'windows'], owner: 'trierarch-plugin' },
+    ]);
+    const machine = (await useCases.listFleet(argo)).find((ship) => ship.id === machineShipId);
+    expect(machine?.labels.map((label) => `${label.key}=${label.value}`)).toEqual(['arch=arm64', 'os=macos']);
+
+    const valueOf = async (key: string, value: string) => unwrap(await useCases.findLabelValue(argo, { key, value })).valueId;
+    const settings = { harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: {} } as const;
+    const scout = unwrap(await useCases.commissionShip(argo, { idempotencyKey: newKey(), name: 'scout', type: 'implementer' }));
+    unwrap(await useCases.requestCrew(argo, { shipId: scout.shipId, settings: { ...settings, machineLabels: [await valueOf('os', 'linux')] } }));
+    const lookout = unwrap(await useCases.commissionShip(argo, { idempotencyKey: newKey(), name: 'lookout', type: 'implementer' }));
+    unwrap(await useCases.requestCrew(argo, { shipId: lookout.shipId, settings: { ...settings, machineLabels: [await valueOf('os', 'macos'), await valueOf('arch', 'arm64')] } }));
+
+    await apps[0]?.assignOnce();
+
+    await expect(fleetDatabase.crewRequest.findUniqueOrThrow({ where: { shipId: scout.shipId } })).resolves.toMatchObject({ assignedTo: null, reason: 'no machine matches its labels' });
+    await expect(fleetDatabase.crewRequest.findUniqueOrThrow({ where: { shipId: lookout.shipId } })).resolves.toMatchObject({ assignedTo: joined.shipId, reason: null });
   });
 });
 
