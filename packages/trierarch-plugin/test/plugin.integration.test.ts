@@ -192,6 +192,7 @@ describe('a joined machine reporting', () => {
         name: 'mac-studio',
         status: 'crewed',
         lastSeenAt: true,
+        isSilent: false,
         report: { state: 'idle', note: '0 of 6 running', reportedAt: null },
         details: {
           harnesses: [{ harness: 'claude-code', options: { type: 'object', properties: {}, additionalProperties: false }, flags: ['--remote-control'] }],
