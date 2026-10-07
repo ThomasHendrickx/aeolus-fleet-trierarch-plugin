@@ -1,4 +1,4 @@
-import { crewSettingsSchema, type CrewSettings, type ShipId, type TrierarchReportDetails } from '@aeolus-fleet/common';
+import { crewSettingsSchema, NO_MACHINE_MATCHES_REASON, type CrewSettings, type ShipId, type TrierarchReportDetails } from '@aeolus-fleet/common';
 import { z } from 'zod';
 
 /** An unassigned crew request whose ship awaits crew: its settings as the fleet holds them, and the reason written on it now. */
@@ -80,7 +80,7 @@ function fit(settings: CrewSettings, trierarchs: readonly PlacementTrierarch[]):
   const matching = trierarchs.filter((trierarch) => machineLabels.every((valueId) => trierarch.labelValueIds.includes(valueId)));
   if (matching.length === 0) {
     // Allowed, not refused (#102, Q8): the request waits until a machine carries them all.
-    return { reason: 'no machine matches its labels' };
+    return { reason: NO_MACHINE_MATCHES_REASON };
   }
   const offering = matching.flatMap((trierarch) => {
     const harness = trierarch.details.harnesses.find((each) => each.harness === settings.harness);
