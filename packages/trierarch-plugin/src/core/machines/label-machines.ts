@@ -28,7 +28,7 @@ const LABEL_SCOPES = ['labels:define', 'labels:assign'];
 /** The refusals that mean the fleet changed since it was read (a key taken, a ship or value gone): read again on the next pass. */
 const CHANGED = new Set(['CONFLICT', 'NOT_FOUND']);
 
-const NO_LABEL_SCOPES = 'its ship holds no label scopes: connect the trierarch plugin again to label machines';
+const NO_LABEL_SCOPES = 'its ship holds no label scopes, and scopes never change: retire its ship and connect the trierarch plugin again to label machines';
 
 /**
  * Use case: one pass of machine labels for a fleet (docs/trierarch.md,
