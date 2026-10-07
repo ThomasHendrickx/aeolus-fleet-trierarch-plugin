@@ -34,7 +34,9 @@
     "typecheck": "tsc --project tsconfig.json",
     "dev": "tsx watch --conditions=@aeolus-fleet/source --env-file-if-exists=.env src/bin/aeolus-trierarch-plugin.ts start",
     "start": "node dist/bin/aeolus-trierarch-plugin.js start",
-    "db:migrate": "tsx --conditions=@aeolus-fleet/source --env-file-if-exists=.env src/bin/aeolus-trierarch-plugin.ts migrate"
+    "db:migrate": "tsx --conditions=@aeolus-fleet/source --env-file-if-exists=.env src/bin/aeolus-trierarch-plugin.ts migrate",
+    "prepack": "cp ../../LICENSE LICENSE",
+    "postpack": "rm LICENSE"
   },
   "dependencies": {
     "@aeolus-fleet/common": "0.0.0",
