@@ -1,12 +1,11 @@
-import { trierarchReportDetailsSchema, type FleetId } from '@aeolus-fleet/common';
+import type { FleetId } from '@aeolus-fleet/common';
 
 import type { ConnectionStore, FleetDoor, FleetRefusal } from '../connection/ports.js';
-import { TRIERARCH_TYPE } from '../machines/join-machine.js';
-import { isSilent } from '../machines/silent.js';
 import type { Clock } from '../shared/clock.js';
 import { refuse, type DomainError } from '../shared/errors.js';
 import { ok, type Result } from '../shared/result.js';
-import { place, type PlacementRequest, type PlacementTrierarch } from './placement.js';
+import { place } from './placement.js';
+import { readPlacement } from './read-placement.js';
 
 /** What a pass did: the claims it won, the reasons it wrote, and the claims another assigner or a change won first. */
 export interface AssignOutcome {
@@ -36,32 +35,11 @@ export function createAssignCrews(deps: { door: FleetDoor; connections: Connecti
     if (!crew) {
       return refuse('NOT_CONNECTED', 'The trierarch plugin is not connected to this fleet: connect it in the console');
     }
-    const listed = await deps.door.listShips(crew.crewToken);
-    if (!listed.isOk) {
-      return unavailable(listed.error);
+    const read = await readPlacement(deps.door, { crewToken: crew.crewToken, now: deps.clock.now(), silentAfterMs: deps.silentAfterMs });
+    if (!read.isOk) {
+      return unavailable(read.error);
     }
-    const now = deps.clock.now();
-    const trierarchs: PlacementTrierarch[] = [];
-    const requests: PlacementRequest[] = [];
-    for (const ship of listed.value) {
-      const isTrierarch = ship.type === TRIERARCH_TYPE && ship.status !== 'retired' && !isSilent(ship.lastSeenAt, { now, silentAfterMs: deps.silentAfterMs });
-      const isRequest = ship.status === 'awaitingCrew' && ship.crewRequest !== null && ship.crewRequest.assignedTo === null;
-      if (!isTrierarch && !isRequest) {
-        continue;
-      }
-      const read = await deps.door.getShip(crew.crewToken, { shipId: ship.shipId });
-      if (!read.isOk) {
-        return unavailable(read.error);
-      }
-      const details = trierarchReportDetailsSchema.safeParse(read.value.report?.details);
-      if (isTrierarch && details.success) {
-        const assigned = listed.value.filter((each) => each.crewRequest?.assignedTo === ship.shipId).length;
-        trierarchs.push({ shipId: ship.shipId, commissionedAt: read.value.commissionedAt, details: details.data, assigned });
-      }
-      if (isRequest && ship.crewRequest !== null) {
-        requests.push({ shipId: ship.shipId, requestedAt: ship.crewRequest.requestedAt, settings: read.value.crewSettings, reason: ship.crewRequest.reason });
-      }
-    }
+    const { requests, trierarchs } = read.value;
 
     const outcome: AssignOutcome = { assigned: 0, explained: 0, lost: 0 };
     for (const placement of place(requests, trierarchs)) {
