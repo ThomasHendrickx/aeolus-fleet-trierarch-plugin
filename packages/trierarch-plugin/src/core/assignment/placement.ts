@@ -22,6 +22,19 @@ export interface PlacementTrierarch {
 /** What placement decides for a request: the trierarch to claim it for, or why none fits. */
 export type Placement = { kind: 'assign'; shipId: ShipId; trierarchShipId: ShipId } | { kind: 'explain'; shipId: ShipId; reason: string };
 
+/**
+ * What a settings check answers before a request is made: a trierarch fits;
+ * none takes them, naming the settings field at fault; or they fit, but no
+ * trierarch has room now, so a request would wait.
+ */
+export type PlacementCheck = { kind: 'fits' } | { kind: 'refused'; field: string; reason: string } | { kind: 'noRoom'; reason: string };
+
+/** Why no trierarch fits: the settings field at fault, or none when the settings fit but there is no room. */
+interface Misfit {
+  reason: string;
+  field?: string;
+}
+
 type Issue = z.core.$ZodIssue;
 
 /** An issue as one line: its path, when it has one, and its message. */
@@ -57,7 +70,7 @@ function roomShare(trierarch: PlacementTrierarch): number {
 }
 
 /** The trierarch to claim for the settings, or why none fits: harness, workspace, options, then room. */
-function fit(settings: CrewSettings, trierarchs: readonly PlacementTrierarch[]): { trierarch: PlacementTrierarch } | { reason: string } {
+function fit(settings: CrewSettings, trierarchs: readonly PlacementTrierarch[]): { trierarch: PlacementTrierarch } | Misfit {
   if (trierarchs.length === 0) {
     return { reason: 'no trierarch reports yet' };
   }
@@ -66,22 +79,45 @@ function fit(settings: CrewSettings, trierarchs: readonly PlacementTrierarch[]):
     return harness === undefined ? [] : [{ trierarch, harness }];
   });
   if (offering.length === 0) {
-    return { reason: `no trierarch offers harness ${settings.harness}` };
+    return { reason: `no trierarch offers harness ${settings.harness}`, field: 'harness' };
   }
   const withWorkspace = offering.filter(({ trierarch }) => offersWorkspace(trierarch.details, settings.workspace));
   if (withWorkspace.length === 0) {
-    return { reason: `no trierarch offering ${settings.harness} has ${workspaceName(settings.workspace)}` };
+    return { reason: `no trierarch offering ${settings.harness} has ${workspaceName(settings.workspace)}`, field: 'workspace' };
   }
   const refusals = withWorkspace.map(({ trierarch, harness }) => ({ trierarch, refusal: optionsRefusal(harness.options, settings.options) }));
   const taking = refusals.filter(({ refusal }) => refusal === undefined).map(({ trierarch }) => trierarch);
   const [firstRefusal] = refusals;
   if (taking.length === 0) {
-    return { reason: `no trierarch takes these options for ${settings.harness}: ${firstRefusal?.refusal ?? ''}` };
+    return { reason: `no trierarch takes these options for ${settings.harness}: ${firstRefusal?.refusal ?? ''}`, field: 'options' };
   }
   const [best] = taking
     .filter((trierarch) => trierarch.assigned < trierarch.details.caps.ships)
     .sort((first, second) => roomShare(second) - roomShare(first) || first.commissionedAt.getTime() - second.commissionedAt.getTime() || first.shipId.localeCompare(second.shipId));
   return best === undefined ? { reason: `no trierarch with room: all ${String(taking.length)} that fit are full` } : { trierarch: best };
+}
+
+/** The settings as crew settings, or why not: the first issue, with the field it is in. */
+function parsed(settings: unknown): { settings: CrewSettings } | Misfit {
+  const result = crewSettingsSchema.safeParse(settings);
+  if (result.success) {
+    return { settings: result.data };
+  }
+  const [issue] = result.error.issues;
+  return { reason: `settings are not valid crew settings: ${issue === undefined ? 'unreadable' : lineOf(issue)}`, field: issue?.path[0] === undefined ? 'settings' : String(issue.path[0]) };
+}
+
+/**
+ * Policy: whether settings would be placed now, before anything is requested
+ * (#245): by the same rules as placement, against the trierarchs as they are.
+ */
+export function checkPlacement(settings: unknown, trierarchs: readonly PlacementTrierarch[]): PlacementCheck {
+  const read = parsed(settings);
+  const fitted = 'settings' in read ? fit(read.settings, trierarchs) : read;
+  if ('trierarch' in fitted) {
+    return { kind: 'fits' };
+  }
+  return fitted.field === undefined ? { kind: 'noRoom', reason: fitted.reason } : { kind: 'refused', field: fitted.field, reason: fitted.reason };
 }
 
 /**
@@ -98,13 +134,14 @@ export function place(requests: readonly PlacementRequest[], trierarchs: readonl
   const placements: Placement[] = [];
   const oldestFirst = [...requests].sort((first, second) => first.requestedAt.getTime() - second.requestedAt.getTime() || first.shipId.localeCompare(second.shipId));
   for (const request of oldestFirst) {
-    const settings = crewSettingsSchema.safeParse(request.settings);
-    const fitted = settings.success
-      ? fit(
-          settings.data,
-          trierarchs.map((trierarch) => ({ ...trierarch, assigned: assigned.get(trierarch.shipId) ?? trierarch.assigned })),
-        )
-      : { reason: `settings are not valid crew settings: ${settings.error.issues[0] === undefined ? 'unreadable' : lineOf(settings.error.issues[0])}` };
+    const read = parsed(request.settings);
+    const fitted =
+      'settings' in read
+        ? fit(
+            read.settings,
+            trierarchs.map((trierarch) => ({ ...trierarch, assigned: assigned.get(trierarch.shipId) ?? trierarch.assigned })),
+          )
+        : read;
     if ('trierarch' in fitted) {
       assigned.set(fitted.trierarch.shipId, (assigned.get(fitted.trierarch.shipId) ?? 0) + 1);
       placements.push({ kind: 'assign', shipId: request.shipId, trierarchShipId: fitted.trierarch.shipId });
