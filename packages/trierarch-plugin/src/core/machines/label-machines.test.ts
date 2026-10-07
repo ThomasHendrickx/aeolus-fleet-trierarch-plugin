@@ -114,13 +114,13 @@ describe('machine labels (#102; docs/trierarch.md, Machine labels)', () => {
     expect(fleet.state.labelWrites).toEqual(['define arch=arm64,amd64', 'assign trierarch-mac arch=arm64']);
   });
 
-  it('labels nothing while its ship holds no label scopes: connected before 0.20.0, it is connected again for them', async () => {
+  it('labels nothing while its ship holds no label scopes: connected before 0.20.0, its ship is retired and the plugin connected again for them', async () => {
     fleet.state.scopes.splice(0, fleet.state.scopes.length, ...fleet.state.scopes.filter((scope) => !LABEL_SCOPES.includes(scope)));
     aTrierarch(MAC, { os: 'macos', arch: 'arm64' });
 
     const done = await labelMachines();
 
-    expect(done).toMatchObject({ isOk: true, value: { defined: 0, assigned: 0, unassigned: 0, skipped: 'its ship holds no label scopes: connect the trierarch plugin again to label machines' } });
+    expect(done).toMatchObject({ isOk: true, value: { defined: 0, assigned: 0, unassigned: 0, skipped: 'its ship holds no label scopes, and scopes never change: retire its ship and connect the trierarch plugin again to label machines' } });
     expect(fleet.state.labelWrites).toEqual([]);
   });
 
