@@ -1,4 +1,4 @@
-import type { FleetId, ShipId } from '@aeolus-fleet/common';
+import type { FleetId, LabelId, LabelValueId, ShipId } from '@aeolus-fleet/common';
 
 import type { ConnectionStore, FleetDoor, FleetRefusal, ListedShip, PluginBinding, PluginCrew } from '../../src/core/connection/ports.js';
 import { err, ok, type Result } from '../../src/core/shared/result.js';
@@ -52,7 +52,15 @@ export function fakePluginFleet() {
     isLosingClaims: false,
     /** The reasons written, in order, by ship. */
     explained: new Array<{ shipId: ShipId; reason: string | null }>(),
+    /** The fleet's labels, each with its owner (#102). */
+    labels: new Array<{ labelId: LabelId; key: string; values: { valueId: LabelValueId; value: string }[]; ownerShipId: ShipId }>(),
+    /** Label writes the trierarch plugin made, in order. */
+    labelWrites: new Array<string>(),
   };
+  let nextLabel = 0;
+  const labelId = (): LabelId => `lbl_01m3tbfspe96yf1rnr4ank9${String(nextLabel).padStart(3, '0')}`;
+  const valueId = (): LabelValueId => `lbv_01m3tbfspe96yf1rnr4ank9${String(nextLabel++).padStart(3, '0')}`;
+  const forbidden = (scope: string) => Promise.resolve(err({ code: 'FORBIDDEN', message: `Needs ${scope}` }));
   const unavailable = () => Promise.resolve(err({ code: 'UNAVAILABLE', message: 'The fleet did not answer' }));
   const released = () => Promise.resolve(err({ code: 'LEASE_ENDED', message: 'This ship was released; this session no longer crews it.' }));
   const door: FleetDoor = {
@@ -128,7 +136,9 @@ export function fakePluginFleet() {
       if (!state.isAnswering) {
         return unavailable();
       }
-      return state.liveTokens.has(crewToken) ? Promise.resolve(ok(state.ships.map((ship) => ({ ...ship, crewRequest: ship.crewRequest && { ...ship.crewRequest } })))) : released();
+      return state.liveTokens.has(crewToken)
+        ? Promise.resolve(ok(state.ships.map((ship) => ({ ...ship, crewRequest: ship.crewRequest && { ...ship.crewRequest }, labels: [...ship.labels] }))))
+        : released();
     },
     assignCrew: (crewToken, { shipId, trierarchShipId }) => {
       if (!state.liveTokens.has(crewToken)) {
@@ -148,6 +158,62 @@ export function fakePluginFleet() {
         return Promise.resolve(err({ code: 'CONFLICT', message: 'The ship is crewed' }));
       }
       ship.crewRequest = { ...ship.crewRequest, assignedTo: trierarchShipId, reason: null };
+      return Promise.resolve(ok(undefined));
+    },
+    listLabels: (crewToken) => {
+      if (!state.liveTokens.has(crewToken)) {
+        return released();
+      }
+      return Promise.resolve(ok(state.labels.map((label) => ({ ...label, values: label.values.map((value) => ({ ...value })) }))));
+    },
+    defineLabel: (crewToken, { key, values }) => {
+      if (!state.liveTokens.has(crewToken)) {
+        return released();
+      }
+      if (!state.scopes.includes('labels:define')) {
+        return forbidden('labels:define');
+      }
+      const taken = state.labels.find((label) => label.key === key);
+      if (taken) {
+        return Promise.resolve(err({ code: 'CONFLICT', message: `The fleet has the label ${key} already` }));
+      }
+      const label = { labelId: labelId(), key, values: values.map((value) => ({ valueId: valueId(), value })), ownerShipId: SHIP_ID };
+      state.labels.push(label);
+      state.labelWrites.push(`define ${key}=${values.join(',')}`);
+      return Promise.resolve(ok({ labelId: label.labelId, values: label.values }));
+    },
+    assignLabel: (crewToken, { shipId, valueId: picked }) => {
+      if (!state.liveTokens.has(crewToken)) {
+        return released();
+      }
+      if (!state.scopes.includes('labels:assign')) {
+        return forbidden('labels:assign');
+      }
+      const ship = state.ships.find((each) => each.shipId === shipId);
+      const label = state.labels.find((each) => each.values.some((value) => value.valueId === picked));
+      if (ship === undefined || label === undefined) {
+        return Promise.resolve(err({ code: 'NOT_FOUND', message: 'No such ship or label value' }));
+      }
+      if (!ship.labels.some((each) => each.valueId === picked)) {
+        ship.labels = [...ship.labels, { labelId: label.labelId, valueId: picked }];
+      }
+      state.labelWrites.push(`assign ${ship.name} ${label.key}=${label.values.find((value) => value.valueId === picked)?.value ?? ''}`);
+      return Promise.resolve(ok(undefined));
+    },
+    unassignLabel: (crewToken, { shipId, valueId: dropped }) => {
+      if (!state.liveTokens.has(crewToken)) {
+        return released();
+      }
+      if (!state.scopes.includes('labels:assign')) {
+        return forbidden('labels:assign');
+      }
+      const ship = state.ships.find((each) => each.shipId === shipId);
+      const label = state.labels.find((each) => each.values.some((value) => value.valueId === dropped));
+      if (ship === undefined || label === undefined) {
+        return Promise.resolve(err({ code: 'NOT_FOUND', message: 'No such ship or label value' }));
+      }
+      ship.labels = ship.labels.filter((each) => each.valueId !== dropped);
+      state.labelWrites.push(`unassign ${ship.name} ${label.key}=${label.values.find((value) => value.valueId === dropped)?.value ?? ''}`);
       return Promise.resolve(ok(undefined));
     },
     explainCrewRequest: (crewToken, { shipId, reason }) => {
