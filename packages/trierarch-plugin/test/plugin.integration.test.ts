@@ -195,7 +195,7 @@ describe('a joined machine reporting', () => {
         isSilent: false,
         report: { state: 'idle', note: '0 of 6 running', reportedAt: null },
         details: {
-          harnesses: [{ harness: 'claude-code', options: { type: 'object', properties: {}, additionalProperties: false }, flags: ['--remote-control'] }],
+          harnesses: [{ harness: 'claude-code', options: { type: 'object', properties: {}, additionalProperties: false }, flags: ['--remote-control'], riskyFlags: [] }],
           workspaces: { repositories: ['aeolus-fleet'], folders: [] },
           caps: { ships: 6, running: 3 },
           kept: [],
