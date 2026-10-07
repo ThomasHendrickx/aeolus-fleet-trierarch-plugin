@@ -21,6 +21,7 @@ import { createReadFleet } from './core/installation/read-fleet.js';
 import { createIsServed } from './core/installation/served.js';
 import { createSetFleetEnabled } from './core/installation/set-fleet-enabled.js';
 import { createAssignCrews, type AssignOutcome } from './core/assignment/assign-crews.js';
+import { createCheckCrewSettings } from './core/assignment/check-crew-settings.js';
 import { createJoinMachine } from './core/machines/join-machine.js';
 import { createListMachines } from './core/machines/list-machines.js';
 import { createAuthenticateOperator } from './core/operator/authenticate-operator.js';
@@ -115,6 +116,7 @@ export function createTrierarchPluginApp(options: {
   const silentAfterMs = options.silentAfterMs ?? DEFAULT_SILENT_AFTER_MS;
   const listMachines = createListMachines({ door, connections, clock, silentAfterMs });
   const assignCrews = createAssignCrews({ door, connections, clock, silentAfterMs });
+  const checkCrewSettings = createCheckCrewSettings({ door, connections, clock, silentAfterMs });
   const assignOnce = async (): Promise<{ fleetId: FleetId; outcome: AssignOutcome }[]> => {
     const done: { fleetId: FleetId; outcome: AssignOutcome }[] = [];
     for (const crew of await connections.connected()) {
@@ -156,6 +158,7 @@ export function createTrierarchPluginApp(options: {
         connect,
         joinMachine,
         listMachines,
+        checkCrewSettings,
       }),
     },
   };

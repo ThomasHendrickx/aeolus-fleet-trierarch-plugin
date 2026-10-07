@@ -21,6 +21,7 @@ import type { InstallationMode } from '../../core/installation/ports.js';
 import type { ReadFleet } from '../../core/installation/read-fleet.js';
 import type { IsServed } from '../../core/installation/served.js';
 import type { SetFleetEnabled } from '../../core/installation/set-fleet-enabled.js';
+import type { CheckCrewSettings } from '../../core/assignment/check-crew-settings.js';
 import type { JoinMachine } from '../../core/machines/join-machine.js';
 import type { ListMachines } from '../../core/machines/list-machines.js';
 import type { AuthenticateOperator } from '../../core/operator/authenticate-operator.js';
@@ -44,6 +45,7 @@ export interface Context {
   connect: Connect;
   joinMachine: JoinMachine;
   listMachines: ListMachines;
+  checkCrewSettings: CheckCrewSettings;
 }
 
 /** What a caller reads of a failure: nothing of it, so no crew token, secret or query ever leaves; the log holds it whole. */
@@ -129,7 +131,7 @@ const JOIN_CODES = {
   FLEET_UNAVAILABLE: 'BAD_GATEWAY',
 } as const satisfies Record<string, TRPCError['code']>;
 
-/** The refusals of listing the machines, as the API states them. */
+/** The refusals of reading the fleet (listing the machines, checking settings), as the API states them. */
 const LIST_CODES = {
   NOT_CONNECTED: 'PRECONDITION_FAILED',
   FLEET_UNAVAILABLE: 'BAD_GATEWAY',
@@ -142,6 +144,13 @@ const connectionStatusOutputSchema = z.object({
   ship: z.object({ shipId: z.string(), name: z.string() }).nullable(),
   lastShipId: z.string().nullable(),
 });
+
+/** What checking crew settings answers: a trierarch fits, none takes them (naming the settings field at fault), or none has room now. */
+export const checkedSettingsOutputSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('fits') }),
+  z.object({ kind: z.literal('refused'), field: z.string(), reason: z.string() }),
+  z.object({ kind: z.literal('noRoom'), reason: z.string() }),
+]);
 
 /** A joined machine: its trierarch's ship, its starting prompt (decision 0019) and its setup line, each shown once. */
 export const joinedMachineOutputSchema = z.object({
@@ -216,6 +225,22 @@ export const trierarchPluginRouter = t.router({
         report: machine.report && { ...machine.report, reportedAt: machine.report.reportedAt.toISOString() },
       }));
     }),
+  }),
+  requests: t.router({
+    /**
+     * Whether crew settings would be placed now, by assignment's rules, before
+     * the console requests a crew with them (#245). It writes nothing.
+     */
+    check: connectedProcedure
+      .input(z.object({ settings: z.unknown() }))
+      .output(checkedSettingsOutputSchema)
+      .query(async ({ ctx, input }) => {
+        const checked = await ctx.checkCrewSettings(ctx.fleetId, input.settings);
+        if (!checked.isOk) {
+          throw new TRPCError({ code: LIST_CODES[checked.error.kind], message: checked.error.message });
+        }
+        return checked.value;
+      }),
   }),
   installation: t.router({
     /** Switches the trierarch plugin on or off for a fleet; off keeps everything of it. A replayed request id answers its first answer. */

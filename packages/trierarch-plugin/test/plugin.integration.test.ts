@@ -247,6 +247,34 @@ describe('assignment against a real fleet', () => {
   });
 });
 
+describe('checking crew settings before a request (#245)', () => {
+  const checkSchema = z.object({ result: z.object({ data: z.object({ kind: z.string(), field: z.string().optional() }) }) });
+
+  it("answers from the fleet's trierarchs: settings a reporting trierarch offers fit, a harness none offers is refused by field", async () => {
+    const address = await connected();
+    const joined = joinedSchema.parse(await (await mutate(address, { procedure: 'machines.join', cookie, body: { name: 'mac-studio' } })).json()).result.data;
+    const machineShipId = z.templateLiteral(['shp_', z.string()]).parse(joined.shipId);
+    const { crewToken } = await createRestFleet({ fleetUrl, crewToken: '' }).registerSelf({ shipId: machineShipId, secret: joined.secret });
+    await createReportSelf({
+      fleet: createRestFleet({ fleetUrl, crewToken }),
+      processes: { list: () => Promise.resolve([]), stop: () => Promise.resolve() },
+      state: { load: () => Promise.resolve(EMPTY_STATE), save: () => Promise.resolve() },
+      setup: {
+        configuration: { caps: { ships: 4, running: 2 }, repositories: { 'aeolus-fleet': { path: '/srv/aeolus-fleet' } }, folders: {}, harnesses: { 'claude-code': { flags: [], options: {} } } },
+        version: '0.19.0',
+        adapterFlags: {},
+      },
+    })();
+    const settings = { harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: {} };
+
+    const fits = checkSchema.parse(await (await query(address, { procedure: 'requests.check', cookie, input: { settings } })).json()).result.data;
+    const refused = checkSchema.parse(await (await query(address, { procedure: 'requests.check', cookie, input: { settings: { ...settings, harness: 'codex' } } })).json()).result.data;
+
+    expect(fits).toEqual({ kind: 'fits' });
+    expect(refused).toMatchObject({ kind: 'refused', field: 'harness' });
+  });
+});
+
 describe('the installation (decision 0021)', () => {
   const TOKEN = 'an-installation-token-of-at-least-32-characters';
 
