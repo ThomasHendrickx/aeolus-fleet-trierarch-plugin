@@ -90,13 +90,14 @@ export function createRestFleetDoor(fleetUrl: string): FleetDoor {
       const listed = await call(fleetUrl, { path: '/fleet/list', method: 'POST', crewToken, body: {}, answers: fleetListOutputSchema });
       return listed.isOk
         ? ok(
-            listed.value.map(({ id, name, type, status, lastSeenAt, crewRequest }) => ({
+            listed.value.map(({ id, name, type, status, lastSeenAt, crewRequest, labels }) => ({
               shipId: id,
               name,
               type,
               status,
               lastSeenAt: dateOf(lastSeenAt),
               crewRequest: crewRequest && { requestedAt: new Date(crewRequest.requestedAt), assignedTo: crewRequest.assignedTo?.id ?? null, reason: crewRequest.reason },
+              labels: labels.map(({ labelId, valueId }) => ({ labelId, valueId })),
             })),
           )
         : listed;

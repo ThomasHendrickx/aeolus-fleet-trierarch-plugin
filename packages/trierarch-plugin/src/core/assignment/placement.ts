@@ -17,6 +17,8 @@ export interface PlacementTrierarch {
   details: TrierarchReportDetails;
   /** The requests assigned to it now. */
   assigned: number;
+  /** The label values its ship carries, every owner's: what a request's machine labels match (#102). */
+  labelValueIds: readonly string[];
 }
 
 /** What placement decides for a request: the trierarch to claim it for, or why none fits. */
@@ -69,12 +71,18 @@ function roomShare(trierarch: PlacementTrierarch): number {
   return (trierarch.details.caps.ships - trierarch.assigned) / trierarch.details.caps.ships;
 }
 
-/** The trierarch to claim for the settings, or why none fits: harness, workspace, options, then room. */
+/** The trierarch to claim for the settings, or why none fits: machine labels, harness, workspace, options, then room. */
 function fit(settings: CrewSettings, trierarchs: readonly PlacementTrierarch[]): { trierarch: PlacementTrierarch } | Misfit {
   if (trierarchs.length === 0) {
     return { reason: 'no trierarch reports yet' };
   }
-  const offering = trierarchs.flatMap((trierarch) => {
+  const machineLabels = settings.machineLabels ?? [];
+  const matching = trierarchs.filter((trierarch) => machineLabels.every((valueId) => trierarch.labelValueIds.includes(valueId)));
+  if (matching.length === 0) {
+    // Allowed, not refused (#102, Q8): the request waits until a machine carries them all.
+    return { reason: 'no machine matches its labels' };
+  }
+  const offering = matching.flatMap((trierarch) => {
     const harness = trierarch.details.harnesses.find((each) => each.harness === settings.harness);
     return harness === undefined ? [] : [{ trierarch, harness }];
   });
@@ -122,8 +130,8 @@ export function checkPlacement(settings: unknown, trierarchs: readonly Placement
 
 /**
  * Policy: where each unassigned request goes (docs/trierarch.md,
- * "Assignment"). Oldest request first, each to a trierarch that offers its
- * harness and workspace, takes its options against the schema it reports for
+ * "Assignment"). Oldest request first, each to a trierarch whose ship
+ * carries every machine label it names, that offers its harness and workspace, takes its options against the schema it reports for
  * that harness, and has room (its cap above the requests assigned to it);
  * of those, the most room as a share of its cap, then the oldest. What it
  * assigns counts against the room of later requests in the same pass. A

@@ -33,7 +33,7 @@ beforeEach(async () => {
 });
 
 function aTrierarch(shipId: ShipId, lastSeenAt = RECENTLY): void {
-  fleet.state.ships.push({ shipId, name: 'trierarch-mac', type: 'trierarch', status: 'crewed', lastSeenAt, crewRequest: null });
+  fleet.state.ships.push({ shipId, name: 'trierarch-mac', type: 'trierarch', status: 'crewed', lastSeenAt, crewRequest: null, labels: [] });
   fleet.state.reports.set(shipId, { state: 'idle', note: null, reportedAt: lastSeenAt, details: DETAILS });
 }
 
@@ -54,7 +54,7 @@ describe('checking crew settings against the fleet’s trierarchs (#245)', () =>
 
   it('says there is no room once the requests assigned to the trierarch fill it', async () => {
     aTrierarch(MAC);
-    fleet.state.ships.push({ shipId: SCOUT, name: 'scout', type: 'implementer', status: 'crewed', lastSeenAt: null, crewRequest: { requestedAt: AT, assignedTo: MAC, reason: null } });
+    fleet.state.ships.push({ shipId: SCOUT, name: 'scout', type: 'implementer', status: 'crewed', lastSeenAt: null, crewRequest: { requestedAt: AT, assignedTo: MAC, reason: null }, labels: [] });
 
     await expect(check(SETTINGS)).resolves.toMatchObject({ isOk: true, value: { kind: 'noRoom' } });
   });

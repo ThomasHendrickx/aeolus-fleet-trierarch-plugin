@@ -29,6 +29,8 @@ export interface ListedShip {
   lastSeenAt: Date | null;
   /** Its crew request, without its settings; null when it holds none. */
   crewRequest: { requestedAt: Date; assignedTo: ShipId | null; reason: string | null } | null;
+  /** The label values it carries, every owner's, with their labels (#102). */
+  labels: { labelId: string; valueId: string }[];
 }
 
 /** A ship as `fleet.ship` shows it: what the trierarch plugin reads of it. */

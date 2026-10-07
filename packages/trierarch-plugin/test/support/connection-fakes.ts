@@ -113,7 +113,7 @@ export function fakePluginFleet() {
         return Promise.resolve(err({ code: 'CONFLICT', message: `An active ship is already named ${ship.name}` }));
       }
       state.commissioned.push({ ...ship });
-      state.ships.push({ shipId: COMMISSIONED_SHIP_ID, name: ship.name, type: ship.type, status: 'awaitingCrew', lastSeenAt: null, crewRequest: null });
+      state.ships.push({ shipId: COMMISSIONED_SHIP_ID, name: ship.name, type: ship.type, status: 'awaitingCrew', lastSeenAt: null, crewRequest: null, labels: [] });
       const secret = 'aeolus_sk_v1_machine';
       return Promise.resolve(
         ok({
