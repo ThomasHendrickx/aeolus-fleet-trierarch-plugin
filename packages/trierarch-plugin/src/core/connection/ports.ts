@@ -1,4 +1,4 @@
-import type { CrewLine, FleetId, ShipId } from '@aeolus-fleet/common';
+import type { CrewLine, FleetId, LabelId, LabelValueId, ShipId } from '@aeolus-fleet/common';
 
 import type { Result } from '../shared/result.js';
 
@@ -30,7 +30,7 @@ export interface ListedShip {
   /** Its crew request, without its settings; null when it holds none. */
   crewRequest: { requestedAt: Date; assignedTo: ShipId | null; reason: string | null } | null;
   /** The label values it carries, every owner's, with their labels (#102). */
-  labels: { labelId: string; valueId: string }[];
+  labels: { labelId: LabelId; valueId: LabelValueId }[];
 }
 
 /** A ship as `fleet.ship` shows it: what the trierarch plugin reads of it. */
@@ -42,6 +42,14 @@ export interface FleetShip {
   report: { state: string; note: string | null; reportedAt: Date; details: unknown } | null;
   /** Its crew request's settings, unread; null when it holds no crew request. */
   crewSettings: unknown;
+}
+
+/** A label of the fleet as `fleet.labels` lists it: its key, its values and the ship that owns it (#102). */
+export interface ListedLabel {
+  labelId: LabelId;
+  key: string;
+  values: { valueId: LabelValueId; value: string }[];
+  ownerShipId: ShipId;
 }
 
 /**
@@ -69,6 +77,14 @@ export interface FleetDoor {
   listShips(crewToken: string): Promise<Result<ListedShip[], FleetRefusal>>;
   /** Claims a ship's crew request for a trierarch (crew:assign), only while it is unassigned: a lost claim is CONFLICT. */
   assignCrew(crewToken: string, claim: { shipId: ShipId; trierarchShipId: ShipId }): Promise<Result<undefined, FleetRefusal>>;
+  /** Every label of the fleet, with its owner (fleet:read). */
+  listLabels(crewToken: string): Promise<Result<ListedLabel[], FleetRefusal>>;
+  /** Defines a label the crew token's ship owns (labels:define); a key the fleet has already is CONFLICT. */
+  defineLabel(crewToken: string, label: { key: string; values: string[] }): Promise<Result<{ labelId: LabelId; values: { valueId: LabelValueId; value: string }[] }, FleetRefusal>>;
+  /** Puts one of its own label values on a ship (labels:assign). */
+  assignLabel(crewToken: string, assignment: { shipId: ShipId; valueId: LabelValueId }): Promise<Result<undefined, FleetRefusal>>;
+  /** Takes one of its own label values off a ship (labels:assign). */
+  unassignLabel(crewToken: string, assignment: { shipId: ShipId; valueId: LabelValueId }): Promise<Result<undefined, FleetRefusal>>;
   /** Writes why no trierarch can take a ship's unassigned crew request (crew:assign). */
   explainCrewRequest(crewToken: string, explanation: { shipId: ShipId; reason: string | null }): Promise<Result<undefined, FleetRefusal>>;
 }

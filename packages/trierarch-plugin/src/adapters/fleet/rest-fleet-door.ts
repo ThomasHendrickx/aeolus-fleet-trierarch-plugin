@@ -4,7 +4,7 @@
  * like any client (decision 0030). A refusal reads as the fleet's code and
  * message.
  */
-import { commissionShipOutputSchema, fleetListOutputSchema, idSchema, shipDetailOutputSchema } from '@aeolus-fleet/common';
+import { commissionShipOutputSchema, defineLabelOutputSchema, fleetListOutputSchema, idSchema, labelsOutputSchema, shipDetailOutputSchema } from '@aeolus-fleet/common';
 import { z } from 'zod';
 
 import type { FleetDoor, FleetRefusal } from '../../core/connection/ports.js';
@@ -105,6 +105,24 @@ export function createRestFleetDoor(fleetUrl: string): FleetDoor {
     assignCrew: async (crewToken, claim) => {
       const claimed = await call(fleetUrl, { path: '/fleet/assignCrew', method: 'POST', crewToken, body: claim, answers: z.unknown() });
       return claimed.isOk ? ok(undefined) : claimed;
+    },
+    listLabels: async (crewToken) => {
+      const listed = await call(fleetUrl, { path: '/fleet/labels', method: 'GET', crewToken, answers: labelsOutputSchema });
+      return listed.isOk
+        ? ok(listed.value.map(({ id, key, values, owner }) => ({ labelId: id, key, values: values.map((value) => ({ valueId: value.id, value: value.value })), ownerShipId: owner.id })))
+        : listed;
+    },
+    defineLabel: async (crewToken, label) => {
+      const defined = await call(fleetUrl, { path: '/fleet/defineLabel', method: 'POST', crewToken, body: label, answers: defineLabelOutputSchema });
+      return defined.isOk ? ok({ labelId: defined.value.labelId, values: defined.value.values.map((value) => ({ valueId: value.id, value: value.value })) }) : defined;
+    },
+    assignLabel: async (crewToken, assignment) => {
+      const assigned = await call(fleetUrl, { path: '/fleet/assignLabel', method: 'POST', crewToken, body: assignment, answers: z.unknown() });
+      return assigned.isOk ? ok(undefined) : assigned;
+    },
+    unassignLabel: async (crewToken, assignment) => {
+      const unassigned = await call(fleetUrl, { path: '/fleet/unassignLabel', method: 'POST', crewToken, body: assignment, answers: z.unknown() });
+      return unassigned.isOk ? ok(undefined) : unassigned;
     },
     explainCrewRequest: async (crewToken, explanation) => {
       const explained = await call(fleetUrl, { path: '/fleet/explainCrewRequest', method: 'POST', crewToken, body: explanation, answers: z.unknown() });
