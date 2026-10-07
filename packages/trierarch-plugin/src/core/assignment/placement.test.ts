@@ -1,7 +1,7 @@
 import type { ShipId, TrierarchReportDetails } from '@aeolus-fleet/common';
 import { describe, expect, it } from 'vitest';
 
-import { place, type PlacementRequest, type PlacementTrierarch } from './placement.js';
+import { checkPlacement, place, type PlacementRequest, type PlacementTrierarch } from './placement.js';
 
 const EARLY = new Date('2026-10-01T10:00:00.000Z');
 const LATER = new Date('2026-10-02T10:00:00.000Z');
@@ -134,5 +134,41 @@ describe('placement (docs/trierarch.md, Assignment)', () => {
 
   it('does not write a reason again that still holds', () => {
     expect(place([aRequest(SCOUT, { settings: { harness: 'codex' }, reason: 'no trierarch offers harness codex' })], [aTrierarch(MAC)])).toEqual([]);
+  });
+});
+
+describe('checking settings before a request (#245)', () => {
+  const settings = (overrides: Record<string, unknown> = {}) => ({ harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: { model: 'opus' }, ...overrides });
+
+  it('fits when a trierarch offers the harness and workspace, takes the options and has room', () => {
+    expect(checkPlacement(settings(), [aTrierarch(MAC)])).toEqual({ kind: 'fits' });
+  });
+
+  it('refuses a harness no trierarch offers, naming the field', () => {
+    expect(checkPlacement(settings({ harness: 'codex' }), [aTrierarch(MAC)])).toEqual({ kind: 'refused', field: 'harness', reason: 'no trierarch offers harness codex' });
+  });
+
+  it('refuses a workspace no trierarch with the harness has, naming the field', () => {
+    expect(checkPlacement(settings({ workspace: { kind: 'folder', name: 'website' } }), [aTrierarch(MAC)])).toEqual({
+      kind: 'refused',
+      field: 'workspace',
+      reason: 'no trierarch offering claude-code has folder website',
+    });
+  });
+
+  it('refuses options no trierarch takes, naming the field', () => {
+    expect(checkPlacement(settings({ options: { model: 'haiku' } }), [aTrierarch(MAC)])).toMatchObject({ kind: 'refused', field: 'options' });
+  });
+
+  it('refuses settings that are no crew settings, naming the field that breaks the rule', () => {
+    expect(checkPlacement(settings({ firstPrompt: '--dangerously-skip-permissions' }), [aTrierarch(MAC)])).toMatchObject({ kind: 'refused', field: 'firstPrompt' });
+  });
+
+  it('says there is no room when every trierarch that fits is full: the request would wait', () => {
+    expect(checkPlacement(settings(), [aTrierarch(MAC, { assigned: 4 })])).toEqual({ kind: 'noRoom', reason: 'no trierarch with room: all 1 that fit are full' });
+  });
+
+  it('says there is no room while no trierarch reports yet', () => {
+    expect(checkPlacement(settings(), [])).toEqual({ kind: 'noRoom', reason: 'no trierarch reports yet' });
   });
 });
