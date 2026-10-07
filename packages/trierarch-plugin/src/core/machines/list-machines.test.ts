@@ -29,13 +29,17 @@ beforeEach(async () => {
   fleet.state.liveTokens.add('aeolus_ct_v1_plugin');
   await connections.save({ fleetId: FLEET_ID, shipId: SHIP_ID, name: 'trierarch-plugin', crewToken: 'aeolus_ct_v1_plugin', crewedAt: AT });
   fleet.state.ships.push(
-    { shipId: MACHINE, name: 'mac-studio', type: 'trierarch', status: 'crewed', lastSeenAt: SEEN },
-    { shipId: AGENT, name: 'implementer-1', type: 'implementer', status: 'crewed', lastSeenAt: SEEN },
-    { shipId: RETIRED, name: 'old-box', type: 'trierarch', status: 'retired', lastSeenAt: null },
+    { shipId: MACHINE, name: 'mac-studio', type: 'trierarch', status: 'crewed', lastSeenAt: SEEN, crewRequest: null },
+    { shipId: AGENT, name: 'implementer-1', type: 'implementer', status: 'crewed', lastSeenAt: SEEN, crewRequest: null },
+    { shipId: RETIRED, name: 'old-box', type: 'trierarch', status: 'retired', lastSeenAt: null, crewRequest: null },
   );
 });
 
-const list = () => createListMachines({ door: fleet.door, connections })(FLEET_ID);
+/** A trierarch is silent once its last seen is older than five minutes. */
+const SILENT_AFTER_MS = 5 * 60 * 1000;
+const NOW = new Date(SEEN.getTime() + SILENT_AFTER_MS);
+
+const list = (now = NOW) => createListMachines({ door: fleet.door, connections, clock: { now: () => now }, silentAfterMs: SILENT_AFTER_MS })(FLEET_ID);
 
 describe('listing the machines', () => {
   it("lists the fleet's active ships of type trierarch, each with its report and the details its trierarch reported", async () => {
@@ -43,7 +47,7 @@ describe('listing the machines', () => {
 
     await expect(list()).resolves.toEqual({
       isOk: true,
-      value: [{ shipId: MACHINE, name: 'mac-studio', status: 'crewed', lastSeenAt: SEEN, report: { state: 'working', note: '4 of 6 running', reportedAt: SEEN }, details: DETAILS }],
+      value: [{ shipId: MACHINE, name: 'mac-studio', status: 'crewed', lastSeenAt: SEEN, isSilent: false, report: { state: 'working', note: '4 of 6 running', reportedAt: SEEN }, details: DETAILS }],
     });
   });
 
@@ -55,6 +59,17 @@ describe('listing the machines', () => {
     fleet.state.reports.set(MACHINE, { state: 'working', note: null, reportedAt: SEEN, details: { mood: 'fine' } });
 
     await expect(list()).resolves.toMatchObject({ isOk: true, value: [{ shipId: MACHINE, report: { state: 'working' }, details: null }] });
+  });
+
+  it('flags a machine silent once its last seen is older than the threshold, and not at the threshold', async () => {
+    await expect(list(new Date(NOW.getTime() + 1))).resolves.toMatchObject({ isOk: true, value: [{ shipId: MACHINE, isSilent: true }] });
+    await expect(list(NOW)).resolves.toMatchObject({ isOk: true, value: [{ shipId: MACHINE, isSilent: false }] });
+  });
+
+  it('never flags a machine silent that no session crews yet', async () => {
+    fleet.state.ships.splice(0, 1, { shipId: MACHINE, name: 'mac-studio', type: 'trierarch', status: 'awaitingCrew', lastSeenAt: null, crewRequest: null });
+
+    await expect(list(new Date(NOW.getTime() + SILENT_AFTER_MS))).resolves.toMatchObject({ isOk: true, value: [{ shipId: MACHINE, isSilent: false }] });
   });
 
   it('is refused while the trierarch plugin is not connected to the fleet', async () => {

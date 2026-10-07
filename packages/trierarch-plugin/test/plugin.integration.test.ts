@@ -192,6 +192,7 @@ describe('a joined machine reporting', () => {
         name: 'mac-studio',
         status: 'crewed',
         lastSeenAt: true,
+        isSilent: false,
         report: { state: 'idle', note: '0 of 6 running', reportedAt: null },
         details: {
           harnesses: [{ harness: 'claude-code', options: { type: 'object', properties: {}, additionalProperties: false }, flags: ['--remote-control'] }],
@@ -203,6 +204,46 @@ describe('a joined machine reporting', () => {
         },
       },
     ]);
+  });
+});
+
+describe('assignment against a real fleet', () => {
+  it('two trierarch plugin passes race for one request, and exactly one assignment is stored', async () => {
+    const address = await connected();
+    const joined = joinedSchema.parse(await (await mutate(address, { procedure: 'machines.join', cookie, body: { name: 'mac-studio' } })).json()).result.data;
+    const machineShipId = z.templateLiteral(['shp_', z.string()]).parse(joined.shipId);
+    const { crewToken } = await createRestFleet({ fleetUrl, crewToken: '' }).registerSelf({ shipId: machineShipId, secret: joined.secret });
+    await createReportSelf({
+      fleet: createRestFleet({ fleetUrl, crewToken }),
+      processes: { list: () => Promise.resolve([]), stop: () => Promise.resolve() },
+      state: { load: () => Promise.resolve(EMPTY_STATE), save: () => Promise.resolve() },
+      setup: {
+        configuration: { caps: { ships: 4, running: 2 }, repositories: { 'aeolus-fleet': { path: '/srv/aeolus-fleet' } }, folders: {}, harnesses: { 'claude-code': { flags: [], options: {} } } },
+        version: '0.19.0',
+        adapterFlags: {},
+      },
+    })();
+    const scout = unwrap(await useCases.commissionShip(argo, { idempotencyKey: newKey(), name: 'scout', type: 'implementer' }));
+    unwrap(await useCases.requestCrew(argo, { shipId: scout.shipId, settings: { harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: {} } }));
+    // A second process on the same database, crewing the same ship with the kept crew token.
+    const second = await started();
+
+    const [first, other] = await Promise.all([apps[0]?.assignOnce() ?? Promise.resolve([]), second.app.assignOnce()]);
+
+    const assigned = [...first, ...other].reduce((sum, { outcome }) => sum + outcome.assigned, 0);
+    expect(assigned).toBe(1);
+    await expect(fleetDatabase.crewRequest.findUniqueOrThrow({ where: { shipId: scout.shipId } })).resolves.toMatchObject({ assignedTo: joined.shipId, reason: null });
+    await expect(fleetDatabase.event.count({ where: { type: 'CrewAssigned', shipId: scout.shipId } })).resolves.toBe(1);
+  });
+
+  it('writes the reason on a request no trierarch can take', async () => {
+    await connected();
+    const scout = unwrap(await useCases.commissionShip(argo, { idempotencyKey: newKey(), name: 'scout', type: 'implementer' }));
+    unwrap(await useCases.requestCrew(argo, { shipId: scout.shipId, settings: { harness: 'codex', workspace: { kind: 'folder', name: 'notes' }, options: {} } }));
+
+    await apps[0]?.assignOnce();
+
+    await expect(fleetDatabase.crewRequest.findUniqueOrThrow({ where: { shipId: scout.shipId } })).resolves.toMatchObject({ assignedTo: null, reason: 'no trierarch reports yet' });
   });
 });
 

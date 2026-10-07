@@ -8,6 +8,12 @@ export const FLEET_ID: FleetId = 'flt_01m3tb1zgr5h2ffee12xnch8sv';
 export const OTHER_FLEET_ID: FleetId = 'flt_01m3tb1zgr5h2ffee12xnch8zz';
 export const FLEET_URL = 'https://fleet.example.com';
 
+/** When a ship was commissioned, unless a test says otherwise. */
+const EPOCH = new Date(0);
+
+/** The trierarch another assigner claims for when the fake fleet loses a claim. */
+export const OTHER_ASSIGNEE: ShipId = 'shp_01m3tbfspe96yf1rnr4ank9h9z';
+
 /** The ship id the fake fleet gives the next ship it commissions. */
 export const COMMISSIONED_SHIP_ID: ShipId = 'shp_01m3tbfspe96yf1rnr4ank9h2b';
 
@@ -38,6 +44,14 @@ export function fakePluginFleet() {
     commissioned: new Array<CommissionedShip>(),
     ships: new Array<ListedShip>(),
     reports: new Map<ShipId, { state: string; note: string | null; reportedAt: Date; details: unknown }>(),
+    /** Each ship's crew request settings, by ship. */
+    settings: new Map<ShipId, unknown>(),
+    /** When each ship was commissioned; the epoch when not set. */
+    commissionedAt: new Map<ShipId, Date>(),
+    /** Set to lose the next claims: another assigner wins each first, as in a race. */
+    isLosingClaims: false,
+    /** The reasons written, in order, by ship. */
+    explained: new Array<{ shipId: ShipId; reason: string | null }>(),
   };
   const unavailable = () => Promise.resolve(err({ code: 'UNAVAILABLE', message: 'The fleet did not answer' }));
   const released = () => Promise.resolve(err({ code: 'LEASE_ENDED', message: 'This ship was released; this session no longer crews it.' }));
@@ -67,10 +81,20 @@ export function fakePluginFleet() {
         return Promise.resolve(err({ code: 'FORBIDDEN', message: 'Needs fleet:read' }));
       }
       if (shipId === SHIP_ID) {
-        return Promise.resolve(ok({ status: 'crewed', scopes: [...state.scopes], report: null }));
+        return Promise.resolve(ok({ status: 'crewed', scopes: [...state.scopes], commissionedAt: EPOCH, report: null, crewSettings: null }));
       }
       const ship = state.ships.find((each) => each.shipId === shipId);
-      return Promise.resolve(ship ? ok({ status: ship.status, scopes: ['messages:send', 'messages:receive'], report: state.reports.get(shipId) ?? null }) : err({ code: 'NOT_FOUND', message: 'No such ship' }));
+      return Promise.resolve(
+        ship
+          ? ok({
+              status: ship.status,
+              scopes: ['messages:send', 'messages:receive'],
+              commissionedAt: state.commissionedAt.get(shipId) ?? EPOCH,
+              report: state.reports.get(shipId) ?? null,
+              crewSettings: ship.crewRequest === null ? null : (state.settings.get(shipId) ?? {}),
+            })
+          : err({ code: 'NOT_FOUND', message: 'No such ship' }),
+      );
     },
     deregister: (crewToken) => {
       state.liveTokens.delete(crewToken);
@@ -89,7 +113,7 @@ export function fakePluginFleet() {
         return Promise.resolve(err({ code: 'CONFLICT', message: `An active ship is already named ${ship.name}` }));
       }
       state.commissioned.push({ ...ship });
-      state.ships.push({ shipId: COMMISSIONED_SHIP_ID, name: ship.name, type: ship.type, status: 'awaitingCrew', lastSeenAt: null });
+      state.ships.push({ shipId: COMMISSIONED_SHIP_ID, name: ship.name, type: ship.type, status: 'awaitingCrew', lastSeenAt: null, crewRequest: null });
       const secret = 'aeolus_sk_v1_machine';
       return Promise.resolve(
         ok({
@@ -104,7 +128,39 @@ export function fakePluginFleet() {
       if (!state.isAnswering) {
         return unavailable();
       }
-      return state.liveTokens.has(crewToken) ? Promise.resolve(ok(state.ships.map((ship) => ({ ...ship })))) : released();
+      return state.liveTokens.has(crewToken) ? Promise.resolve(ok(state.ships.map((ship) => ({ ...ship, crewRequest: ship.crewRequest && { ...ship.crewRequest } })))) : released();
+    },
+    assignCrew: (crewToken, { shipId, trierarchShipId }) => {
+      if (!state.liveTokens.has(crewToken)) {
+        return released();
+      }
+      const ship = state.ships.find((each) => each.shipId === shipId);
+      if (ship?.crewRequest == null) {
+        return Promise.resolve(err({ code: 'NOT_FOUND', message: 'No crew request' }));
+      }
+      if (state.isLosingClaims && ship.crewRequest.assignedTo === null) {
+        ship.crewRequest = { ...ship.crewRequest, assignedTo: OTHER_ASSIGNEE, reason: null };
+      }
+      if (ship.crewRequest.assignedTo !== null) {
+        return Promise.resolve(err({ code: 'CONFLICT', message: 'The crew request is assigned already' }));
+      }
+      if (ship.status === 'crewed') {
+        return Promise.resolve(err({ code: 'CONFLICT', message: 'The ship is crewed' }));
+      }
+      ship.crewRequest = { ...ship.crewRequest, assignedTo: trierarchShipId, reason: null };
+      return Promise.resolve(ok(undefined));
+    },
+    explainCrewRequest: (crewToken, { shipId, reason }) => {
+      if (!state.liveTokens.has(crewToken)) {
+        return released();
+      }
+      const ship = state.ships.find((each) => each.shipId === shipId);
+      if (ship?.crewRequest == null) {
+        return Promise.resolve(err({ code: 'NOT_FOUND', message: 'No crew request' }));
+      }
+      ship.crewRequest = { ...ship.crewRequest, reason };
+      state.explained.push({ shipId, reason });
+      return Promise.resolve(ok(undefined));
     },
   };
   return { state, door };

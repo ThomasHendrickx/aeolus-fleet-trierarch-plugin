@@ -61,8 +61,14 @@ export function createRestFleetDoor(fleetUrl: string): FleetDoor {
       if (!read.isOk) {
         return read;
       }
-      const { status, scopes, report } = read.value;
-      return ok({ status, scopes, report: report && { state: report.state, note: report.note, reportedAt: new Date(report.reportedAt), details: report.details } });
+      const { status, scopes, commissionedAt, report, crewRequest } = read.value;
+      return ok({
+        status,
+        scopes,
+        commissionedAt: new Date(commissionedAt),
+        report: report && { state: report.state, note: report.note, reportedAt: new Date(report.reportedAt), details: report.details },
+        crewSettings: crewRequest?.settings ?? null,
+      });
     },
     deregister: async (crewToken) => {
       const ended = await call(fleetUrl, { path: '/ship/deregister', method: 'POST', crewToken, body: {}, answers: z.unknown() });
@@ -82,7 +88,26 @@ export function createRestFleetDoor(fleetUrl: string): FleetDoor {
     },
     listShips: async (crewToken) => {
       const listed = await call(fleetUrl, { path: '/fleet/list', method: 'GET', crewToken, answers: fleetListOutputSchema });
-      return listed.isOk ? ok(listed.value.map(({ id, name, type, status, lastSeenAt }) => ({ shipId: id, name, type, status, lastSeenAt: dateOf(lastSeenAt) }))) : listed;
+      return listed.isOk
+        ? ok(
+            listed.value.map(({ id, name, type, status, lastSeenAt, crewRequest }) => ({
+              shipId: id,
+              name,
+              type,
+              status,
+              lastSeenAt: dateOf(lastSeenAt),
+              crewRequest: crewRequest && { requestedAt: new Date(crewRequest.requestedAt), assignedTo: crewRequest.assignedTo?.id ?? null, reason: crewRequest.reason },
+            })),
+          )
+        : listed;
+    },
+    assignCrew: async (crewToken, claim) => {
+      const claimed = await call(fleetUrl, { path: '/fleet/assignCrew', method: 'POST', crewToken, body: claim, answers: z.unknown() });
+      return claimed.isOk ? ok(undefined) : claimed;
+    },
+    explainCrewRequest: async (crewToken, explanation) => {
+      const explained = await call(fleetUrl, { path: '/fleet/explainCrewRequest', method: 'POST', crewToken, body: explanation, answers: z.unknown() });
+      return explained.isOk ? ok(undefined) : explained;
     },
   };
 }
