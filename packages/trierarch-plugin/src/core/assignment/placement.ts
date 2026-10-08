@@ -45,7 +45,17 @@ function lineOf(issue: Issue, prefix: string[] = []): string {
   return path === '' ? issue.message : `${path}: ${issue.message}`;
 }
 
-/** Why the harness's options schema refuses the options, or undefined when it takes them. A schema it cannot read refuses them all. */
+/** The options the harness's schema declares, by name: an option it does not declare is ignored (#366). */
+function declaredOptions(schema: TrierarchReportDetails['harnesses'][number]['options']): readonly string[] {
+  const { properties } = schema;
+  return typeof properties === 'object' && properties !== null && !Array.isArray(properties) ? Object.keys(properties) : [];
+}
+
+/**
+ * Why the harness's options schema refuses the options, or undefined when it
+ * takes them. Only the options it declares are checked; the rest are ignored
+ * (#366). A schema it cannot read refuses them all.
+ */
 function optionsRefusal(schema: TrierarchReportDetails['harnesses'][number]['options'], options: CrewSettings['options']): string | undefined {
   let checked: z.ZodType;
   try {
@@ -53,7 +63,8 @@ function optionsRefusal(schema: TrierarchReportDetails['harnesses'][number]['opt
   } catch {
     return 'options: the trierarch reports an options schema that cannot be read';
   }
-  const result = checked.safeParse(options);
+  const declared = declaredOptions(schema);
+  const result = checked.safeParse(Object.fromEntries(Object.entries(options).filter(([name]) => declared.includes(name))));
   const [issue] = result.success ? [] : result.error.issues;
   return issue === undefined ? undefined : lineOf(issue, ['options']);
 }
