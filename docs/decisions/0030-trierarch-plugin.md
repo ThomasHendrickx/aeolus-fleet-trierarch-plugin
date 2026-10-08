@@ -5,7 +5,8 @@
 - Machines join through it: it commissions each trierarch's ship (with `crew:run`) and gives the operator its starting prompt for `aeolus-trierarch init`. It labels each machine from what its trierarch reports.
 - It serves unassigned crew requests (0029) oldest first and assigns each to one trierarch by optimistic claim: of those that fit (repository, harness, model) and have room, the one with the most room as a percentage, then the oldest. Strategies to change this come later. The operator does not pick.
 - A request no trierarch can take gets the reason written on it, shown in the operator's needs-crew to-do.
-- A machine is silent when its trierarch's last seen is older than a threshold, flagged on the machines page and in needs attention. Nothing is reassigned automatically.
+- An assignment is final once its crew is final (0029): the session showed activity. A request given back before then is unassigned, and the trierarch plugin places it again as any unassigned request, leaving out every trierarch that gave it back; when none is left, it writes the reason.
+- A machine is silent when its trierarch's last seen is older than a threshold, flagged on the machines page and in needs attention. A final assignment is never moved.
 - The console reads crew requests and their status from the fleet, and the trierarchs (capacity, what they offer) from the trierarch plugin.
 
 Why: the fleet holds the declared state; one plugin schedules by shared-state optimistic claiming, never bidding, and each machine only runs what it is given. The trierarch plugin will grow, so it gets its own process and package from the start.
