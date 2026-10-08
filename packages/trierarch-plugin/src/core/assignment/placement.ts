@@ -71,7 +71,7 @@ function roomShare(trierarch: PlacementTrierarch): number {
   return (trierarch.details.caps.ships - trierarch.assigned) / trierarch.details.caps.ships;
 }
 
-/** The trierarch to claim for the settings, or why none fits: machine labels, harness, workspace, options, then room. */
+/** The trierarch to claim for the settings, or why none fits: machine labels, harness (the named one, or each trierarch's default), workspace, options, then room. */
 function fit(settings: CrewSettings, trierarchs: readonly PlacementTrierarch[]): { trierarch: PlacementTrierarch } | Misfit {
   if (trierarchs.length === 0) {
     return { reason: 'no trierarch reports yet' };
@@ -82,22 +82,25 @@ function fit(settings: CrewSettings, trierarchs: readonly PlacementTrierarch[]):
     // Allowed, not refused (#102, Q8): the request waits until a machine carries them all.
     return { reason: NO_MACHINE_MATCHES_REASON };
   }
+  // Without a harness, each trierarch crews with its default: the first it reports (#343).
+  const named = settings.harness;
+  const harnessWords = named ?? 'its default harness';
   const offering = matching.flatMap((trierarch) => {
-    const harness = trierarch.details.harnesses.find((each) => each.harness === settings.harness);
+    const harness = named === undefined ? trierarch.details.harnesses[0] : trierarch.details.harnesses.find((each) => each.harness === named);
     return harness === undefined ? [] : [{ trierarch, harness }];
   });
   if (offering.length === 0) {
-    return { reason: `no trierarch offers harness ${settings.harness}`, field: 'harness' };
+    return { reason: named === undefined ? 'no trierarch offers a harness' : `no trierarch offers harness ${named}`, field: 'harness' };
   }
   const withWorkspace = offering.filter(({ trierarch }) => offersWorkspace(trierarch.details, settings.workspace));
   if (withWorkspace.length === 0) {
-    return { reason: `no trierarch offering ${settings.harness} has ${workspaceName(settings.workspace)}`, field: 'workspace' };
+    return { reason: `no trierarch offering ${harnessWords} has ${workspaceName(settings.workspace)}`, field: 'workspace' };
   }
   const refusals = withWorkspace.map(({ trierarch, harness }) => ({ trierarch, refusal: optionsRefusal(harness.options, settings.options) }));
   const taking = refusals.filter(({ refusal }) => refusal === undefined).map(({ trierarch }) => trierarch);
   const [firstRefusal] = refusals;
   if (taking.length === 0) {
-    return { reason: `no trierarch takes these options for ${settings.harness}: ${firstRefusal?.refusal ?? ''}`, field: 'options' };
+    return { reason: `no trierarch takes these options for ${harnessWords}: ${firstRefusal?.refusal ?? ''}`, field: 'options' };
   }
   const [best] = taking
     .filter((trierarch) => trierarch.assigned < trierarch.details.caps.ships)
