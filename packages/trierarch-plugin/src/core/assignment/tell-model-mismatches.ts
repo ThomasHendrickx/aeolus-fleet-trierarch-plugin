@@ -7,6 +7,9 @@ import { ok, type Result } from '../shared/result.js';
 
 export type TellModelMismatches = (fleetId: FleetId) => Promise<Result<{ told: number }, DomainError<'NOT_CONNECTED' | 'FLEET_UNAVAILABLE'>>>;
 
+/** The refusal of a repeated idempotency key with a different request: the notice was told before. */
+const HELD_ALREADY = 'CONFLICT';
+
 /** The model a crew request's settings ask for, when they name one; any other shape names none. */
 const requestedModelSchema = z.object({ options: z.object({ model: z.string() }) });
 
@@ -52,10 +55,11 @@ export function createTellModelMismatches(deps: { door: FleetDoor; connections: 
       if (requested.success && requested.data.options.model !== ship.model.id) {
         const text = `Ship ${ship.name} runs ${ship.model.id}, but its crew request asks for ${requested.data.options.model}. The trierarch plugin changes nothing.`;
         const sent = await deps.door.tellArgo(crew.crewToken, { text, idempotencyKey: key });
-        if (!sent.isOk) {
+        // CONFLICT: the fleet holds a notice under this key already, sent by an earlier version stating another model.
+        if (!sent.isOk && sent.error.code !== HELD_ALREADY) {
           return unavailable(sent.error);
         }
-        told += 1;
+        told += sent.isOk ? 1 : 0;
       }
       deps.checked.add(key);
     }
