@@ -110,6 +110,14 @@ describe("the trierarch plugin's model check", () => {
     expect(fleet.state.told).toHaveLength(1);
   });
 
+  it('counts a notice the fleet holds under its key already, from an earlier version of the trierarch plugin, as told', async () => {
+    aCrewedShip();
+    fleet.state.told.push({ text: 'told by an earlier version', idempotencyKey: `trierarch-plugin:model-mismatch:${SCOUT}:1:claude-sonnet-5-5` });
+
+    await expect(tell()).resolves.toEqual({ isOk: true, value: { told: 0 } });
+    expect(fleet.state.told).toHaveLength(1);
+  });
+
   it('tells argo again for a new settings version', async () => {
     aCrewedShip();
     await tell();
