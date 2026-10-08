@@ -345,6 +345,25 @@ describe('telling argo (#365)', () => {
   });
 });
 
+describe('a request given back (#382)', () => {
+  it("lists the trierarchs that gave it back, so placement leaves them out", async () => {
+    const door = createRestFleetDoor(fleetUrl);
+    const registered = await door.register({ shipId, secret });
+    const crewToken = registered.isOk ? registered.value.crewToken : '';
+    const machine = unwrap(await useCases.commissionShip(argo, { idempotencyKey: newKey(), name: 'mac-studio', type: 'trierarch', fleetScopes: ['crew:run'] }));
+    const scout = unwrap(await useCases.commissionShip(argo, { idempotencyKey: newKey(), name: 'scout', type: 'implementer' }));
+    unwrap(await useCases.requestCrew(argo, { shipId: scout.shipId, settings: { workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: {} } }));
+    await door.assignCrew(crewToken, { shipId: scout.shipId, trierarchShipId: machine.shipId });
+    const machineCaller = { fleetId: argo.fleetId, shipId: machine.shipId, kind: 'agent' as const, scopes: ['messages:send' as const, 'messages:receive' as const, 'crew:run' as const] };
+    unwrap(await useCases.giveBackCrewRequest(machineCaller, { shipId: scout.shipId, settingsVersion: 1, reason: 'mac-studio: claude-code 2.1.293 refused claude-opus-5-5' }));
+
+    const listed = await door.listShips(crewToken);
+
+    const request = listed.isOk ? listed.value.find((ship) => ship.shipId === scout.shipId)?.crewRequest : undefined;
+    expect(request).toMatchObject({ assignedTo: null, givenBack: [{ trierarchShipId: machine.shipId, reason: 'mac-studio: claude-code 2.1.293 refused claude-opus-5-5' }] });
+  });
+});
+
 describe('the installation (decision 0021)', () => {
   const TOKEN = 'an-installation-token-of-at-least-32-characters';
 
