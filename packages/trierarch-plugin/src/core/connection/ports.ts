@@ -27,8 +27,14 @@ export interface ListedShip {
   status: 'awaitingCrew' | 'crewed' | 'retired';
   /** When its session last called the fleet; null while no session crews it. */
   lastSeenAt: Date | null;
-  /** Its crew request, without its settings; null when it holds none. */
-  crewRequest: { requestedAt: Date; assignedTo: ShipId | null; reason: string | null } | null;
+  /** The model its crew last stated (decision 0018); null until one states any. */
+  model: { id: string; statedAt: Date } | null;
+  /**
+   * Its crew request, without its settings: their version, and when the
+   * session its trierarch runs now started, or null while none runs; null
+   * when it holds none.
+   */
+  crewRequest: { settingsVersion: number; requestedAt: Date; assignedTo: ShipId | null; reason: string | null; startedAt: Date | null } | null;
   /** The label values it carries, every owner's, with their labels (#102). */
   labels: { labelId: LabelId; valueId: LabelValueId }[];
 }
@@ -87,6 +93,8 @@ export interface FleetDoor {
   unassignLabel(crewToken: string, assignment: { shipId: ShipId; valueId: LabelValueId }): Promise<Result<undefined, FleetRefusal>>;
   /** Writes why no trierarch can take a ship's unassigned crew request (crew:assign). */
   explainCrewRequest(crewToken: string, explanation: { shipId: ShipId; reason: string | null }): Promise<Result<undefined, FleetRefusal>>;
+  /** Sends argo, the operator, plain text, stored once under its idempotency key. */
+  tellArgo(crewToken: string, notice: { text: string; idempotencyKey: string }): Promise<Result<undefined, FleetRefusal>>;
 }
 
 /** The crew token the trierarch plugin holds for its ship in a fleet, and when it got it. */

@@ -33,7 +33,7 @@ beforeEach(async () => {
 });
 
 function aTrierarch(shipId: ShipId, lastSeenAt = RECENTLY): void {
-  fleet.state.ships.push({ shipId, name: 'trierarch-mac', type: 'trierarch', status: 'crewed', lastSeenAt, crewRequest: null, labels: [] });
+  fleet.state.ships.push({ shipId, name: 'trierarch-mac', type: 'trierarch', status: 'crewed', lastSeenAt, model: null, crewRequest: null, labels: [] });
   fleet.state.reports.set(shipId, { state: 'idle', note: null, reportedAt: lastSeenAt, details: DETAILS });
 }
 

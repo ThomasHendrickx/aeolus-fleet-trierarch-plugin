@@ -9,6 +9,7 @@ import { z } from 'zod';
 
 import type { FleetDoor, FleetRefusal } from '../../core/connection/ports.js';
 import { err, ok, type Result } from '../../core/shared/result.js';
+import { runningVersion } from '../http/version.js';
 
 const refusalSchema = z.object({ code: z.string(), message: z.string() });
 
@@ -17,6 +18,12 @@ const LOCATION = { kind: 'SERVER' } as const;
 
 /** The harness the trierarch plugin states when it registers its ship: it is software, not a model. */
 const HARNESS = 'aeolus-trierarch-plugin';
+
+/** The model the trierarch plugin states on every send: it is software, so it names its package and the version it runs. */
+const MODEL = `@aeolus-fleet/trierarch-plugin@${runningVersion()}`;
+
+/** The operator ship's name (decision 0012). */
+const OPERATOR_SHIP_NAME = 'argo';
 
 async function call<T>(fleetUrl: string, request: { path: string; method: 'GET' | 'POST'; crewToken?: string; body?: unknown; answers: z.ZodType<T> }): Promise<Result<T, FleetRefusal>> {
   const headers: Record<string, string> = {};
@@ -90,13 +97,20 @@ export function createRestFleetDoor(fleetUrl: string): FleetDoor {
       const listed = await call(fleetUrl, { path: '/fleet/list', method: 'POST', crewToken, body: {}, answers: fleetListOutputSchema });
       return listed.isOk
         ? ok(
-            listed.value.map(({ id, name, type, status, lastSeenAt, crewRequest, labels }) => ({
+            listed.value.map(({ id, name, type, status, lastSeenAt, model, crewRequest, labels }) => ({
               shipId: id,
               name,
               type,
               status,
               lastSeenAt: dateOf(lastSeenAt),
-              crewRequest: crewRequest && { requestedAt: new Date(crewRequest.requestedAt), assignedTo: crewRequest.assignedTo?.id ?? null, reason: crewRequest.reason },
+              model: model && { id: model.id, statedAt: new Date(model.statedAt) },
+              crewRequest: crewRequest && {
+                settingsVersion: crewRequest.settingsVersion,
+                requestedAt: new Date(crewRequest.requestedAt),
+                assignedTo: crewRequest.assignedTo?.id ?? null,
+                reason: crewRequest.reason,
+                startedAt: dateOf(crewRequest.startedAt),
+              },
               labels: labels.map(({ labelId, valueId }) => ({ labelId, valueId })),
             })),
           )
@@ -127,6 +141,16 @@ export function createRestFleetDoor(fleetUrl: string): FleetDoor {
     explainCrewRequest: async (crewToken, explanation) => {
       const explained = await call(fleetUrl, { path: '/fleet/explainCrewRequest', method: 'POST', crewToken, body: explanation, answers: z.unknown() });
       return explained.isOk ? ok(undefined) : explained;
+    },
+    tellArgo: async (crewToken, { text, idempotencyKey }) => {
+      const sent = await call(fleetUrl, {
+        path: '/ship/send',
+        method: 'POST',
+        crewToken,
+        body: { selector: { kind: 'ship', name: OPERATOR_SHIP_NAME }, payload: text, contentType: 'text/plain', model: MODEL, idempotencyKey },
+        answers: z.unknown(),
+      });
+      return sent.isOk ? ok(undefined) : sent;
     },
   };
 }

@@ -23,6 +23,7 @@ import { createSetFleetEnabled } from './core/installation/set-fleet-enabled.js'
 import { createAssignCrews, type AssignOutcome } from './core/assignment/assign-crews.js';
 import { createLabelMachines } from './core/machines/label-machines.js';
 import { createCheckCrewSettings } from './core/assignment/check-crew-settings.js';
+import { createTellModelMismatches } from './core/assignment/tell-model-mismatches.js';
 import { createJoinMachine } from './core/machines/join-machine.js';
 import { createListMachines } from './core/machines/list-machines.js';
 import { createAuthenticateOperator } from './core/operator/authenticate-operator.js';
@@ -140,6 +141,17 @@ export function createTrierarchPluginApp(options: {
       server.log.info({ fleet: fleetId, ...outcome }, 'machine labels');
     }
   };
+  // What this process compared already; the fleet keeps each notice once across restarts.
+  const tellModelMismatches = createTellModelMismatches({ door, connections, checked: new Set() });
+  /** Tells argo of the crewed ships whose stated model differs from their request's (#365); a refusal is logged and the pass goes on. */
+  const tellOnce = async (fleetId: FleetId): Promise<void> => {
+    const told = await tellModelMismatches(fleetId);
+    if (!told.isOk) {
+      server.log.warn({ fleet: fleetId, refusal: told.error }, 'model check refused; the next pass tries again');
+    } else if (told.value.told > 0) {
+      server.log.info({ fleet: fleetId, ...told.value }, 'model check told argo');
+    }
+  };
   const checkCrewSettings = createCheckCrewSettings({ door, connections, clock, silentAfterMs });
   const assignOnce = async (): Promise<{ fleetId: FleetId; outcome: AssignOutcome }[]> => {
     const done: { fleetId: FleetId; outcome: AssignOutcome }[] = [];
@@ -149,6 +161,7 @@ export function createTrierarchPluginApp(options: {
       }
       await labelOnce(crew.fleetId);
       const assigned = await assignCrews(crew.fleetId);
+      await tellOnce(crew.fleetId);
       if (assigned.isOk) {
         done.push({ fleetId: crew.fleetId, outcome: assigned.value });
       } else {
