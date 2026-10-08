@@ -153,6 +153,14 @@ describe('placement (docs/trierarch.md, Assignment)', () => {
     expect(place([aRequest(SCOUT)], [aTrierarch(MAC, { labelValueIds: [MACOS] })])).toEqual([{ kind: 'assign', shipId: SCOUT, trierarchShipId: MAC }]);
   });
 
+  it('assigns a request without a harness to a trierarch whose default harness, the first it reports, takes its options (#343)', () => {
+    const codexFirst = details({ harnesses: [{ harness: 'codex', options: { type: 'object', properties: {}, additionalProperties: false }, flags: [] }, ...details().harnesses] });
+    const request = aRequest(SCOUT);
+    const withoutHarness = { ...request, settings: { workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: { model: 'opus' } } };
+
+    expect(place([withoutHarness], [aTrierarch(MAC, { details: codexFirst }), aTrierarch(LINUX, { commissionedAt: LATER })])).toEqual([{ kind: 'assign', shipId: SCOUT, trierarchShipId: LINUX }]);
+  });
+
   it('does not write a reason again that still holds', () => {
     expect(place([aRequest(SCOUT, { settings: { harness: 'codex' }, reason: 'no trierarch offers harness codex' })], [aTrierarch(MAC)])).toEqual([]);
   });
@@ -191,6 +199,23 @@ describe('checking settings before a request (#245)', () => {
 
   it('says a request whose machine labels no machine carries would wait, as Q8 allows it (#102)', () => {
     expect(checkPlacement(settings({ machineLabels: [LINUX_OS] }), [aTrierarch(MAC, { labelValueIds: [MACOS] })])).toEqual({ kind: 'noRoom', reason: 'no machine matches its labels' });
+  });
+
+  it('checks the options of settings without a harness against each trierarch\'s default harness, naming the field (#343)', () => {
+    const withoutHarness = { workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: { model: 'haiku' } };
+
+    expect(checkPlacement(withoutHarness, [aTrierarch(MAC)])).toEqual({
+      kind: 'refused',
+      field: 'options',
+      reason: 'no trierarch takes these options for its default harness: options.model: Invalid option: expected one of "opus"|"sonnet"',
+    });
+    expect(checkPlacement({ ...withoutHarness, options: { model: 'sonnet' } }, [aTrierarch(MAC)])).toEqual({ kind: 'fits' });
+  });
+
+  it('refuses a request without a harness where no trierarch offers any harness, naming the field (#343)', () => {
+    const withoutHarness = { workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: {} };
+
+    expect(checkPlacement(withoutHarness, [aTrierarch(MAC, { details: details({ harnesses: [] }) })])).toEqual({ kind: 'refused', field: 'harness', reason: 'no trierarch offers a harness' });
   });
 
   it('says there is no room while no trierarch reports yet', () => {
