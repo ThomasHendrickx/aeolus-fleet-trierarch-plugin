@@ -115,15 +115,13 @@ describe('placement (docs/trierarch.md, Assignment)', () => {
       settings: { options: { model: 'haiku' } },
       reason: 'no trierarch takes these options for claude-code: options.model: Invalid option: expected one of "opus"|"sonnet"',
     },
-    {
-      label: 'none takes an unknown option',
-      trierarchs: [aTrierarch(MAC)],
-      settings: { options: { effort: 'max' } },
-      reason: 'no trierarch takes these options for claude-code: options: Unrecognized key: "effort"',
-    },
     { label: 'none has room', trierarchs: [aTrierarch(MAC, { assigned: 4 }), aTrierarch(LINUX, { assigned: 4 })], settings: {}, reason: 'no trierarch with room: all 2 that fit are full' },
   ])('leaves a request unassigned with the reason when $label', ({ trierarchs, settings, reason }) => {
     expect(place([aRequest(SCOUT, { settings })], trierarchs)).toEqual([{ kind: 'explain', shipId: SCOUT, reason }]);
+  });
+
+  it('assigns a request with an option its harness does not declare, ignoring that option (#366)', () => {
+    expect(place([aRequest(SCOUT, { settings: { options: { model: 'opus', effort: 'max' } } })], [aTrierarch(MAC)])).toEqual([{ kind: 'assign', shipId: SCOUT, trierarchShipId: MAC }]);
   });
 
   it('leaves a request whose settings are not crew settings unassigned with the reason', () => {
@@ -154,7 +152,7 @@ describe('placement (docs/trierarch.md, Assignment)', () => {
   });
 
   it('assigns a request without a harness to a trierarch whose default harness, the first it reports, takes its options (#343)', () => {
-    const codexFirst = details({ harnesses: [{ harness: 'codex', options: { type: 'object', properties: {}, additionalProperties: false }, flags: [] }, ...details().harnesses] });
+    const codexFirst = details({ harnesses: [{ harness: 'codex', options: { type: 'object', properties: { model: { enum: ['gpt-6'] } }, additionalProperties: false }, flags: [] }, ...details().harnesses] });
     const request = aRequest(SCOUT);
     const withoutHarness = { ...request, settings: { workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: { model: 'opus' } } };
 
@@ -183,6 +181,10 @@ describe('checking settings before a request (#245)', () => {
       field: 'workspace',
       reason: 'no trierarch offering claude-code has folder website',
     });
+  });
+
+  it('fits settings with an option no harness declares: it is ignored (#366)', () => {
+    expect(checkPlacement(settings({ options: { model: 'opus', effort: 'max' } }), [aTrierarch(MAC)])).toEqual({ kind: 'fits' });
   });
 
   it('refuses options no trierarch takes, naming the field', () => {
