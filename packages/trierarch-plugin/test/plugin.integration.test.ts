@@ -13,6 +13,8 @@ import { unwrap } from '../../core/test/support/result.js';
 import { createRestFleet } from '../../trierarch/src/adapters/rest-fleet.js';
 import { EMPTY_STATE } from '../../trierarch/src/core/entry.js';
 import { createReportSelf } from '../../trierarch/src/core/report-self.js';
+import { createRestFleetDoor } from '../src/adapters/fleet/rest-fleet-door.js';
+import { runningVersion } from '../src/adapters/http/version.js';
 import { machineOutputSchema } from '../src/adapters/trpc/router.js';
 import { createTrierarchPluginApp, type TrierarchPluginApp } from '../src/app.js';
 import { connectPlugin, mutate, query, signIn } from './support/connection.js';
@@ -322,6 +324,24 @@ describe('checking crew settings before a request (#245)', () => {
 
     expect(fits).toEqual({ kind: 'fits' });
     expect(refused).toMatchObject({ kind: 'refused', field: 'harness' });
+  });
+});
+
+describe('telling argo (#365)', () => {
+  it('tells argo once per idempotency key, as its own ship stating the trierarch plugin as its model', async () => {
+    const door = createRestFleetDoor(fleetUrl);
+    const registered = await door.register({ shipId, secret });
+    const crewToken = registered.isOk ? registered.value.crewToken : '';
+    const notice = { text: 'Ship scout runs claude-sonnet-5-5, but its crew request asks for claude-opus-5-5.', idempotencyKey: 'trierarch-plugin:test' };
+
+    await expect(door.tellArgo(crewToken, notice)).resolves.toEqual({ isOk: true, value: undefined });
+    await expect(door.tellArgo(crewToken, notice)).resolves.toEqual({ isOk: true, value: undefined });
+
+    const inbox = await useCases.readInbox(argo, { filter: 'all' });
+    expect(inbox.map((entry) => ({ payload: entry.message.payload, sender: entry.message.sender.name }))).toEqual([{ payload: notice.text, sender: 'trierarch-plugin' }]);
+    const listed = await door.listShips(crewToken);
+    const self = listed.isOk ? listed.value.find((ship) => ship.shipId === shipId) : undefined;
+    expect(self?.model?.id).toBe(`@aeolus-fleet/trierarch-plugin@${runningVersion()}`);
   });
 });
 

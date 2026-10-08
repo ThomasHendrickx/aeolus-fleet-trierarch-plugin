@@ -54,7 +54,7 @@ describe('checking crew settings against the fleet’s trierarchs (#245)', () =>
 
   it('says there is no room once the requests assigned to the trierarch fill it', async () => {
     aTrierarch(MAC);
-    fleet.state.ships.push({ shipId: SCOUT, name: 'scout', type: 'implementer', status: 'crewed', lastSeenAt: null, crewRequest: { requestedAt: AT, assignedTo: MAC, reason: null }, labels: [] });
+    fleet.state.ships.push({ shipId: SCOUT, name: 'scout', type: 'implementer', status: 'crewed', lastSeenAt: null, model: null, crewRequest: { settingsVersion: 1, requestedAt: AT, assignedTo: MAC, reason: null, startedAt: null }, labels: [] });
 
     await expect(check(SETTINGS)).resolves.toMatchObject({ isOk: true, value: { kind: 'noRoom' } });
   });

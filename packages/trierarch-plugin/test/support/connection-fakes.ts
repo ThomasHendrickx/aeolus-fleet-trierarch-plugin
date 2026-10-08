@@ -29,7 +29,7 @@ export interface CommissionedShip {
  * A fleet that knows the trierarch plugin's ship: its secret claims it once,
  * its crew tokens work while their lease holds, and it has the scopes it was
  * given. It commissions ships by name, refusing a name an active ship holds,
- * and holds each ship's last report.
+ * holds each ship's last report, and tells argo once per idempotency key.
  */
 export function fakePluginFleet() {
   const state = {
@@ -56,6 +56,8 @@ export function fakePluginFleet() {
     labels: new Array<{ labelId: LabelId; key: string; values: { valueId: LabelValueId; value: string }[]; ownerShipId: ShipId }>(),
     /** Label writes the trierarch plugin made, in order. */
     labelWrites: new Array<string>(),
+    /** What argo was told, once per idempotency key, in order. */
+    told: new Array<{ text: string; idempotencyKey: string }>(),
   };
   let nextLabel = 0;
   const labelId = (): LabelId => `lbl_01m3tbfspe96yf1rnr4ank9${String(nextLabel).padStart(3, '0')}`;
@@ -121,7 +123,7 @@ export function fakePluginFleet() {
         return Promise.resolve(err({ code: 'CONFLICT', message: `An active ship is already named ${ship.name}` }));
       }
       state.commissioned.push({ ...ship });
-      state.ships.push({ shipId: COMMISSIONED_SHIP_ID, name: ship.name, type: ship.type, status: 'awaitingCrew', lastSeenAt: null, crewRequest: null, labels: [] });
+      state.ships.push({ shipId: COMMISSIONED_SHIP_ID, name: ship.name, type: ship.type, status: 'awaitingCrew', lastSeenAt: null, model: null, crewRequest: null, labels: [] });
       const secret = 'aeolus_sk_v1_machine';
       return Promise.resolve(
         ok({
@@ -226,6 +228,22 @@ export function fakePluginFleet() {
       }
       ship.crewRequest = { ...ship.crewRequest, reason };
       state.explained.push({ shipId, reason });
+      return Promise.resolve(ok(undefined));
+    },
+    tellArgo: (crewToken, notice) => {
+      if (!state.isAnswering) {
+        return unavailable();
+      }
+      if (!state.liveTokens.has(crewToken)) {
+        return released();
+      }
+      const earlier = state.told.find((each) => each.idempotencyKey === notice.idempotencyKey);
+      if (earlier !== undefined && earlier.text !== notice.text) {
+        return Promise.resolve(err({ code: 'CONFLICT', message: 'The idempotency key was used for a different request' }));
+      }
+      if (earlier === undefined) {
+        state.told.push({ ...notice });
+      }
       return Promise.resolve(ok(undefined));
     },
   };

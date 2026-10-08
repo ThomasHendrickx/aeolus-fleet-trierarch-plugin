@@ -36,7 +36,7 @@ beforeEach(async () => {
 
 /** A trierarch that reported the machine it runs on, or none. */
 function aTrierarch(shipId: ShipId, machine?: TrierarchReportDetails['machine']): void {
-  fleet.state.ships.push({ shipId, name: shipId === MAC ? 'trierarch-mac' : 'trierarch-linux', type: 'trierarch', status: 'crewed', lastSeenAt: AT, crewRequest: null, labels: [] });
+  fleet.state.ships.push({ shipId, name: shipId === MAC ? 'trierarch-mac' : 'trierarch-linux', type: 'trierarch', status: 'crewed', lastSeenAt: AT, model: null, crewRequest: null, labels: [] });
   fleet.state.reports.set(shipId, { state: 'idle', note: null, reportedAt: AT, details: details(machine) });
 }
 
@@ -97,7 +97,7 @@ describe('machine labels (#102; docs/trierarch.md, Machine labels)', () => {
   });
 
   it('labels only trierarch ships, never the others', async () => {
-    fleet.state.ships.push({ shipId: AGENT, name: 'implementer-1', type: 'implementer', status: 'crewed', lastSeenAt: AT, crewRequest: null, labels: [] });
+    fleet.state.ships.push({ shipId: AGENT, name: 'implementer-1', type: 'implementer', status: 'crewed', lastSeenAt: AT, model: null, crewRequest: null, labels: [] });
     fleet.state.reports.set(AGENT, { state: 'idle', note: null, reportedAt: AT, details: details({ os: 'linux' }) });
 
     await labelMachines();
