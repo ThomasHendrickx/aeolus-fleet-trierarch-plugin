@@ -110,6 +110,7 @@ export function createRestFleetDoor(fleetUrl: string): FleetDoor {
                 assignedTo: crewRequest.assignedTo?.id ?? null,
                 reason: crewRequest.reason,
                 startedAt: dateOf(crewRequest.startedAt),
+                givenBack: crewRequest.givenBack.map((back) => ({ trierarchShipId: back.trierarch.id, reason: back.reason })),
               },
               labels: labels.map(({ labelId, valueId }) => ({ labelId, valueId })),
             })),

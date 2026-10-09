@@ -1,4 +1,4 @@
-import { crewSettingsSchema, NO_MACHINE_MATCHES_REASON, type CrewSettings, type ShipId, type TrierarchReportDetails } from '@aeolus-fleet/common';
+import { CREW_REQUEST_REASON_MAX_LENGTH, crewSettingsSchema, NO_MACHINE_MATCHES_REASON, type CrewSettings, type ShipId, type TrierarchReportDetails } from '@aeolus-fleet/common';
 import { z } from 'zod';
 
 /** An unassigned crew request whose ship awaits crew: its settings as the fleet holds them, and the reason written on it now. */
@@ -8,6 +8,8 @@ export interface PlacementRequest {
   /** Unread: placement parses them as crew settings. */
   settings: unknown;
   reason: string | null;
+  /** The trierarchs that gave it back, oldest first, and why (#382): placement leaves them out. */
+  givenBack: readonly { trierarchShipId: ShipId; reason: string }[];
 }
 
 /** A trierarch that may take requests: one that reports details and is not silent. */
@@ -82,8 +84,21 @@ function roomShare(trierarch: PlacementTrierarch): number {
   return (trierarch.details.caps.ships - trierarch.assigned) / trierarch.details.caps.ships;
 }
 
-/** The trierarch to claim for the settings, or why none fits: machine labels, harness (the named one, or each trierarch's default), workspace, options, then room. */
-function fit(settings: CrewSettings, trierarchs: readonly PlacementTrierarch[]): { trierarch: PlacementTrierarch } | Misfit {
+/** Why a request waits when every trierarch that fits gave it back: the last reason, within what a reason may hold. */
+function givenBackReason(givenBack: readonly { reason: string }[]): string {
+  const last = givenBack.at(-1)?.reason ?? '';
+  return `given back by every trierarch that fits; last: ${last}`.slice(0, CREW_REQUEST_REASON_MAX_LENGTH);
+}
+
+/**
+ * The trierarch to claim for the settings, or why none fits: machine labels,
+ * harness (the named one, or each trierarch's default), workspace, options,
+ * then the trierarchs that gave the request back (#382), then room.
+ */
+function fit(
+  settings: CrewSettings,
+  { trierarchs, givenBack }: { trierarchs: readonly PlacementTrierarch[]; givenBack: PlacementRequest['givenBack'] },
+): { trierarch: PlacementTrierarch } | Misfit {
   if (trierarchs.length === 0) {
     return { reason: 'no trierarch reports yet' };
   }
@@ -113,10 +128,14 @@ function fit(settings: CrewSettings, trierarchs: readonly PlacementTrierarch[]):
   if (taking.length === 0) {
     return { reason: `no trierarch takes these options for ${harnessWords}: ${firstRefusal?.refusal ?? ''}`, field: 'options' };
   }
-  const [best] = taking
+  const left = taking.filter((trierarch) => !givenBack.some((back) => back.trierarchShipId === trierarch.shipId));
+  if (left.length === 0) {
+    return { reason: givenBackReason(givenBack) };
+  }
+  const [best] = left
     .filter((trierarch) => trierarch.assigned < trierarch.details.caps.ships)
     .sort((first, second) => roomShare(second) - roomShare(first) || first.commissionedAt.getTime() - second.commissionedAt.getTime() || first.shipId.localeCompare(second.shipId));
-  return best === undefined ? { reason: `no trierarch with room: all ${String(taking.length)} that fit are full` } : { trierarch: best };
+  return best === undefined ? { reason: `no trierarch with room: all ${String(left.length)} that fit are full` } : { trierarch: best };
 }
 
 /** The settings as crew settings, or why not: the first issue, with the field it is in. */
@@ -135,7 +154,7 @@ function parsed(settings: unknown): { settings: CrewSettings } | Misfit {
  */
 export function checkPlacement(settings: unknown, trierarchs: readonly PlacementTrierarch[]): PlacementCheck {
   const read = parsed(settings);
-  const fitted = 'settings' in read ? fit(read.settings, trierarchs) : read;
+  const fitted = 'settings' in read ? fit(read.settings, { trierarchs, givenBack: [] }) : read;
   if ('trierarch' in fitted) {
     return { kind: 'fits' };
   }
@@ -146,7 +165,7 @@ export function checkPlacement(settings: unknown, trierarchs: readonly Placement
  * Policy: where each unassigned request goes (docs/trierarch.md,
  * "Assignment"). Oldest request first, each to a trierarch whose ship
  * carries every machine label it names, that offers its harness and workspace, takes its options against the schema it reports for
- * that harness, and has room (its cap above the requests assigned to it);
+ * that harness, did not give it back (#382), and has room (its cap above the requests assigned to it);
  * of those, the most room as a share of its cap, then the oldest. What it
  * assigns counts against the room of later requests in the same pass. A
  * request none fits gets the reason, unless that reason is written already.
@@ -159,10 +178,10 @@ export function place(requests: readonly PlacementRequest[], trierarchs: readonl
     const read = parsed(request.settings);
     const fitted =
       'settings' in read
-        ? fit(
-            read.settings,
-            trierarchs.map((trierarch) => ({ ...trierarch, assigned: assigned.get(trierarch.shipId) ?? trierarch.assigned })),
-          )
+        ? fit(read.settings, {
+            trierarchs: trierarchs.map((trierarch) => ({ ...trierarch, assigned: assigned.get(trierarch.shipId) ?? trierarch.assigned })),
+            givenBack: request.givenBack,
+          })
         : read;
     if ('trierarch' in fitted) {
       assigned.set(fitted.trierarch.shipId, (assigned.get(fitted.trierarch.shipId) ?? 0) + 1);

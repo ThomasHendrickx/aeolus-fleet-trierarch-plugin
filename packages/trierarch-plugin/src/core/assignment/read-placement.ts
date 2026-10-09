@@ -38,7 +38,13 @@ export async function readPlacement(
       trierarchs.push({ shipId: ship.shipId, commissionedAt: read.value.commissionedAt, details: details.data, assigned, labelValueIds: ship.labels.map((label) => label.valueId) });
     }
     if (isRequest && ship.crewRequest !== null) {
-      requests.push({ shipId: ship.shipId, requestedAt: ship.crewRequest.requestedAt, settings: read.value.crewSettings, reason: ship.crewRequest.reason });
+      requests.push({
+        shipId: ship.shipId,
+        requestedAt: ship.crewRequest.requestedAt,
+        settings: read.value.crewSettings,
+        reason: ship.crewRequest.reason,
+        givenBack: ship.crewRequest.givenBack,
+      });
     }
   }
   return ok({ requests, trierarchs });
