@@ -44,6 +44,7 @@ function aRequest(shipId: ShipId, overrides: Partial<Omit<PlacementRequest, 'set
     shipId,
     requestedAt: EARLY,
     reason: null,
+    givenBack: [],
     ...rest,
     settings: { harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: { model: 'opus' }, ...settings },
   };
@@ -157,6 +158,33 @@ describe('placement (docs/trierarch.md, Assignment)', () => {
     const withoutHarness = { ...request, settings: { workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: { model: 'opus' } } };
 
     expect(place([withoutHarness], [aTrierarch(MAC, { details: codexFirst }), aTrierarch(LINUX, { commissionedAt: LATER })])).toEqual([{ kind: 'assign', shipId: SCOUT, trierarchShipId: LINUX }]);
+  });
+
+  it('leaves out every trierarch that gave the request back, placing it on another that fits (#382)', () => {
+    const request = aRequest(SCOUT, { givenBack: [{ trierarchShipId: MAC, reason: 'mac-studio: claude-code 2.1.293 refused opus' }] });
+
+    expect(place([request], [aTrierarch(MAC), aTrierarch(LINUX, { commissionedAt: LATER })])).toEqual([{ kind: 'assign', shipId: SCOUT, trierarchShipId: LINUX }]);
+  });
+
+  it('leaves a request every trierarch that fits gave back unassigned, with the last reason it was given back for (#382)', () => {
+    const request = aRequest(SCOUT, {
+      givenBack: [
+        { trierarchShipId: MAC, reason: 'mac-studio: claude-code 2.1.293 refused opus' },
+        { trierarchShipId: LINUX, reason: 'linux-box: nothing on screen within a minute' },
+      ],
+    });
+
+    expect(place([request], [aTrierarch(MAC), aTrierarch(LINUX)])).toEqual([
+      { kind: 'explain', shipId: SCOUT, reason: 'given back by every trierarch that fits; last: linux-box: nothing on screen within a minute' },
+    ]);
+  });
+
+  it('keeps a reason for a request given back within the 200 characters a reason may hold (#382)', () => {
+    const request = aRequest(SCOUT, { givenBack: [{ trierarchShipId: MAC, reason: 'x'.repeat(200) }] });
+
+    const [placement] = place([request], [aTrierarch(MAC)]);
+
+    expect(placement?.kind === 'explain' ? placement.reason.length : 0).toBe(200);
   });
 
   it('does not write a reason again that still holds', () => {

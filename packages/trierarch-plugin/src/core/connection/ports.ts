@@ -30,11 +30,18 @@ export interface ListedShip {
   /** The model its crew last stated (decision 0018); null until one states any. */
   model: { id: string; statedAt: Date } | null;
   /**
-   * Its crew request, without its settings: their version, and when the
-   * session its trierarch runs now started, or null while none runs; null
-   * when it holds none.
+   * Its crew request, without its settings: their version, when the session
+   * its trierarch runs now started, or null while none runs, and the
+   * trierarchs that gave it back, oldest first (#382); null when it holds none.
    */
-  crewRequest: { settingsVersion: number; requestedAt: Date; assignedTo: ShipId | null; reason: string | null; startedAt: Date | null } | null;
+  crewRequest: {
+    settingsVersion: number;
+    requestedAt: Date;
+    assignedTo: ShipId | null;
+    reason: string | null;
+    startedAt: Date | null;
+    givenBack: { trierarchShipId: ShipId; reason: string }[];
+  } | null;
   /** The label values it carries, every owner's, with their labels (#102). */
   labels: { labelId: LabelId; valueId: LabelValueId }[];
 }

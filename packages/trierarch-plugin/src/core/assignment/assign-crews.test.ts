@@ -49,7 +49,7 @@ function aRequest(shipId: ShipId, at: { status?: 'awaitingCrew' | 'crewed'; assi
     status: at.status ?? 'awaitingCrew',
     lastSeenAt: null,
     model: null,
-    crewRequest: { settingsVersion: 1, requestedAt: at.requestedAt ?? AT, assignedTo: at.assignedTo ?? null, reason: null, startedAt: null },
+    crewRequest: { settingsVersion: 1, requestedAt: at.requestedAt ?? AT, assignedTo: at.assignedTo ?? null, reason: null, startedAt: null, givenBack: [] },
     labels: [],
   });
   fleet.state.settings.set(shipId, SETTINGS);
@@ -66,6 +66,20 @@ describe("a pass of the trierarch plugin's assignment", () => {
 
     await expect(pass()).resolves.toEqual({ isOk: true, value: { assigned: 1, explained: 0, lost: 0 } });
     expect(assignedTo(SCOUT)).toBe(MAC);
+  });
+
+  it('places a request given back on another trierarch, never on the one that gave it back (#382)', async () => {
+    aTrierarch(MAC);
+    aTrierarch(LINUX);
+    aRequest(SCOUT);
+    const scout = fleet.state.ships.find((ship) => ship.shipId === SCOUT);
+    if (scout?.crewRequest) {
+      scout.crewRequest.givenBack = [{ trierarchShipId: MAC, reason: 'machine-2a: claude-code refused the model' }];
+    }
+
+    await pass();
+
+    expect(assignedTo(SCOUT)).toBe(LINUX);
   });
 
   it('never assigns a crewed ship: crewing it by hand fulfils its request', async () => {

@@ -29,7 +29,7 @@ function aCrewedShip(at: { stated?: { id: string; statedAt: Date } | null; reque
     status: 'crewed',
     lastSeenAt: STATED,
     model: at.stated === undefined ? { id: 'claude-sonnet-5-5', statedAt: STATED } : at.stated,
-    crewRequest: { settingsVersion: at.settingsVersion ?? 1, requestedAt: AT, assignedTo: MAC, reason: null, startedAt: at.startedAt === undefined ? STARTED : at.startedAt },
+    crewRequest: { settingsVersion: at.settingsVersion ?? 1, requestedAt: AT, assignedTo: MAC, reason: null, startedAt: at.startedAt === undefined ? STARTED : at.startedAt, givenBack: [] },
     labels: [],
   });
   const options = at.requested === undefined ? { model: 'claude-opus-5-5' } : { model: at.requested };
