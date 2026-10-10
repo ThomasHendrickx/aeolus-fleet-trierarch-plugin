@@ -25,6 +25,7 @@ import { createPluginDatabase } from './support/database.js';
 // fleet:manage, crew:assign, labels:define, labels:assign), keeps the crew token in its own database and is
 // connected again after a restart. Machines join through it.
 
+let fleetDatabaseUrl: string;
 let fleetDatabase: PrismaClient;
 let fleet: FastifyInstance;
 let fleetUrl: string;
@@ -37,7 +38,7 @@ let cookie: string;
 const apps: TrierarchPluginApp[] = [];
 
 beforeEach(async () => {
-  const fleetDatabaseUrl = await createMigratedDatabase();
+  fleetDatabaseUrl = await createMigratedDatabase();
   fleetDatabase = createPrismaClient(fleetDatabaseUrl);
   useCases = createUseCases({ prisma: fleetDatabase });
   argo = operatorCaller(unwrap(await useCases.initialiseFleet({ name: 'home fleet', ...OPERATOR })));
@@ -286,9 +287,10 @@ describe('machine labels against a real fleet (#102)', () => {
     expect(labels.map((label) => ({ key: label.key, values: label.values.map((value) => value.value), owner: label.owner.name }))).toEqual([
       { key: 'arch', values: ['arm64', 'amd64'], owner: 'trierarch-plugin' },
       { key: 'os', values: ['macos', 'linux', 'windows'], owner: 'trierarch-plugin' },
+      { key: 'trierarch', values: ['machine'], owner: 'trierarch-plugin' },
     ]);
     const machine = (await useCases.listFleet(argo)).find((ship) => ship.id === machineShipId);
-    expect(machine?.labels.map((label) => `${label.key}=${label.value}`)).toEqual(['arch=arm64', 'os=macos']);
+    expect(machine?.labels.map((label) => `${label.key}=${label.value}`)).toEqual(['arch=arm64', 'os=macos', 'trierarch=machine']);
 
     const valueOf = async (key: string, value: string) => unwrap(await useCases.findLabelValue(argo, { key, value })).valueId;
     const settings = { harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: {} } as const;
@@ -372,6 +374,43 @@ describe('a request given back (#382)', () => {
   });
 });
 
+/** The fleet's trierarch label, as the trierarch plugin defined it. */
+async function trierarchLabelId(): Promise<string> {
+  const label = (await useCases.listLabels(argo)).find((each) => each.key === 'trierarch');
+  return z.string().parse(label?.id);
+}
+
+/** Every rule the fleet holds declared, by the ship that declared it. */
+async function declared(): Promise<{ shipId: string; rules: unknown[] }[]> {
+  return (await useCases.readDeclaredNetworkRules(argo)).map(({ shipId: declaring, rules }) => ({ shipId: declaring, rules: [...rules] })).filter((each) => each.rules.length > 0);
+}
+
+/** The fleet down and up again on the same address: the trierarch plugin's calls meanwhile get no answer. */
+async function fleetDown(): Promise<() => Promise<void>> {
+  const { port } = new URL(fleetUrl);
+  await fleet.close();
+  return async () => {
+    fleet = createApp({ databaseUrl: fleetDatabaseUrl, publicUrl: FLEET_URL, logger: false });
+    await fleet.listen({ host: '127.0.0.1', port: Number(port) });
+  };
+}
+
+describe('the trierarch reach against a real fleet (#573, decision 0037)', () => {
+  it('a pass labels every trierarch ship trierarch=machine and declares trierarch=* to trierarch=*, once', async () => {
+    const address = await connected();
+    const joined = joinedSchema.parse(await (await mutate(address, { procedure: 'machines.join', cookie, body: { name: 'mac-studio' } })).json()).result.data;
+
+    await apps[0]?.assignOnce();
+    await apps[0]?.assignOnce();
+
+    const machine = (await useCases.listFleet(argo)).find((ship) => ship.id === joined.shipId);
+    expect(machine?.labels.map((label) => `${label.key}=${label.value}`)).toEqual(['trierarch=machine']);
+    const term = { labelId: await trierarchLabelId(), value: '*' };
+    await expect(declared()).resolves.toEqual([{ shipId, rules: [{ from: [term], to: [term] }] }]);
+    await expect(fleetDatabase.event.count({ where: { type: 'NetworkRulesDeclared' } })).resolves.toBe(1);
+  });
+});
+
 describe('the installation (decision 0021)', () => {
   const TOKEN = 'an-installation-token-of-at-least-32-characters';
 
@@ -404,5 +443,53 @@ describe('the installation (decision 0021)', () => {
     expect((await installation(address, { procedure: 'installation.delete', body: { requestId: newKey(), fleetId } })).status).toBe(200);
 
     await expect(installation(address, { procedure: 'installation.get', body: { fleetId } }).then((response) => response.json())).resolves.toEqual({ result: { data: { enabled: false, connected: false } } });
+  });
+
+  it('withdraws the declared rules when switched off, and declares them again on the first pass once on (#573)', async () => {
+    const { app, address } = await started(TOKEN);
+    const fleetId = argo.fleetId;
+    await installation(address, { procedure: 'installation.setEnabled', body: { requestId: newKey(), fleetId, enabled: true } });
+    expect((await connectPlugin(address, { cookie, shipId, secret })).status).toBe(200);
+    await app.assignOnce();
+    await expect(declared()).resolves.toHaveLength(1);
+
+    expect((await installation(address, { procedure: 'installation.setEnabled', body: { requestId: newKey(), fleetId, enabled: false } })).status).toBe(200);
+    await expect(declared()).resolves.toEqual([]);
+
+    await installation(address, { procedure: 'installation.setEnabled', body: { requestId: newKey(), fleetId, enabled: true } });
+    await app.assignOnce();
+    await expect(declared()).resolves.toHaveLength(1);
+  });
+
+  it('withdraws on the next pass what a switch off could not, while the fleet did not answer', async () => {
+    const { app, address } = await started(TOKEN);
+    const fleetId = argo.fleetId;
+    await installation(address, { procedure: 'installation.setEnabled', body: { requestId: newKey(), fleetId, enabled: true } });
+    expect((await connectPlugin(address, { cookie, shipId, secret })).status).toBe(200);
+    await app.assignOnce();
+    const fleetUp = await fleetDown();
+
+    expect((await installation(address, { procedure: 'installation.setEnabled', body: { requestId: newKey(), fleetId, enabled: false } })).status).toBe(200);
+    await fleetUp();
+    await expect(declared()).resolves.toHaveLength(1);
+
+    await app.assignOnce();
+    await expect(declared()).resolves.toEqual([]);
+  });
+
+  it('withdraws the declared rules before it forgets a deleted fleet, and refuses the delete while the fleet does not answer (#573)', async () => {
+    const { app, address } = await started(TOKEN);
+    const fleetId = argo.fleetId;
+    await installation(address, { procedure: 'installation.setEnabled', body: { requestId: newKey(), fleetId, enabled: true } });
+    expect((await connectPlugin(address, { cookie, shipId, secret })).status).toBe(200);
+    await app.assignOnce();
+    const fleetUp = await fleetDown();
+
+    expect((await installation(address, { procedure: 'installation.delete', body: { requestId: newKey(), fleetId } })).status).toBe(502);
+    await fleetUp();
+    await expect(installation(address, { procedure: 'installation.get', body: { fleetId } }).then((response) => response.json())).resolves.toEqual({ result: { data: { enabled: true, connected: true } } });
+
+    expect((await installation(address, { procedure: 'installation.delete', body: { requestId: newKey(), fleetId } })).status).toBe(200);
+    await expect(declared()).resolves.toEqual([]);
   });
 });
