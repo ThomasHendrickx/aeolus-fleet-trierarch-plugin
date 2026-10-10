@@ -287,7 +287,7 @@ describe('machine labels against a real fleet (#102)', () => {
     expect(labels.map((label) => ({ key: label.key, values: label.values.map((value) => value.value), owner: label.owner.name }))).toEqual([
       { key: 'arch', values: ['arm64', 'amd64'], owner: 'trierarch-plugin' },
       { key: 'os', values: ['macos', 'linux', 'windows'], owner: 'trierarch-plugin' },
-      { key: 'trierarch', values: ['machine'], owner: 'trierarch-plugin' },
+      { key: 'trierarch', values: ['machine', 'plugin'], owner: 'trierarch-plugin' },
     ]);
     const machine = (await useCases.listFleet(argo)).find((ship) => ship.id === machineShipId);
     expect(machine?.labels.map((label) => `${label.key}=${label.value}`)).toEqual(['arch=arm64', 'os=macos', 'trierarch=machine']);
@@ -396,7 +396,7 @@ async function fleetDown(): Promise<() => Promise<void>> {
 }
 
 describe('the trierarch reach against a real fleet (#573, decision 0037)', () => {
-  it('a pass labels every trierarch ship trierarch=machine and declares trierarch=* to trierarch=*, once', async () => {
+  it('a pass labels every trierarch ship trierarch=machine and its own ship trierarch=plugin, and declares trierarch=* to trierarch=*, once', async () => {
     const address = await connected();
     const joined = joinedSchema.parse(await (await mutate(address, { procedure: 'machines.join', cookie, body: { name: 'mac-studio' } })).json()).result.data;
 
@@ -405,6 +405,8 @@ describe('the trierarch reach against a real fleet (#573, decision 0037)', () =>
 
     const machine = (await useCases.listFleet(argo)).find((ship) => ship.id === joined.shipId);
     expect(machine?.labels.map((label) => `${label.key}=${label.value}`)).toEqual(['trierarch=machine']);
+    const own = (await useCases.listFleet(argo)).find((ship) => ship.id === shipId);
+    expect(own?.labels.map((label) => `${label.key}=${label.value}`)).toEqual(['trierarch=plugin']);
     const term = { labelId: await trierarchLabelId(), value: '*' };
     await expect(declared()).resolves.toEqual([{ shipId, rules: [{ from: [term], to: [term] }] }]);
     await expect(fleetDatabase.event.count({ where: { type: 'NetworkRulesDeclared' } })).resolves.toBe(1);

@@ -31,6 +31,7 @@ beforeEach(async () => {
   fleet.state.scopes.push(...LABEL_SCOPES);
   connections = memoryConnectionStore();
   fleet.state.liveTokens.add('aeolus_ct_v1_plugin');
+  fleet.state.ships.push({ shipId: SHIP_ID, name: 'trierarch-plugin', type: 'trierarch-plugin', status: 'crewed', lastSeenAt: AT, model: null, crewRequest: null, labels: [] });
   await connections.save({ fleetId: FLEET_ID, shipId: SHIP_ID, name: 'trierarch-plugin', crewToken: 'aeolus_ct_v1_plugin', crewedAt: AT });
 });
 
@@ -45,17 +46,18 @@ function labelMachines() {
 }
 
 describe('machine labels (#102; docs/trierarch.md, Machine labels)', () => {
-  it('defines os, arch and trierarch, which the trierarch plugin owns, and labels each trierarch ship from the machine it reports and as a trierarch', async () => {
+  it('defines os, arch and trierarch, which the trierarch plugin owns, and labels its own ship and each trierarch ship, from the machine it reports', async () => {
     aTrierarch(MAC, { os: 'macos', arch: 'arm64' });
     aTrierarch(LINUX, { os: 'linux', arch: 'amd64' });
 
     const done = await labelMachines();
 
-    expect(done).toMatchObject({ isOk: true, value: { defined: 3, assigned: 6, unassigned: 0 } });
+    expect(done).toMatchObject({ isOk: true, value: { defined: 3, assigned: 7, unassigned: 0 } });
     expect(fleet.state.labelWrites).toEqual([
       'define os=macos,linux,windows',
       'define arch=arm64,amd64',
-      'define trierarch=machine',
+      'define trierarch=machine,plugin',
+      'assign trierarch-plugin trierarch=plugin',
       'assign trierarch-mac os=macos',
       'assign trierarch-mac arch=arm64',
       'assign trierarch-mac trierarch=machine',
@@ -70,7 +72,14 @@ describe('machine labels (#102; docs/trierarch.md, Machine labels)', () => {
 
     await labelMachines();
 
-    expect(fleet.state.labelWrites.filter((write) => write.startsWith('assign'))).toEqual(['assign trierarch-linux trierarch=machine']);
+    expect(fleet.state.labelWrites.filter((write) => write.startsWith('assign'))).toEqual(['assign trierarch-plugin trierarch=plugin', 'assign trierarch-linux trierarch=machine']);
+  });
+
+  it('labels its own ship trierarch=plugin, and gives it no machine labels (#573, decision 0031)', async () => {
+    await labelMachines();
+
+    expect(fleet.state.ships.find((ship) => ship.shipId === SHIP_ID)?.labels).toHaveLength(1);
+    expect(fleet.state.labelWrites.filter((write) => write.startsWith('assign'))).toEqual(['assign trierarch-plugin trierarch=plugin']);
   });
 
   it('changes nothing on a pass where every trierarch ship carries what its machine reports', async () => {
@@ -107,13 +116,13 @@ describe('machine labels (#102; docs/trierarch.md, Machine labels)', () => {
     expect(fleet.state.labelWrites).toEqual(['unassign trierarch-mac arch=arm64']);
   });
 
-  it('labels only trierarch ships, never the others', async () => {
+  it('labels only trierarch ships and its own, never the others', async () => {
     fleet.state.ships.push({ shipId: AGENT, name: 'implementer-1', type: 'implementer', status: 'crewed', lastSeenAt: AT, model: null, crewRequest: null, labels: [] });
     fleet.state.reports.set(AGENT, { state: 'idle', note: null, reportedAt: AT, details: details({ os: 'linux' }) });
 
     await labelMachines();
 
-    expect(fleet.state.labelWrites.filter((write) => write.startsWith('assign'))).toEqual([]);
+    expect(fleet.state.labelWrites.filter((write) => write.startsWith('assign'))).toEqual(['assign trierarch-plugin trierarch=plugin']);
   });
 
   it('leaves a key another ship owns: it neither defines nor assigns it', async () => {
@@ -122,7 +131,13 @@ describe('machine labels (#102; docs/trierarch.md, Machine labels)', () => {
 
     await labelMachines();
 
-    expect(fleet.state.labelWrites).toEqual(['define arch=arm64,amd64', 'define trierarch=machine', 'assign trierarch-mac arch=arm64', 'assign trierarch-mac trierarch=machine']);
+    expect(fleet.state.labelWrites).toEqual([
+      'define arch=arm64,amd64',
+      'define trierarch=machine,plugin',
+      'assign trierarch-plugin trierarch=plugin',
+      'assign trierarch-mac arch=arm64',
+      'assign trierarch-mac trierarch=machine',
+    ]);
   });
 
   it('labels nothing while its ship holds no label scopes: connected before 0.20.0, its ship is retired and the plugin connected again for them', async () => {
