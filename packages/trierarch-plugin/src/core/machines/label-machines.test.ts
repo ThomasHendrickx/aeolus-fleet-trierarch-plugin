@@ -45,21 +45,32 @@ function labelMachines() {
 }
 
 describe('machine labels (#102; docs/trierarch.md, Machine labels)', () => {
-  it('defines os and arch, which the trierarch plugin owns, and labels each trierarch ship from the machine it reports', async () => {
+  it('defines os, arch and trierarch, which the trierarch plugin owns, and labels each trierarch ship from the machine it reports and as a trierarch', async () => {
     aTrierarch(MAC, { os: 'macos', arch: 'arm64' });
     aTrierarch(LINUX, { os: 'linux', arch: 'amd64' });
 
     const done = await labelMachines();
 
-    expect(done).toMatchObject({ isOk: true, value: { defined: 2, assigned: 4, unassigned: 0 } });
+    expect(done).toMatchObject({ isOk: true, value: { defined: 3, assigned: 6, unassigned: 0 } });
     expect(fleet.state.labelWrites).toEqual([
       'define os=macos,linux,windows',
       'define arch=arm64,amd64',
+      'define trierarch=machine',
       'assign trierarch-mac os=macos',
       'assign trierarch-mac arch=arm64',
+      'assign trierarch-mac trierarch=machine',
       'assign trierarch-linux os=linux',
       'assign trierarch-linux arch=amd64',
+      'assign trierarch-linux trierarch=machine',
     ]);
+  });
+
+  it('labels a trierarch ship trierarch=machine also when it reports no machine (#573)', async () => {
+    aTrierarch(LINUX);
+
+    await labelMachines();
+
+    expect(fleet.state.labelWrites.filter((write) => write.startsWith('assign'))).toEqual(['assign trierarch-linux trierarch=machine']);
   });
 
   it('changes nothing on a pass where every trierarch ship carries what its machine reports', async () => {
@@ -84,7 +95,7 @@ describe('machine labels (#102; docs/trierarch.md, Machine labels)', () => {
     expect(fleet.state.labelWrites).toEqual(['assign trierarch-mac os=linux', 'unassign trierarch-mac os=macos']);
   });
 
-  it('takes its labels off a trierarch whose machine no longer names them, and labels no trierarch that reports no machine', async () => {
+  it('takes its machine labels off a trierarch whose machine no longer names them, and gives none to a trierarch that reports no machine', async () => {
     aTrierarch(MAC, { os: 'macos', arch: 'arm64' });
     aTrierarch(LINUX);
     await labelMachines();
@@ -111,7 +122,7 @@ describe('machine labels (#102; docs/trierarch.md, Machine labels)', () => {
 
     await labelMachines();
 
-    expect(fleet.state.labelWrites).toEqual(['define arch=arm64,amd64', 'assign trierarch-mac arch=arm64']);
+    expect(fleet.state.labelWrites).toEqual(['define arch=arm64,amd64', 'define trierarch=machine', 'assign trierarch-mac arch=arm64', 'assign trierarch-mac trierarch=machine']);
   });
 
   it('labels nothing while its ship holds no label scopes: connected before 0.20.0, its ship is retired and the plugin connected again for them', async () => {
