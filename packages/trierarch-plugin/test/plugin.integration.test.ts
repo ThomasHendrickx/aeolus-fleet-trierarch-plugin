@@ -185,8 +185,8 @@ describe('a joined machine reporting', () => {
     const reportSelf = createReportSelf({
       fleet: createRestFleet({ fleetUrl, crewToken }),
       processes: { list: () => Promise.resolve([]), stop: () => Promise.resolve() },
-      // Its harness trusts its repository, as init makes it (#381).
-      trust: { trusted: () => Promise.resolve({ 'claude-code': { repositories: ['aeolus-fleet'], folders: [] } }) },
+      // Its harness trusts its repository and asks about no flag, as init makes it (#381, #403).
+      trust: { trusted: () => Promise.resolve({ 'claude-code': { repositories: ['aeolus-fleet'], folders: [], unacceptedFlags: [] } }) },
       state: { load: () => Promise.resolve(EMPTY_STATE), save: () => Promise.resolve() },
       setup: { configuration, version: '0.19.0', adapterFlags: {}, riskyFlags: {} },
     });
@@ -225,8 +225,8 @@ describe('assignment against a real fleet', () => {
     await createReportSelf({
       fleet: createRestFleet({ fleetUrl, crewToken }),
       processes: { list: () => Promise.resolve([]), stop: () => Promise.resolve() },
-      // Its harness trusts its repository, as init makes it (#381).
-      trust: { trusted: () => Promise.resolve({ 'claude-code': { repositories: ['aeolus-fleet'], folders: [] } }) },
+      // Its harness trusts its repository and asks about no flag, as init makes it (#381, #403).
+      trust: { trusted: () => Promise.resolve({ 'claude-code': { repositories: ['aeolus-fleet'], folders: [], unacceptedFlags: [] } }) },
       state: { load: () => Promise.resolve(EMPTY_STATE), save: () => Promise.resolve() },
       setup: {
         configuration: { caps: { ships: 4, running: 2 }, repositories: { 'aeolus-fleet': { path: '/srv/aeolus-fleet' } }, folders: {}, harnesses: { 'claude-code': { flags: [], options: {} } } },
@@ -268,8 +268,8 @@ describe('machine labels against a real fleet (#102)', () => {
     await createReportSelf({
       fleet: createRestFleet({ fleetUrl, crewToken }),
       processes: { list: () => Promise.resolve([]), stop: () => Promise.resolve() },
-      // Its harness trusts its repository, as init makes it (#381).
-      trust: { trusted: () => Promise.resolve({ 'claude-code': { repositories: ['aeolus-fleet'], folders: [] } }) },
+      // Its harness trusts its repository and asks about no flag, as init makes it (#381, #403).
+      trust: { trusted: () => Promise.resolve({ 'claude-code': { repositories: ['aeolus-fleet'], folders: [], unacceptedFlags: [] } }) },
       state: { load: () => Promise.resolve(EMPTY_STATE), save: () => Promise.resolve() },
       setup: {
         configuration: { caps: { ships: 4, running: 2 }, repositories: { 'aeolus-fleet': { path: '/srv/aeolus-fleet' } }, folders: {}, harnesses: { 'claude-code': { flags: [], options: {} } } },
@@ -315,8 +315,8 @@ describe('checking crew settings before a request (#245)', () => {
     await createReportSelf({
       fleet: createRestFleet({ fleetUrl, crewToken }),
       processes: { list: () => Promise.resolve([]), stop: () => Promise.resolve() },
-      // Its harness trusts its repository, as init makes it (#381).
-      trust: { trusted: () => Promise.resolve({ 'claude-code': { repositories: ['aeolus-fleet'], folders: [] } }) },
+      // Its harness trusts its repository and asks about no flag, as init makes it (#381, #403).
+      trust: { trusted: () => Promise.resolve({ 'claude-code': { repositories: ['aeolus-fleet'], folders: [], unacceptedFlags: [] } }) },
       state: { load: () => Promise.resolve(EMPTY_STATE), save: () => Promise.resolve() },
       setup: {
         configuration: { caps: { ships: 4, running: 2 }, repositories: { 'aeolus-fleet': { path: '/srv/aeolus-fleet' } }, folders: {}, harnesses: { 'claude-code': { flags: [], options: {} } } },
