@@ -73,7 +73,8 @@ describe('declaring the trierarch reach (#573, decision 0037)', () => {
   it('declares again for a new ship of the fleet: connected again after its ship was retired', async () => {
     aTrierarchLabel();
     await declare();
-    fleet.state.labels[0] = { ...fleet.state.labels[0]!, ownerShipId: NEXT_SHIP };
+    fleet.state.labels.length = 0;
+    aTrierarchLabel(NEXT_SHIP);
     await connections.save({ fleetId: FLEET_ID, shipId: NEXT_SHIP, name: 'trierarch-plugin', crewToken: 'aeolus_ct_v1_plugin', crewedAt: AT });
 
     expect(await declare()).toEqual({ isOk: true, value: { isDeclared: true } });

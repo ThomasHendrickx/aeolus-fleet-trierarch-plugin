@@ -4,7 +4,7 @@
  * like any client (decision 0030). A refusal reads as the fleet's code and
  * message.
  */
-import { commissionShipOutputSchema, defineLabelOutputSchema, fleetListOutputSchema, idSchema, labelsOutputSchema, shipDetailOutputSchema } from '@aeolus-fleet/common';
+import { commissionShipOutputSchema, declareNetworkRulesOutputSchema, defineLabelOutputSchema, fleetListOutputSchema, idSchema, labelsOutputSchema, shipDetailOutputSchema } from '@aeolus-fleet/common';
 import { z } from 'zod';
 
 import type { FleetDoor, FleetRefusal } from '../../core/connection/ports.js';
@@ -143,6 +143,8 @@ export function createRestFleetDoor(fleetUrl: string): FleetDoor {
       const explained = await call(fleetUrl, { path: '/fleet/explainCrewRequest', method: 'POST', crewToken, body: explanation, answers: z.unknown() });
       return explained.isOk ? ok(undefined) : explained;
     },
+    declareNetworkRules: (crewToken, declaration) =>
+      call(fleetUrl, { path: '/fleet/declareNetworkRules', method: 'POST', crewToken, body: declaration, answers: declareNetworkRulesOutputSchema }),
     tellArgo: async (crewToken, { text, idempotencyKey }) => {
       const sent = await call(fleetUrl, {
         path: '/ship/send',

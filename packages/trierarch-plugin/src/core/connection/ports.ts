@@ -1,4 +1,4 @@
-import type { CrewLine, FleetId, LabelId, LabelValueId, ShipId } from '@aeolus-fleet/common';
+import type { CrewLine, FleetId, LabelId, LabelValueId, NetworkRule, ShipId } from '@aeolus-fleet/common';
 
 import type { Result } from '../shared/result.js';
 
@@ -100,6 +100,8 @@ export interface FleetDoor {
   unassignLabel(crewToken: string, assignment: { shipId: ShipId; valueId: LabelValueId }): Promise<Result<undefined, FleetRefusal>>;
   /** Writes why no trierarch can take a ship's unassigned crew request (crew:assign). */
   explainCrewRequest(crewToken: string, explanation: { shipId: ShipId; reason: string | null }): Promise<Result<undefined, FleetRefusal>>;
+  /** Declares the network rules its ship needs on the labels it owns, its whole list; an empty one withdraws them (labels:define, decision 0037). */
+  declareNetworkRules(crewToken: string, declaration: { rules: NetworkRule[] }): Promise<Result<{ rules: number }, FleetRefusal>>;
   /** Sends argo, the operator, plain text, stored once under its idempotency key. */
   tellArgo(crewToken: string, notice: { text: string; idempotencyKey: string }): Promise<Result<undefined, FleetRefusal>>;
 }
