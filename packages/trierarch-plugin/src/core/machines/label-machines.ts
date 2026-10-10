@@ -17,10 +17,14 @@ export type LabelMachines = (fleetId: FleetId) => Promise<Result<LabelOutcome, D
 
 type Machine = NonNullable<TrierarchReportDetails['machine']>;
 
-/** The machine labels the trierarch plugin owns: each key, its values, and the part of the report it is read from. */
-const MACHINE_KEYS: readonly { key: keyof Machine; values: readonly string[] }[] = [
-  { key: 'os', values: MACHINE_OS },
-  { key: 'arch', values: MACHINE_ARCH },
+/** The label every trierarch ship carries, whatever its machine reports: the trierarch plugin's network rules select its ships by it (#573). */
+export const TRIERARCH_LABEL = { key: 'trierarch', value: 'machine' } as const;
+
+/** The labels the trierarch plugin owns: each key, its values, and the value a trierarch ship carries, read from the machine it reports. */
+const OWNED_LABELS: readonly { key: string; values: readonly string[]; valueOf: (machine: Machine | undefined) => string | undefined }[] = [
+  { key: 'os', values: MACHINE_OS, valueOf: (machine) => machine?.os },
+  { key: 'arch', values: MACHINE_ARCH, valueOf: (machine) => machine?.arch },
+  { key: TRIERARCH_LABEL.key, values: [TRIERARCH_LABEL.value], valueOf: () => TRIERARCH_LABEL.value },
 ];
 
 const LABEL_SCOPES = ['labels:define', 'labels:assign'];
@@ -32,10 +36,10 @@ const NO_LABEL_SCOPES = 'its ship holds no label scopes, and scopes never change
 
 /**
  * Use case: one pass of machine labels for a fleet (docs/trierarch.md,
- * "Machine labels"). The trierarch plugin defines os and arch, which it owns,
- * and labels each trierarch ship with the values its machine reports: the
- * value it reports now goes on first, then any other value of that label comes
- * off. A key another ship owns is left alone. Without the label scopes it
+ * "Machine labels"). The trierarch plugin defines os, arch and trierarch,
+ * which it owns, and labels each trierarch ship trierarch=machine and with the
+ * values its machine reports: the value it reports now goes on first, then
+ * any other value of that label comes off. A key another ship owns is left alone. Without the label scopes it
  * labels nothing and says why. Placement reads the labels; a request already
  * assigned stays where it is when they change.
  */
@@ -72,8 +76,8 @@ async function labelPass(door: FleetDoor, crew: PluginCrew): Promise<Result<Labe
   if (!listed.isOk) {
     return listed;
   }
-  const labels = new Map<keyof Machine, ListedLabel>();
-  for (const { key, values } of MACHINE_KEYS) {
+  const labels = new Map<string, ListedLabel>();
+  for (const { key, values } of OWNED_LABELS) {
     const label = listed.value?.find((each) => each.key === key);
     if (label !== undefined) {
       if (label.ownerShipId === crew.shipId) {
@@ -102,7 +106,7 @@ async function labelPass(door: FleetDoor, crew: PluginCrew): Promise<Result<Labe
     }
     const details = trierarchReportDetailsSchema.safeParse(read.value?.report?.details);
     const machine = details.success ? details.data.machine : undefined;
-    for (const { key } of MACHINE_KEYS) {
+    for (const { key, valueOf } of OWNED_LABELS) {
       const label = labels.get(key);
       if (label === undefined) {
         continue;
@@ -110,7 +114,7 @@ async function labelPass(door: FleetDoor, crew: PluginCrew): Promise<Result<Labe
       const relabelled = await relabel(door, {
         crewToken: crew.crewToken,
         ship,
-        wanted: label.values.find((each) => each.value === machine?.[key])?.valueId,
+        wanted: label.values.find((each) => each.value === valueOf(machine))?.valueId,
         carried: ship.labels.filter((each) => each.labelId === label.labelId).map((each) => each.valueId),
       });
       if (!relabelled.isOk) {
