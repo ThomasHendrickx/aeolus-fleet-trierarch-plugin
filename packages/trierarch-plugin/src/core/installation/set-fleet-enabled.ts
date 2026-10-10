@@ -1,5 +1,6 @@
 import type { FleetId } from '@aeolus-fleet/common';
 
+import type { WithdrawNetworkRules } from '../network/withdraw-network-rules.js';
 import type { Clock } from '../shared/clock.js';
 import type { DomainError } from '../shared/errors.js';
 import { ok, type Result } from '../shared/result.js';
@@ -10,10 +11,12 @@ export type SetFleetEnabled = (input: { requestId: string; fleetId: FleetId; isE
 
 /**
  * Use case: the hosting service switches the trierarch plugin on or off for a fleet
- * (decision 0021). Off keeps everything of the fleet, so on again resumes. A
+ * (decision 0021). Off keeps everything of the fleet, so on again resumes, but
+ * withdraws its declared network rules at once (decision 0037); while the
+ * fleet does not answer, the switch is kept and a later pass withdraws them. A
  * replayed request id answers what it answered first and changes nothing.
  */
-export function createSetFleetEnabled(deps: { switches: FleetSwitches; requests: InstallationRequests; hasher: RequestHasher; clock: Clock }): SetFleetEnabled {
+export function createSetFleetEnabled(deps: { switches: FleetSwitches; requests: InstallationRequests; hasher: RequestHasher; clock: Clock; withdraw: WithdrawNetworkRules }): SetFleetEnabled {
   return async ({ requestId, fleetId, isEnabled }) => {
     const requestHash = deps.hasher.hash(`setEnabled ${fleetId} ${String(isEnabled)}`);
     const earlier = await earlierAnswer(deps.requests, { requestId, requestHash });
@@ -23,6 +26,9 @@ export function createSetFleetEnabled(deps: { switches: FleetSwitches; requests:
     const at = deps.clock.now();
     await deps.switches.set(fleetId, { isEnabled, at });
     await deps.requests.record({ requestId, kind: 'setEnabled', requestHash, fleetId, isEnabled, at });
+    if (!isEnabled) {
+      await deps.withdraw(fleetId);
+    }
     return ok({ fleetId, isEnabled });
   };
 }

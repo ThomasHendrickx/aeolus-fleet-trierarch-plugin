@@ -25,6 +25,8 @@ import { createLabelMachines } from './core/machines/label-machines.js';
 import { createCheckCrewSettings } from './core/assignment/check-crew-settings.js';
 import { createTellModelMismatches } from './core/assignment/tell-model-mismatches.js';
 import { createJoinMachine } from './core/machines/join-machine.js';
+import type { Declarations } from './core/network/declare-network-rules.js';
+import { createWithdrawNetworkRules } from './core/network/withdraw-network-rules.js';
 import { createListMachines } from './core/machines/list-machines.js';
 import { createAuthenticateOperator } from './core/operator/authenticate-operator.js';
 import type { Clock } from './core/shared/clock.js';
@@ -100,9 +102,12 @@ export function createTrierarchPluginApp(options: {
     return { state: 'not-connected', ship: null, lastShipId: (await connections.binding(fleetId))?.shipId ?? null };
   };
   const requests = createPrismaInstallationRequests(prisma);
-  const setFleetEnabled = createSetFleetEnabled({ switches, requests, hasher: sha256RequestHasher, clock });
+  // What this process declared to each fleet, so a pass declares or withdraws only what changed.
+  const declarations: Declarations = new Map();
+  const withdraw = createWithdrawNetworkRules({ door, connections, declarations });
+  const setFleetEnabled = createSetFleetEnabled({ switches, requests, hasher: sha256RequestHasher, clock, withdraw });
   const readFleet = createReadFleet({ isServed, connections });
-  const deleteFleet = createDeleteFleet({ forgetter: createPrismaFleetForgetter(prisma), requests, hasher: sha256RequestHasher, clock });
+  const deleteFleet = createDeleteFleet({ forgetter: createPrismaFleetForgetter(prisma), requests, hasher: sha256RequestHasher, clock, withdraw });
   const connect = createConnect({ door, store: connections, clock });
   const joinMachine = createJoinMachine({ door, connections, keys: randomIdempotencyKeys, fleetUrl: options.fleetUrl });
   const silentAfterMs = options.silentAfterMs ?? DEFAULT_SILENT_AFTER_MS;
