@@ -1,4 +1,4 @@
-import type { FleetId, LabelId, LabelValueId, ShipId } from '@aeolus-fleet/common';
+import type { FleetId, LabelId, LabelValueId, NetworkRule, ShipId } from '@aeolus-fleet/common';
 
 import type { ConnectionStore, FleetDoor, FleetRefusal, ListedShip, PluginBinding, PluginCrew } from '../../src/core/connection/ports.js';
 import { err, ok, type Result } from '../../src/core/shared/result.js';
@@ -56,6 +56,8 @@ export function fakePluginFleet() {
     labels: new Array<{ labelId: LabelId; key: string; values: { valueId: LabelValueId; value: string }[]; ownerShipId: ShipId }>(),
     /** Label writes the trierarch plugin made, in order. */
     labelWrites: new Array<string>(),
+    /** Each list of network rules the trierarch plugin declared, in order; an empty one withdraws them (#573). */
+    declarations: new Array<NetworkRule[]>(),
     /** What argo was told, once per idempotency key, in order. */
     told: new Array<{ text: string; idempotencyKey: string }>(),
   };
@@ -229,6 +231,19 @@ export function fakePluginFleet() {
       ship.crewRequest = { ...ship.crewRequest, reason };
       state.explained.push({ shipId, reason });
       return Promise.resolve(ok(undefined));
+    },
+    declareNetworkRules: (crewToken, { rules }) => {
+      if (!state.isAnswering) {
+        return unavailable();
+      }
+      if (!state.liveTokens.has(crewToken)) {
+        return released();
+      }
+      if (!state.scopes.includes('labels:define')) {
+        return forbidden('labels:define');
+      }
+      state.declarations.push(rules.map((rule) => ({ from: [...rule.from], to: [...rule.to] })));
+      return Promise.resolve(ok({ rules: rules.length }));
     },
     tellArgo: (crewToken, notice) => {
       if (!state.isAnswering) {
