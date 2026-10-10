@@ -25,7 +25,7 @@ import { createLabelMachines } from './core/machines/label-machines.js';
 import { createCheckCrewSettings } from './core/assignment/check-crew-settings.js';
 import { createTellModelMismatches } from './core/assignment/tell-model-mismatches.js';
 import { createJoinMachine } from './core/machines/join-machine.js';
-import type { Declarations } from './core/network/declare-network-rules.js';
+import { createDeclareNetworkRules, type Declarations } from './core/network/declare-network-rules.js';
 import { createWithdrawNetworkRules } from './core/network/withdraw-network-rules.js';
 import { createListMachines } from './core/machines/list-machines.js';
 import { createAuthenticateOperator } from './core/operator/authenticate-operator.js';
@@ -42,7 +42,11 @@ export interface TrierarchPluginApp {
    * which ship.
    */
   restoreConnections: () => Promise<{ fleetId: FleetId; ship: string }[]>;
-  /** One assignment pass for every fleet it serves and is connected to, machine labels first; each fleet's refusal is logged, never thrown. */
+  /**
+   * One assignment pass for every fleet it serves and is connected to, machine
+   * labels and its declared rules first, and the declared rules withdrawn from
+   * each fleet that is off; each fleet's refusal is logged, never thrown.
+   */
   assignOnce: () => Promise<{ fleetId: FleetId; outcome: AssignOutcome }[]>;
   /** Runs an assignment pass every interval until the app closes. */
   startAssigning: (intervalMs: number) => void;
@@ -136,6 +140,25 @@ export function createTrierarchPluginApp(options: {
       server.log.info({ fleet: fleetId, ...outcome }, 'machine labels');
     }
   };
+  const declareNetworkRules = createDeclareNetworkRules({ door, connections, declarations });
+  /** Declares the trierarch reach once the machine labels pass defined its label (#573); a refusal is logged and the next pass tries again. */
+  const declareOnce = async (fleetId: FleetId): Promise<void> => {
+    const declared = await declareNetworkRules(fleetId);
+    if (!declared.isOk) {
+      server.log.warn({ fleet: fleetId, refusal: declared.error }, 'network rules refused; the next pass tries again');
+    } else if (declared.value.isDeclared) {
+      server.log.info({ fleet: fleetId }, 'network rules declared');
+    }
+  };
+  /** Withdraws the declared rules of a fleet that is off, which switching off could not while the fleet did not answer; logged, never thrown. */
+  const withdrawOnce = async (fleetId: FleetId): Promise<void> => {
+    const withdrawn = await withdraw(fleetId);
+    if (!withdrawn.isOk) {
+      server.log.warn({ fleet: fleetId, refusal: withdrawn.error }, 'withdrawing network rules refused; the next pass tries again');
+    } else if (withdrawn.value.isWithdrawn) {
+      server.log.info({ fleet: fleetId }, 'network rules withdrawn');
+    }
+  };
   // What this process compared already; the fleet keeps each notice once across restarts.
   const tellModelMismatches = createTellModelMismatches({ door, connections, checked: new Set() });
   /** Tells argo of the crewed ships whose stated model differs from their request's (#365); a refusal is logged and the pass goes on. */
@@ -152,9 +175,11 @@ export function createTrierarchPluginApp(options: {
     const done: { fleetId: FleetId; outcome: AssignOutcome }[] = [];
     for (const crew of await connections.connected()) {
       if (!(await isServed(crew.fleetId))) {
+        await withdrawOnce(crew.fleetId);
         continue;
       }
       await labelOnce(crew.fleetId);
+      await declareOnce(crew.fleetId);
       const assigned = await assignCrews(crew.fleetId);
       await tellOnce(crew.fleetId);
       if (assigned.isOk) {

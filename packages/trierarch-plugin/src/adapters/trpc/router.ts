@@ -137,6 +137,12 @@ const LIST_CODES = {
   FLEET_UNAVAILABLE: 'BAD_GATEWAY',
 } as const satisfies Record<string, TRPCError['code']>;
 
+/** The refusals of deleting a fleet, as the installation API states them. */
+const DELETE_CODES = {
+  REQUEST_ID_USED: 'CONFLICT',
+  FLEET_UNAVAILABLE: 'BAD_GATEWAY',
+} as const satisfies Record<string, TRPCError['code']>;
+
 /** The connection as the console reads it: whether the trierarch plugin serves the fleet, and its connection. */
 const connectionStatusOutputSchema = z.object({
   enabled: z.boolean(),
@@ -262,14 +268,14 @@ export const trierarchPluginRouter = t.router({
         const fleet = await ctx.readFleet({ fleetId: input.fleetId });
         return { enabled: fleet.isEnabled, connected: fleet.isConnected };
       }),
-    /** Forgets everything the trierarch plugin holds of the fleet. A replayed request id answers its first answer. */
+    /** Withdraws its declared rules from the fleet, then forgets everything the trierarch plugin holds of it; refused while the fleet does not answer. A replayed request id answers its first answer. */
     delete: installationProcedure
       .input(z.strictObject({ requestId: idempotencyKeySchema, fleetId: idSchema('fleet') }))
       .output(z.strictObject({}))
       .mutation(async ({ ctx, input }) => {
         const deleted = await ctx.deleteFleet(input);
         if (!deleted.isOk) {
-          throw new TRPCError({ code: 'CONFLICT', message: deleted.error.message });
+          throw new TRPCError({ code: DELETE_CODES[deleted.error.kind], message: deleted.error.message });
         }
         return {};
       }),
