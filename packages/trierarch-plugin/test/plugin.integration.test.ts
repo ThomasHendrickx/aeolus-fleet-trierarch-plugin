@@ -99,8 +99,9 @@ describe('a trierarch plugin process that was never connected', () => {
     const health = await fetch(`${address}/api/health`);
     expect(health.status).toBe(200);
     await expect(health.json()).resolves.toEqual({ status: 'ok' });
-    const version: unknown = await (await fetch(`${address}/api/version`)).json();
-    expect(version).toEqual({ trierarchPlugin: expect.stringMatching(/^\d+\.\d+\.\d+/) });
+    const version = z.record(z.string(), z.string()).parse(await (await fetch(`${address}/api/version`)).json());
+    expect(Object.keys(version)).toEqual(['trierarchPlugin']);
+    expect(version.trierarchPlugin).toMatch(/^\d+\.\d+\.\d+/);
   });
 
   it('refuses a join and the machines until it is connected', async () => {
