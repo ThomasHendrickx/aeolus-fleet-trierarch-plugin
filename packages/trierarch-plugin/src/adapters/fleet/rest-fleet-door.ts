@@ -2,9 +2,13 @@
  * The fleet's ship calls over its REST API (`/api/v1`), as any ship that is
  * not TypeScript-bound may make them: the trierarch plugin uses the public API
  * like any client (decision 0030). A refusal reads as the fleet's code and
- * message.
+ * message. While the fleet is busy (nothing stored), each call is made again
+ * by itself with the same body, after each of the busy waits (each drawn by
+ * `busyWaitMs`), so a send keeps its idempotency key.
  */
-import { commissionShipOutputSchema, declareNetworkRulesOutputSchema, defineLabelOutputSchema, fleetListOutputSchema, idSchema, labelsOutputSchema, shipDetailOutputSchema } from '@aeolus-fleet/common';
+import { setTimeout as wait } from 'node:timers/promises';
+
+import { busyWaitMs, commissionShipOutputSchema, declareNetworkRulesOutputSchema, defineLabelOutputSchema, FLEET_BUSY_WAITS_MS, fleetListOutputSchema, idSchema, labelsOutputSchema, shipDetailOutputSchema } from '@aeolus-fleet/common';
 import { z } from 'zod';
 
 import type { FleetDoor, FleetRefusal } from '../../core/connection/ports.js';
@@ -12,6 +16,9 @@ import { err, ok, type Result } from '../../core/shared/result.js';
 import { runningVersion } from '../http/version.js';
 
 const refusalSchema = z.object({ code: z.string(), message: z.string() });
+
+/** The fleet's code for a call it could not start: nothing was stored, so the same call may be made again. */
+const FLEET_BUSY = 'SERVICE_UNAVAILABLE';
 
 /** Where the trierarch plugin says its ship runs: on a server the operator runs. */
 const LOCATION = { kind: 'SERVER' } as const;
@@ -25,7 +32,34 @@ const MODEL = `@aeolus-fleet/trierarch-plugin@${runningVersion()}`;
 /** The operator ship's name (decision 0012). */
 const OPERATOR_SHIP_NAME = 'argo';
 
-async function call<T>(fleetUrl: string, request: { path: string; method: 'GET' | 'POST'; crewToken?: string; body?: unknown; answers: z.ZodType<T> }): Promise<Result<T, FleetRefusal>> {
+/** One call to the fleet. */
+interface FleetCall<T> {
+  path: string;
+  method: 'GET' | 'POST';
+  crewToken?: string;
+  body?: unknown;
+  answers: z.ZodType<T>;
+}
+
+/** Where the fleet answers, how long to wait before each next call while it is busy, and the draw for each wait. */
+interface Door {
+  fleetUrl: string;
+  busyWaitsMs: readonly number[];
+  random: () => number;
+}
+
+async function callFleet<T>({ fleetUrl, busyWaitsMs, random }: Door, request: FleetCall<T>): Promise<Result<T, FleetRefusal>> {
+  for (const waitMs of busyWaitsMs) {
+    const answered = await callOnce(fleetUrl, request);
+    if (answered.isOk || answered.error.code !== FLEET_BUSY) {
+      return answered;
+    }
+    await wait(busyWaitMs(waitMs, random));
+  }
+  return callOnce(fleetUrl, request);
+}
+
+async function callOnce<T>(fleetUrl: string, request: FleetCall<T>): Promise<Result<T, FleetRefusal>> {
   const headers: Record<string, string> = {};
   if (request.crewToken !== undefined) {
     headers.authorization = `Bearer ${request.crewToken}`;
@@ -52,19 +86,21 @@ function dateOf(iso: string | null): Date | null {
   return iso === null ? null : new Date(iso);
 }
 
-export function createRestFleetDoor(fleetUrl: string): FleetDoor {
+export function createRestFleetDoor(fleetUrl: string, options: { busyWaitsMs?: readonly number[]; random?: () => number } = {}): FleetDoor {
+  const door = { fleetUrl, busyWaitsMs: options.busyWaitsMs ?? FLEET_BUSY_WAITS_MS, random: options.random ?? Math.random };
+  const call = <T>(request: FleetCall<T>) => callFleet(door, request);
   return {
     register: ({ shipId, secret }) =>
-      call(fleetUrl, { path: '/ship/register', method: 'POST', body: { shipId, secret, location: LOCATION, harness: HARNESS }, answers: z.object({ crewToken: z.string() }) }),
+      call({ path: '/ship/register', method: 'POST', body: { shipId, secret, location: LOCATION, harness: HARNESS }, answers: z.object({ crewToken: z.string() }) }),
     whoami: (crewToken) =>
-      call(fleetUrl, {
+      call({
         path: '/ship/whoami',
         method: 'GET',
         crewToken,
         answers: z.object({ shipId: idSchema('ship'), fleetId: idSchema('fleet'), name: z.string(), type: z.string() }),
       }),
     getShip: async (crewToken, ship) => {
-      const read = await call(fleetUrl, { path: '/fleet/ship', method: 'POST', crewToken, body: ship, answers: shipDetailOutputSchema });
+      const read = await call({ path: '/fleet/ship', method: 'POST', crewToken, body: ship, answers: shipDetailOutputSchema });
       if (!read.isOk) {
         return read;
       }
@@ -78,11 +114,11 @@ export function createRestFleetDoor(fleetUrl: string): FleetDoor {
       });
     },
     deregister: async (crewToken) => {
-      const ended = await call(fleetUrl, { path: '/ship/deregister', method: 'POST', crewToken, body: {}, answers: z.unknown() });
+      const ended = await call({ path: '/ship/deregister', method: 'POST', crewToken, body: {}, answers: z.unknown() });
       return ended.isOk ? ok(undefined) : ended;
     },
     commission: async (crewToken, ship) => {
-      const commissioned = await call(fleetUrl, { path: '/fleet/commission', method: 'POST', crewToken, body: ship, answers: commissionShipOutputSchema });
+      const commissioned = await call({ path: '/fleet/commission', method: 'POST', crewToken, body: ship, answers: commissionShipOutputSchema });
       if (!commissioned.isOk) {
         return commissioned;
       }
@@ -94,7 +130,7 @@ export function createRestFleetDoor(fleetUrl: string): FleetDoor {
       return ok({ shipId, prompt, crewLines, secret });
     },
     listShips: async (crewToken) => {
-      const listed = await call(fleetUrl, { path: '/fleet/list', method: 'POST', crewToken, body: {}, answers: fleetListOutputSchema });
+      const listed = await call({ path: '/fleet/list', method: 'POST', crewToken, body: {}, answers: fleetListOutputSchema });
       return listed.isOk
         ? ok(
             listed.value.map(({ id, name, type, status, lastSeenAt, model, crewRequest, labels }) => ({
@@ -118,35 +154,35 @@ export function createRestFleetDoor(fleetUrl: string): FleetDoor {
         : listed;
     },
     assignCrew: async (crewToken, claim) => {
-      const claimed = await call(fleetUrl, { path: '/fleet/assignCrew', method: 'POST', crewToken, body: claim, answers: z.unknown() });
+      const claimed = await call({ path: '/fleet/assignCrew', method: 'POST', crewToken, body: claim, answers: z.unknown() });
       return claimed.isOk ? ok(undefined) : claimed;
     },
     listLabels: async (crewToken) => {
-      const listed = await call(fleetUrl, { path: '/fleet/labels', method: 'GET', crewToken, answers: labelsOutputSchema });
+      const listed = await call({ path: '/fleet/labels', method: 'GET', crewToken, answers: labelsOutputSchema });
       return listed.isOk
         ? ok(listed.value.map(({ id, key, values, owner }) => ({ labelId: id, key, values: values.map((value) => ({ valueId: value.id, value: value.value })), ownerShipId: owner.id })))
         : listed;
     },
     defineLabel: async (crewToken, label) => {
-      const defined = await call(fleetUrl, { path: '/fleet/defineLabel', method: 'POST', crewToken, body: label, answers: defineLabelOutputSchema });
+      const defined = await call({ path: '/fleet/defineLabel', method: 'POST', crewToken, body: label, answers: defineLabelOutputSchema });
       return defined.isOk ? ok({ labelId: defined.value.labelId, values: defined.value.values.map((value) => ({ valueId: value.id, value: value.value })) }) : defined;
     },
     assignLabel: async (crewToken, assignment) => {
-      const assigned = await call(fleetUrl, { path: '/fleet/assignLabel', method: 'POST', crewToken, body: assignment, answers: z.unknown() });
+      const assigned = await call({ path: '/fleet/assignLabel', method: 'POST', crewToken, body: assignment, answers: z.unknown() });
       return assigned.isOk ? ok(undefined) : assigned;
     },
     unassignLabel: async (crewToken, assignment) => {
-      const unassigned = await call(fleetUrl, { path: '/fleet/unassignLabel', method: 'POST', crewToken, body: assignment, answers: z.unknown() });
+      const unassigned = await call({ path: '/fleet/unassignLabel', method: 'POST', crewToken, body: assignment, answers: z.unknown() });
       return unassigned.isOk ? ok(undefined) : unassigned;
     },
     explainCrewRequest: async (crewToken, explanation) => {
-      const explained = await call(fleetUrl, { path: '/fleet/explainCrewRequest', method: 'POST', crewToken, body: explanation, answers: z.unknown() });
+      const explained = await call({ path: '/fleet/explainCrewRequest', method: 'POST', crewToken, body: explanation, answers: z.unknown() });
       return explained.isOk ? ok(undefined) : explained;
     },
     declareNetworkRules: (crewToken, declaration) =>
-      call(fleetUrl, { path: '/fleet/declareNetworkRules', method: 'POST', crewToken, body: declaration, answers: declareNetworkRulesOutputSchema }),
+      call({ path: '/fleet/declareNetworkRules', method: 'POST', crewToken, body: declaration, answers: declareNetworkRulesOutputSchema }),
     tellArgo: async (crewToken, { text, idempotencyKey }) => {
-      const sent = await call(fleetUrl, {
+      const sent = await call({
         path: '/ship/send',
         method: 'POST',
         crewToken,
