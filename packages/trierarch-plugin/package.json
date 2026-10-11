@@ -1,7 +1,11 @@
 {
   "name": "@aeolus-fleet/trierarch-plugin",
   "version": "0.0.0",
-  "description": "Aeolus trierarch plugin: brings machines into the fleet and assigns crew requests to their trierarchs, as a ship of the fleet.",
+  "description": "Brings your machines into an Aeolus fleet and places crew requests on them.",
+  "keywords": [
+    "aeolus",
+    "ai-agents"
+  ],
   "license": "Apache-2.0",
   "type": "module",
   "repository": {

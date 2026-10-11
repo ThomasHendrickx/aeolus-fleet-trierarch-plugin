@@ -1,6 +1,6 @@
 # @aeolus-fleet/trierarch-plugin
 
-The trierarchs' plugin on the server side (decision 0030): it brings machines into the fleet and assigns crew requests to their trierarchs. Optional: a fleet works without it. Aeolus knows nothing about it beyond its ship, which holds `fleet:read`, `fleet:manage` and `crew:assign` and reaches the fleet only through its public API. What it does is in [docs/trierarch.md](../../docs/trierarch.md).
+Brings your machines into the fleet and places each crew request on a machine that fits. It is the trierarchs' plugin on the server side (decision 0030). Optional: a fleet works without it. Aeolus knows nothing about it beyond its ship, which holds `fleet:read`, `fleet:manage`, `crew:assign`, `labels:define` and `labels:assign` and reaches the fleet only through its public API. What it does is in [docs/trierarch.md](../../docs/trierarch.md).
 
 So far: its own process and small database (each fleet's connection and switch), the connection the operator makes as its ship, a machine joining, the machines with their trierarchs' reports, assignment (docs/trierarch.md, "Assignment"), the installation procedures, `/api/health` and `/api/version`.
 
@@ -21,7 +21,7 @@ Assignment runs as a pass for every fleet it serves and is connected to. Each pa
 | `TRIERARCH_PASS_INTERVAL_SECONDS` | no | How often assignment runs a pass for each fleet. `10` by default |
 
 2. `aeolus-trierarch-plugin start` migrates the database, serves, and runs an assignment pass every interval. Every fleet it serves whose kept crew token its fleet still takes is connected again; any other fleet is not connected. `aeolus-trierarch-plugin migrate` migrates alone.
-3. Each fleet's operator connects it: commission its ship with `fleet:read`, `fleet:manage` and `crew:assign`, and hand the ship's secret to `connection.connect`, server to server. It registers as a server and keeps only the crew token; the secret is never stored or logged. The console's screens for it come later.
+3. Each fleet's operator connects it: commission its ship with `fleet:read`, `fleet:manage`, `crew:assign`, `labels:define` and `labels:assign`, and hand the ship's secret to `connection.connect`, server to server. It registers as a server and keeps only the crew token; the secret is never stored or logged.
 
 ## API
 
