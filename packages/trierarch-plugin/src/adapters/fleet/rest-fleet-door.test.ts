@@ -66,12 +66,15 @@ describe('the fleet door over REST while the fleet is busy (#610)', () => {
   });
 
   it('draws each wait between half and all of it, so callers refused together do not call again together', async () => {
-    await aFleetAnswering([BUSY, whoami], async (fleetUrl, asked) => {
-      await createRestFleetDoor(fleetUrl, { busyWaitsMs: [400], random: () => 0 }).whoami('aeolus_ct_v1_x');
+    await aFleetAnswering([BUSY, BUSY, whoami], async (fleetUrl) => {
+      const draws = [0, 1];
+      const waited: number[] = [];
+      await createRestFleetDoor(fleetUrl, { busyWaitsMs: [400, 400], random: () => draws.shift() ?? 0, wait: (waitMs) => {
+        waited.push(waitMs);
+        return Promise.resolve();
+      } }).whoami('aeolus_ct_v1_x');
 
-      const [first = 0, second = 0] = asked.map(({ at }) => at);
-      expect(second - first).toBeGreaterThanOrEqual(190);
-      expect(second - first).toBeLessThan(350);
+      expect(waited).toEqual([200, 400]);
     });
   });
 
