@@ -210,6 +210,7 @@ describe('a joined machine reporting', () => {
           caps: { ships: 6, running: 3 },
           kept: [],
           orphans: [],
+          runtime: 'host',
           version: '0.19.0',
         },
       },
