@@ -1,4 +1,4 @@
-import { CREW_REQUEST_REASON_MAX_LENGTH, crewSettingsSchema, NO_MACHINE_MATCHES_REASON, type CrewSettings, type ShipId, type TrierarchReportDetails } from '@aeolus-fleet/common';
+import { CREW_REQUEST_REASON_MAX_LENGTH, NO_MACHINE_MATCHES_REASON, readCrewSettings, type CrewSettings, type ShipId, type TrierarchReportDetails } from '@aeolus-fleet/common';
 import { z } from 'zod';
 
 /** An unassigned crew request whose ship awaits crew: its settings as the fleet holds them, and the reason written on it now. */
@@ -138,14 +138,10 @@ function fit(
   return best === undefined ? { reason: `no trierarch with room: all ${String(left.length)} that fit are full` } : { trierarch: best };
 }
 
-/** The settings as crew settings, or why not: the first issue, with the field it is in. */
+/** The settings as crew settings, or why not: common's reading, the one the fleet refuses a request by (#809). */
 function parsed(settings: unknown): { settings: CrewSettings } | Misfit {
-  const result = crewSettingsSchema.safeParse(settings);
-  if (result.success) {
-    return { settings: result.data };
-  }
-  const [issue] = result.error.issues;
-  return { reason: `settings are not valid crew settings: ${issue === undefined ? 'unreadable' : lineOf(issue)}`, field: issue?.path[0] === undefined ? 'settings' : String(issue.path[0]) };
+  const read = readCrewSettings(settings);
+  return 'refusal' in read ? read.refusal : read;
 }
 
 /**
