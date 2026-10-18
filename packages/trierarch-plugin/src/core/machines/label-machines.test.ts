@@ -140,6 +140,22 @@ describe('machine labels (#102; docs/trierarch.md, Machine labels)', () => {
     ]);
   });
 
+  it('leaves a trierarch ship another ship commissioned unlabelled, and labels every later one (#934, decision 0046)', async () => {
+    aTrierarch(LINUX, { os: 'linux', arch: 'amd64' });
+    aTrierarch(MAC, { os: 'macos', arch: 'arm64' });
+    fleet.state.commissionedByOthers.add(LINUX);
+
+    const done = await labelMachines();
+
+    expect(done).toMatchObject({ isOk: true, value: { defined: 3, assigned: 4, unassigned: 0 } });
+    expect(fleet.state.labelWrites.filter((write) => write.startsWith('assign'))).toEqual([
+      'assign trierarch-plugin trierarch=plugin',
+      'assign trierarch-mac os=macos',
+      'assign trierarch-mac arch=arm64',
+      'assign trierarch-mac trierarch=machine',
+    ]);
+  });
+
   it('labels nothing while its ship holds no label scopes: connected before 0.20.0, its ship is retired and the plugin connected again for them', async () => {
     fleet.state.scopes.splice(0, fleet.state.scopes.length, ...fleet.state.scopes.filter((scope) => !LABEL_SCOPES.includes(scope)));
     aTrierarch(MAC, { os: 'macos', arch: 'arm64' });

@@ -39,6 +39,13 @@ const LABEL_SCOPES = ['labels:define', 'labels:assign'];
 /** The refusals that mean the fleet changed since it was read (a key taken, a ship or value gone): read again on the next pass. */
 const CHANGED = new Set(['CONFLICT', 'NOT_FOUND']);
 
+/**
+ * The refusal of a ship the plugin may not label: neither its own nor one it
+ * commissioned (decision 0046). It holds the label scopes, checked before the
+ * pass, so a FORBIDDEN names the ship, which the pass leaves unlabelled.
+ */
+const NOT_OURS = 'FORBIDDEN';
+
 const NO_LABEL_SCOPES = 'its ship holds no label scopes, and scopes never change: retire its ship and connect the trierarch plugin again to label machines';
 
 /**
@@ -47,7 +54,8 @@ const NO_LABEL_SCOPES = 'its ship holds no label scopes, and scopes never change
  * which it owns, labels its own ship trierarch=plugin, and each trierarch ship
  * trierarch=machine and with the values its machine reports: the value it
  * reports now goes on first, then any other value of that label comes off. A
- * key another ship owns is left alone. Without the label scopes it labels
+ * key another ship owns is left alone, and so is a trierarch ship another ship
+ * commissioned (decision 0046). Without the label scopes it labels
  * nothing and says why. Placement reads the labels; a request already
  * assigned stays where it is when they change.
  */
@@ -128,6 +136,9 @@ async function labelPass(door: FleetDoor, crew: PluginCrew): Promise<Result<Labe
       }
       outcome.assigned += relabelled.value.assigned;
       outcome.unassigned += relabelled.value.unassigned;
+      if (relabelled.value.isNotOurs) {
+        break;
+      }
     }
   }
   return ok(outcome);
@@ -146,15 +157,22 @@ async function labelledOf(door: FleetDoor, { crew, ship }: { crew: PluginCrew; s
   return ok({ isOwnShip: false, machine: details.success ? details.data.machine : undefined });
 }
 
-/** Puts the wanted value on first, so the ship is never without the label while it changes; then takes every other value of the label off. */
+/**
+ * Puts the wanted value on first, so the ship is never without the label while
+ * it changes; then takes every other value of the label off. Stops at a ship
+ * the plugin may not label, and says so.
+ */
 async function relabel(
   door: FleetDoor,
   change: { crewToken: string; ship: ListedShip; wanted: LabelValueId | undefined; carried: LabelValueId[] },
-): Promise<Result<{ assigned: number; unassigned: number }, FleetRefusal>> {
+): Promise<Result<{ assigned: number; unassigned: number; isNotOurs: boolean }, FleetRefusal>> {
   const { crewToken, ship, wanted, carried } = change;
-  const counted = { assigned: 0, unassigned: 0 };
+  const counted = { assigned: 0, unassigned: 0, isNotOurs: false };
   if (wanted !== undefined && !carried.includes(wanted)) {
     const assigned = await door.assignLabel(crewToken, { shipId: ship.shipId, valueId: wanted });
+    if (!assigned.isOk && assigned.error.code === NOT_OURS) {
+      return ok({ ...counted, isNotOurs: true });
+    }
     if (!assigned.isOk && !CHANGED.has(assigned.error.code)) {
       return assigned;
     }
@@ -162,6 +180,9 @@ async function relabel(
   }
   for (const valueId of carried.filter((each) => each !== wanted)) {
     const unassigned = await door.unassignLabel(crewToken, { shipId: ship.shipId, valueId });
+    if (!unassigned.isOk && unassigned.error.code === NOT_OURS) {
+      return ok({ ...counted, isNotOurs: true });
+    }
     if (!unassigned.isOk && !CHANGED.has(unassigned.error.code)) {
       return unassigned;
     }

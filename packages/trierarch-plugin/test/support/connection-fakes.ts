@@ -54,6 +54,8 @@ export function fakePluginFleet() {
     explained: new Array<{ shipId: ShipId; reason: string | null }>(),
     /** The fleet's labels, each with its owner (#102). */
     labels: new Array<{ labelId: LabelId; key: string; values: { valueId: LabelValueId; value: string }[]; ownerShipId: ShipId }>(),
+    /** Ships another ship commissioned: only argo or that ship labels them (decision 0046). */
+    commissionedByOthers: new Set<ShipId>(),
     /** Label writes the trierarch plugin made, in order. */
     labelWrites: new Array<string>(),
     /** Each list of network rules the trierarch plugin declared, in order; an empty one withdraws them (#573). */
@@ -65,6 +67,7 @@ export function fakePluginFleet() {
   const labelId = (): LabelId => `lbl_01m3tbfspe96yf1rnr4ank9${String(nextLabel).padStart(3, '0')}`;
   const valueId = (): LabelValueId => `lbv_01m3tbfspe96yf1rnr4ank9${String(nextLabel++).padStart(3, '0')}`;
   const forbidden = (scope: string) => Promise.resolve(err({ code: 'FORBIDDEN', message: `Needs ${scope}` }));
+  const notYours = (ship: ListedShip) => Promise.resolve(err({ code: 'FORBIDDEN', message: `${ship.name} is neither your ship nor one it commissioned: only argo labels it` }));
   const unavailable = () => Promise.resolve(err({ code: 'UNAVAILABLE', message: 'The fleet did not answer' }));
   const released = () => Promise.resolve(err({ code: 'LEASE_ENDED', message: 'This ship was released; this session no longer crews it.' }));
   const door: FleetDoor = {
@@ -198,6 +201,9 @@ export function fakePluginFleet() {
       if (ship === undefined || label === undefined) {
         return Promise.resolve(err({ code: 'NOT_FOUND', message: 'No such ship or label value' }));
       }
+      if (state.commissionedByOthers.has(shipId)) {
+        return notYours(ship);
+      }
       if (!ship.labels.some((each) => each.valueId === picked)) {
         ship.labels = [...ship.labels, { labelId: label.labelId, valueId: picked }];
       }
@@ -215,6 +221,9 @@ export function fakePluginFleet() {
       const label = state.labels.find((each) => each.values.some((value) => value.valueId === dropped));
       if (ship === undefined || label === undefined) {
         return Promise.resolve(err({ code: 'NOT_FOUND', message: 'No such ship or label value' }));
+      }
+      if (state.commissionedByOthers.has(shipId)) {
+        return notYours(ship);
       }
       ship.labels = ship.labels.filter((each) => each.valueId !== dropped);
       state.labelWrites.push(`unassign ${ship.name} ${label.key}=${label.values.find((value) => value.valueId === dropped)?.value ?? ''}`);
