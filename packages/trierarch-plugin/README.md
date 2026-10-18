@@ -21,7 +21,7 @@ Assignment runs as a pass for every fleet it serves and is connected to. Each pa
 | `TRIERARCH_PASS_INTERVAL_SECONDS` | no | How often assignment runs a pass for each fleet. `10` by default |
 
 2. `aeolus-trierarch-plugin start` migrates the database, serves, and runs an assignment pass every interval. Every fleet it serves whose kept crew token its fleet still takes is connected again; any other fleet is not connected. `aeolus-trierarch-plugin migrate` migrates alone.
-3. Each fleet's operator connects it: commission its ship with `fleet:read`, `fleet:manage`, `crew:assign`, `labels:define` and `labels:assign`, and hand the ship's secret to `connection.connect`, server to server. It registers as a server and keeps only the crew token; the secret is never stored or logged.
+3. Each fleet's operator connects it: commission its ship with `fleet:read`, `fleet:commission`, `crew:assign`, `crew:run`, `labels:define` and `labels:assign`, and hand the ship's secret to `connection.connect`, server to server. It registers as a server and keeps only the crew token; the secret is never stored or logged.
 
 ## API
 
