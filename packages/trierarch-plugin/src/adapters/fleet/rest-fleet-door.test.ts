@@ -95,3 +95,32 @@ describe('the fleet door over REST while the fleet is busy (#610)', () => {
     });
   });
 });
+
+describe('the fleet door over REST within read reach (decision 0034)', () => {
+  it('lists only the ships it reads whole, leaving out those outside its read reach', async () => {
+    const whole = {
+      id: 'shp_01m3tbfspe96yf1rnr4ank9h2a',
+      name: 'scout',
+      type: 'reviewer',
+      kind: 'agent',
+      status: 'crewed',
+      startingPrompt: null,
+      location: null,
+      lastSeenAt: null,
+      ping: null,
+      scopes: ['messages:send', 'messages:receive'],
+      report: null,
+      crewRequest: null,
+      labels: [{ labelId: 'lbl_01m3tbfspe96yf1rnr4ank9h2c', key: 'team', valueId: 'lbv_01m3tbfspe96yf1rnr4ank9h2d', value: 'a' }],
+      model: null,
+      harness: null,
+      awaitingCrewSince: null,
+      retiredAt: null,
+    };
+    await aFleetAnswering([{ status: 200, body: [whole, { id: 'shp_01m3tbfspe96yf1rnr4ank9h2b', name: 'vault', type: 'keeper', status: 'crewed', isInReadReach: false }] }], async (fleetUrl) => {
+      const listed = await createRestFleetDoor(fleetUrl).listShips('aeolus_ct_v1_x');
+
+      expect(listed.isOk && listed.value.map((ship) => ship.shipId)).toEqual([whole.id]);
+    });
+  });
+});

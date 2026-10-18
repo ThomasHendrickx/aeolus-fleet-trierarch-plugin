@@ -8,7 +8,7 @@
  */
 import { setTimeout as wait } from 'node:timers/promises';
 
-import { busyWaitMs, commissionShipOutputSchema, declareNetworkRulesOutputSchema, defineLabelOutputSchema, FLEET_BUSY_WAITS_MS, fleetListOutputSchema, idSchema, labelsOutputSchema, shipDetailOutputSchema } from '@aeolus-fleet/common';
+import { busyWaitMs, commissionShipOutputSchema, declareNetworkRulesOutputSchema, defineLabelOutputSchema, FLEET_BUSY_WAITS_MS, fleetListOutputSchema, idSchema, isInReadReach, labelsOutputSchema, shipDetailOutputSchema } from '@aeolus-fleet/common';
 import { z } from 'zod';
 
 import type { FleetDoor, FleetRefusal } from '../../core/connection/ports.js';
@@ -134,7 +134,8 @@ export function createRestFleetDoor(fleetUrl: string, options: { busyWaitsMs?: r
       const listed = await call({ path: '/fleet/list', method: 'POST', crewToken, body: {}, answers: fleetListOutputSchema });
       return listed.isOk
         ? ok(
-            listed.value.map(({ id, name, type, status, lastSeenAt, model, crewRequest, labels }) => ({
+            // A ship outside read reach shows too little to crew (decision 0034).
+            listed.value.filter(isInReadReach).map(({ id, name, type, status, lastSeenAt, model, crewRequest, labels }) => ({
               shipId: id,
               name,
               type,
