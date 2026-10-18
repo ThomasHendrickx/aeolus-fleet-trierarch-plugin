@@ -36,7 +36,7 @@ function withdraw() {
   return createWithdrawNetworkRules({ door: fleet.door, connections, declarations })(FLEET_ID);
 }
 
-const TRIERARCH_REACH = [{ from: [{ labelId: TRIERARCH, value: ANY_LABEL_VALUE }], to: [{ labelId: TRIERARCH, value: ANY_LABEL_VALUE }] }];
+const TRIERARCH_REACH = [{ verb: 'send', from: [{ labelId: TRIERARCH, value: ANY_LABEL_VALUE }], to: [{ labelId: TRIERARCH, value: ANY_LABEL_VALUE }] }];
 
 describe('declaring the trierarch reach (#573, decision 0037)', () => {
   it('declares trierarch=* to trierarch=* on the trierarch label it owns', async () => {

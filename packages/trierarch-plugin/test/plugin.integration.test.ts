@@ -409,7 +409,7 @@ describe('the trierarch reach against a real fleet (#573, decision 0037)', () =>
     const own = (await useCases.listFleet(argo)).find((ship) => ship.id === shipId);
     expect(own?.labels.map((label) => `${label.key}=${label.value}`)).toEqual(['trierarch=plugin']);
     const term = { labelId: await trierarchLabelId(), value: '*' };
-    await expect(declared()).resolves.toEqual([{ shipId, rules: [{ from: [term], to: [term] }] }]);
+    await expect(declared()).resolves.toEqual([{ shipId, rules: [{ verb: 'send', from: [term], to: [term] }] }]);
     await expect(fleetDatabase.event.count({ where: { type: 'NetworkRulesDeclared' } })).resolves.toBe(1);
   });
 });

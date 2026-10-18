@@ -40,7 +40,7 @@ export function createDeclareNetworkRules(deps: { door: FleetDoor; connections: 
       return ok({ isDeclared: false });
     }
     const term = { labelId: label.labelId, value: ANY_LABEL_VALUE };
-    const declared = await deps.door.declareNetworkRules(crew.crewToken, { rules: [{ from: [term], to: [term] }] });
+    const declared = await deps.door.declareNetworkRules(crew.crewToken, { rules: [{ verb: 'send', from: [term], to: [term] }] });
     if (!declared.isOk) {
       return refuse('FLEET_UNAVAILABLE', `The fleet did not take its network rules: ${declared.error.message}`);
     }

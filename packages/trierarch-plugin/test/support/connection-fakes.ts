@@ -242,7 +242,7 @@ export function fakePluginFleet() {
       if (!state.scopes.includes('labels:define')) {
         return forbidden('labels:define');
       }
-      state.declarations.push(rules.map((rule) => ({ from: [...rule.from], to: [...rule.to] })));
+      state.declarations.push(rules.map((rule) => ({ verb: 'send', from: [...rule.from], to: [...rule.to] })));
       return Promise.resolve(ok({ rules: rules.length }));
     },
     tellArgo: (crewToken, notice) => {
