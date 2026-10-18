@@ -21,7 +21,7 @@ export const COMMISSIONED_SHIP_ID: ShipId = 'shp_01m3tbfspe96yf1rnr4ank9h2b';
 export interface CommissionedShip {
   name: string;
   type: string;
-  fleetScopes: string[];
+  scopes: string[];
   idempotencyKey: string;
 }
 
@@ -35,7 +35,7 @@ export function fakePluginFleet() {
   const state = {
     secret: 'aeolus_sk_v1_good',
     fleetId: FLEET_ID,
-    scopes: ['messages:send', 'messages:receive', 'fleet:read', 'fleet:manage', 'crew:assign'],
+    scopes: ['messages:send', 'messages:receive', 'fleet:read', 'fleet:manage', 'crew:assign', 'crew:run'],
     isCrewed: false,
     isAnswering: true,
     liveTokens: new Set<string>(),

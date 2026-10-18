@@ -84,7 +84,7 @@ export interface FleetDoor {
    */
   commission(
     crewToken: string,
-    ship: { name: string; type: string; fleetScopes: string[]; idempotencyKey: string },
+    ship: { name: string; type: string; scopes: string[]; idempotencyKey: string },
   ): Promise<Result<{ shipId: ShipId } & IssuedPrompt, FleetRefusal>>;
   /** Every ship of the fleet, retired ones included (fleet:read). */
   listShips(crewToken: string): Promise<Result<ListedShip[], FleetRefusal>>;

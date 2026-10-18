@@ -47,7 +47,7 @@ export function createJoinMachine(deps: { door: FleetDoor; connections: Connecti
     if (!crew) {
       return refuse('NOT_CONNECTED', 'The trierarch plugin is not connected to this fleet: connect it in the console');
     }
-    const commissioned = await deps.door.commission(crew.crewToken, { name, type: TRIERARCH_TYPE, fleetScopes: TRIERARCH_SCOPES, idempotencyKey: deps.keys.next() });
+    const commissioned = await deps.door.commission(crew.crewToken, { name, type: TRIERARCH_TYPE, scopes: TRIERARCH_SCOPES, idempotencyKey: deps.keys.next() });
     if (!commissioned.isOk) {
       return commissioned.error.code === 'CONFLICT'
         ? refuse('NAME_TAKEN', commissioned.error.message)

@@ -34,7 +34,7 @@ describe('a machine joining', () => {
   it('commissions a ship of type trierarch with exactly crew:run beside send and receive, named as the operator asked', async () => {
     await join();
 
-    expect(fleet.state.commissioned).toEqual([{ name: 'mac-studio', type: 'trierarch', fleetScopes: ['crew:run'], idempotencyKey: 'join-1' }]);
+    expect(fleet.state.commissioned).toEqual([{ name: 'mac-studio', type: 'trierarch', scopes: ['crew:run'], idempotencyKey: 'join-1' }]);
   });
 
   it('answers its starting prompt as the fleet issued it, and a setup line for the machine built from its fields', async () => {
