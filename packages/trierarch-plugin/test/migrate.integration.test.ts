@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-// The shared Postgres container's URL, which the global setup provides to every file.
-import type {} from '../../core/test/postgres.global-setup.js';
-import { createEmptyDatabase } from '../../core/test/support/database.js';
-import { migrateWhileAnotherHoldsTheLock } from '../../core/test/support/migrate-lock.js';
+import { createEmptyDatabase, migrateWhileAnotherHoldsTheLock } from '@aeolus-fleet/core/testing';
+
 import { migrateDatabase } from '../src/adapters/prisma/migrate.js';
 
 // Migrating the trierarch plugin's database while another migrate holds it, as two

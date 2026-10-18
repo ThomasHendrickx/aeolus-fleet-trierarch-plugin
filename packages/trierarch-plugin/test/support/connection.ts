@@ -1,7 +1,7 @@
 import type { ShipId } from '@aeolus-fleet/common';
 import { z } from 'zod';
 
-import { FLEET_URL, OPERATOR } from '../../../core/test/support/core-fixtures.js';
+import { FLEET_URL, OPERATOR } from '@aeolus-fleet/core/testing';
 
 /** Signs the operator in to the fleet's console: the session cookie the console's server forwards. */
 export async function signIn(fleetUrl: string): Promise<string> {
