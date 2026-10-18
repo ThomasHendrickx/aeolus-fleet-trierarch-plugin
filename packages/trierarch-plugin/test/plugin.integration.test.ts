@@ -14,7 +14,7 @@ import { runningVersion } from '../src/adapters/http/version.js';
 import { machineOutputSchema } from '../src/adapters/trpc/router.js';
 import { createTrierarchPluginApp, type TrierarchPluginApp } from '../src/app.js';
 import { connectPlugin, mutate, query, signIn } from './support/connection.js';
-import { createPluginDatabase } from './support/database.js';
+import { createPluginDatabase } from '../src/testing/database.js';
 
 // The trierarch plugin against a real fleet: it starts not connected, with no
 // secret anywhere; the operator connects it as its ship (fleet:read,
