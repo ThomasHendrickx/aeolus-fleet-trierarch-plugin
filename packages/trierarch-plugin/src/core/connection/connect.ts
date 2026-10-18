@@ -14,14 +14,14 @@ export type Connect = (input: { operatorFleetId: FleetId; shipId: ShipId; secret
  * commission machines' ships with crew:run, which a commission grants only
  * when its ship holds it (decision 0046), and assign crew requests.
  */
-const PLUGIN_SCOPES = ['fleet:read', 'fleet:manage', 'crew:assign', 'crew:run'];
+const PLUGIN_SCOPES = ['fleet:read', 'fleet:commission', 'crew:assign', 'crew:run'];
 
 /**
  * Use case: the operator connects the trierarch plugin, as squadrons is
  * connected. The console's server hands it its ship's secret, server to
  * server; the trierarch plugin registers with it as a server and keeps only
  * the crew token. The ship must be of the operator's fleet and hold
- * fleet:read, fleet:manage, crew:assign and crew:run, or the trierarch plugin lets it go
+ * fleet:read, fleet:commission, crew:assign and crew:run, or the trierarch plugin lets it go
  * again and keeps nothing. Each fleet has its own connection: connect works
  * only while the trierarch plugin is not connected to the operator's fleet,
  * whatever other fleets it serves. The secret is never kept or logged.
@@ -50,7 +50,7 @@ export function createConnect(deps: { door: FleetDoor; store: ConnectionStore; c
     }
     const ship = await deps.door.getShip(crewToken, { shipId });
     if (!ship.isOk || !PLUGIN_SCOPES.every((scope) => ship.value.scopes.includes(scope))) {
-      return letGo('MISSING_SCOPES', 'The ship needs fleet:read, fleet:manage, crew:assign and crew:run');
+      return letGo('MISSING_SCOPES', 'The ship needs fleet:read, fleet:commission, crew:assign and crew:run');
     }
 
     await deps.store.save({ fleetId: who.value.fleetId, shipId, name: who.value.name, crewToken, crewedAt: deps.clock.now() });

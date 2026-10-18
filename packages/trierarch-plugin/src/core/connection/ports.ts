@@ -78,7 +78,7 @@ export interface FleetDoor {
   /** Ends this session's crew of its ship: the lease and the secret it claimed with. */
   deregister(crewToken: string): Promise<Result<undefined, FleetRefusal>>;
   /**
-   * Commissions a ship as the crew token's ship (fleet:manage) under a new
+   * Commissions a ship as the crew token's ship (fleet:commission) under a new
    * idempotency key, with the fleet scopes given beside the send and receive
    * every agent ship has: its id and its starting prompt, issued once.
    */

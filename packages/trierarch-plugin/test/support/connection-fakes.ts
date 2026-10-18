@@ -35,7 +35,7 @@ export function fakePluginFleet() {
   const state = {
     secret: 'aeolus_sk_v1_good',
     fleetId: FLEET_ID,
-    scopes: ['messages:send', 'messages:receive', 'fleet:read', 'fleet:manage', 'crew:assign', 'crew:run'],
+    scopes: ['messages:send', 'messages:receive', 'fleet:read', 'fleet:commission', 'crew:assign', 'crew:run'],
     isCrewed: false,
     isAnswering: true,
     liveTokens: new Set<string>(),

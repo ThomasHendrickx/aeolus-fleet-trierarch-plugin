@@ -56,10 +56,10 @@ describe('connecting the trierarch plugin', () => {
   });
 
   it.each([
-    ['fleet:read', ['messages:send', 'messages:receive', 'fleet:manage', 'crew:assign', 'crew:run']],
-    ['fleet:manage', ['messages:send', 'messages:receive', 'fleet:read', 'crew:assign', 'crew:run']],
-    ['crew:assign', ['messages:send', 'messages:receive', 'fleet:read', 'fleet:manage', 'crew:run']],
-    ['crew:run, which it gives the trierarch ships it commissions', ['messages:send', 'messages:receive', 'fleet:read', 'fleet:manage', 'crew:assign']],
+    ['fleet:read', ['messages:send', 'messages:receive', 'fleet:commission', 'crew:assign', 'crew:run']],
+    ['fleet:commission, which commissions the trierarch ships', ['messages:send', 'messages:receive', 'fleet:read', 'fleet:manage', 'crew:assign', 'crew:run']],
+    ['crew:assign', ['messages:send', 'messages:receive', 'fleet:read', 'fleet:commission', 'crew:run']],
+    ['crew:run, which it gives the trierarch ships it commissions', ['messages:send', 'messages:receive', 'fleet:read', 'fleet:commission', 'crew:assign']],
   ])('is refused for a ship without %s, and lets the ship go again', async (_missing, scopes) => {
     fleet.state.scopes = scopes;
 
