@@ -28,6 +28,7 @@ import { createJoinMachine } from './core/machines/join-machine.js';
 import { createDeclareNetworkRules, type Declarations } from './core/network/declare-network-rules.js';
 import { createWithdrawNetworkRules } from './core/network/withdraw-network-rules.js';
 import { createListMachines } from './core/machines/list-machines.js';
+import { DEFAULT_SILENT_AFTER_MS } from './core/machines/silent.js';
 import { createAuthenticateOperator } from './core/operator/authenticate-operator.js';
 import type { Clock } from './core/shared/clock.js';
 
@@ -53,9 +54,6 @@ export interface TrierarchPluginApp {
   /** Stops the server and disconnects the database. */
   close(): Promise<void>;
 }
-
-/** A trierarch is silent once its last seen is older than this, unless the configuration says otherwise. */
-const DEFAULT_SILENT_AFTER_MS = 300_000;
 
 /**
  * The trierarch plugin wired to its own database and to the fleet's public

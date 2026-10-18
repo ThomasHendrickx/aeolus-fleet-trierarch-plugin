@@ -1,10 +1,9 @@
 import { z } from 'zod';
 
+import { DEFAULT_SILENT_AFTER_MS } from './core/machines/silent.js';
+
 /** The shortest installation token the trierarch plugin takes, as the fleet core does (decision 0020). */
 const INSTALLATION_TOKEN_MIN_LENGTH = 32;
-
-/** A trierarch is silent once its last seen is older than this, by default (docs/trierarch.md, "Assignment"). */
-const DEFAULT_SILENT_AFTER_SECONDS = 300;
 
 /** How often the assignment runs a pass per fleet, by default. */
 const DEFAULT_PASS_INTERVAL_SECONDS = 10;
@@ -18,7 +17,7 @@ const environmentSchema = z.object({
   PORT: z.coerce.number().int().min(0).max(65_535).default(4200),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   INSTALLATION_TOKEN: z.string().min(INSTALLATION_TOKEN_MIN_LENGTH, { error: `must hold at least ${String(INSTALLATION_TOKEN_MIN_LENGTH)} characters` }).optional(),
-  TRIERARCH_SILENT_AFTER_SECONDS: z.coerce.number().int().positive().default(DEFAULT_SILENT_AFTER_SECONDS),
+  TRIERARCH_SILENT_AFTER_SECONDS: z.coerce.number().int().positive().default(DEFAULT_SILENT_AFTER_MS / MS_PER_SECOND),
   TRIERARCH_PASS_INTERVAL_SECONDS: z.coerce.number().int().positive().default(DEFAULT_PASS_INTERVAL_SECONDS),
 });
 
