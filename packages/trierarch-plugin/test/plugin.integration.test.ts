@@ -6,15 +6,13 @@ import { z } from 'zod';
 
 import { createApp, createMigratedDatabase, createPrismaClient, createUseCases, FLEET_URL, newKey, OPERATOR, operatorCaller, secretOf, unwrap, type PrismaClient } from '@aeolus-fleet/core/testing';
 
-import { createRestFleet } from '../../trierarch/src/adapters/rest-fleet.js';
-import { EMPTY_STATE } from '../../trierarch/src/core/entry.js';
-import { createReportSelf } from '../../trierarch/src/core/report-self.js';
 import { createRestFleetDoor } from '../src/adapters/fleet/rest-fleet-door.js';
 import { runningVersion } from '../src/adapters/http/version.js';
 import { machineOutputSchema } from '../src/adapters/trpc/router.js';
 import { createTrierarchPluginApp, type TrierarchPluginApp } from '../src/app.js';
 import { connectPlugin, mutate, query, signIn } from './support/connection.js';
 import { createPluginDatabase } from '../src/testing/database.js';
+import { reportAsTrierarch } from './support/trierarch.js';
 
 // The trierarch plugin against a real fleet: it starts not connected, with no
 // secret anywhere; the operator connects it as its ship (fleet:read,
@@ -172,23 +170,7 @@ describe('a joined machine reporting', () => {
     const joined = joinedSchema.parse(await (await mutate(address, { procedure: 'machines.join', cookie, body: { name: 'mac-studio' } })).json()).result.data;
     const machineShipId = z.templateLiteral(['shp_', z.string()]).parse(joined.shipId);
     // The machine's trierarch, as init and run make it: registered with the secret the join answered, then reporting as its own ship.
-    const { crewToken } = await createRestFleet({ fleetUrl, crewToken: '' }).registerSelf({ shipId: machineShipId, secret: joined.secret });
-    const configuration = {
-      caps: { ships: 6, running: 3 },
-      repositories: { 'aeolus-fleet': { path: '/home/thomas/Projects/aeolus-fleet' } },
-      folders: {},
-      harnesses: { 'claude-code': { flags: ['--remote-control'], options: {} } },
-    };
-    const reportSelf = createReportSelf({
-      fleet: createRestFleet({ fleetUrl, crewToken }),
-      processes: { list: () => Promise.resolve([]), stop: () => Promise.resolve() },
-      // Its harness trusts its repository and asks about no flag, as init makes it (#381, #403).
-      trust: { trusted: () => Promise.resolve({ 'claude-code': { repositories: ['aeolus-fleet'], folders: [], unacceptedFlags: [] } }) },
-      state: { load: () => Promise.resolve(EMPTY_STATE), save: () => Promise.resolve() },
-      setup: { configuration, version: '0.19.0', adapterFlags: {}, riskyFlags: {} },
-    });
-
-    await reportSelf();
+    await reportAsTrierarch(fleetUrl, { shipId: machineShipId, secret: joined.secret, setup: { caps: { ships: 6, running: 3 }, flags: ['--remote-control'], version: '0.19.0' } });
 
     const listed = z.object({ result: z.object({ data: z.array(machineOutputSchema) }) }).parse(await (await query(address, { procedure: 'machines.list', cookie })).json()).result.data;
     // When it was last seen and reported is the fleet's clock: present, not compared.
@@ -219,20 +201,7 @@ describe('assignment against a real fleet', () => {
     const address = await connected();
     const joined = joinedSchema.parse(await (await mutate(address, { procedure: 'machines.join', cookie, body: { name: 'mac-studio' } })).json()).result.data;
     const machineShipId = z.templateLiteral(['shp_', z.string()]).parse(joined.shipId);
-    const { crewToken } = await createRestFleet({ fleetUrl, crewToken: '' }).registerSelf({ shipId: machineShipId, secret: joined.secret });
-    await createReportSelf({
-      fleet: createRestFleet({ fleetUrl, crewToken }),
-      processes: { list: () => Promise.resolve([]), stop: () => Promise.resolve() },
-      // Its harness trusts its repository and asks about no flag, as init makes it (#381, #403).
-      trust: { trusted: () => Promise.resolve({ 'claude-code': { repositories: ['aeolus-fleet'], folders: [], unacceptedFlags: [] } }) },
-      state: { load: () => Promise.resolve(EMPTY_STATE), save: () => Promise.resolve() },
-      setup: {
-        configuration: { caps: { ships: 4, running: 2 }, repositories: { 'aeolus-fleet': { path: '/srv/aeolus-fleet' } }, folders: {}, harnesses: { 'claude-code': { flags: [], options: {} } } },
-        version: '0.19.0',
-        adapterFlags: {},
-        riskyFlags: {},
-      },
-    })();
+    await reportAsTrierarch(fleetUrl, { shipId: machineShipId, secret: joined.secret, setup: { caps: { ships: 4, running: 2 }, flags: [], version: '0.19.0' } });
     const scout = unwrap(await useCases.commissionShip(argo, { idempotencyKey: newKey(), name: 'scout', type: 'implementer' }));
     unwrap(await useCases.requestCrew(argo, { shipId: scout.shipId, settings: { harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: {} } }));
     // A second process on the same database, crewing the same ship with the kept crew token.
@@ -262,21 +231,7 @@ describe('machine labels against a real fleet (#102)', () => {
     const address = await connected();
     const joined = joinedSchema.parse(await (await mutate(address, { procedure: 'machines.join', cookie, body: { name: 'mac-studio' } })).json()).result.data;
     const machineShipId = z.templateLiteral(['shp_', z.string()]).parse(joined.shipId);
-    const { crewToken } = await createRestFleet({ fleetUrl, crewToken: '' }).registerSelf({ shipId: machineShipId, secret: joined.secret });
-    await createReportSelf({
-      fleet: createRestFleet({ fleetUrl, crewToken }),
-      processes: { list: () => Promise.resolve([]), stop: () => Promise.resolve() },
-      // Its harness trusts its repository and asks about no flag, as init makes it (#381, #403).
-      trust: { trusted: () => Promise.resolve({ 'claude-code': { repositories: ['aeolus-fleet'], folders: [], unacceptedFlags: [] } }) },
-      state: { load: () => Promise.resolve(EMPTY_STATE), save: () => Promise.resolve() },
-      setup: {
-        configuration: { caps: { ships: 4, running: 2 }, repositories: { 'aeolus-fleet': { path: '/srv/aeolus-fleet' } }, folders: {}, harnesses: { 'claude-code': { flags: [], options: {} } } },
-        version: '0.20.0',
-        adapterFlags: {},
-        riskyFlags: {},
-        machine: { os: 'macos', arch: 'arm64' },
-      },
-    })();
+    await reportAsTrierarch(fleetUrl, { shipId: machineShipId, secret: joined.secret, setup: { caps: { ships: 4, running: 2 }, flags: [], version: '0.20.0', machine: { os: 'macos', arch: 'arm64' } } });
 
     await apps[0]?.assignOnce();
 
@@ -310,20 +265,7 @@ describe('checking crew settings before a request (#245)', () => {
     const address = await connected();
     const joined = joinedSchema.parse(await (await mutate(address, { procedure: 'machines.join', cookie, body: { name: 'mac-studio' } })).json()).result.data;
     const machineShipId = z.templateLiteral(['shp_', z.string()]).parse(joined.shipId);
-    const { crewToken } = await createRestFleet({ fleetUrl, crewToken: '' }).registerSelf({ shipId: machineShipId, secret: joined.secret });
-    await createReportSelf({
-      fleet: createRestFleet({ fleetUrl, crewToken }),
-      processes: { list: () => Promise.resolve([]), stop: () => Promise.resolve() },
-      // Its harness trusts its repository and asks about no flag, as init makes it (#381, #403).
-      trust: { trusted: () => Promise.resolve({ 'claude-code': { repositories: ['aeolus-fleet'], folders: [], unacceptedFlags: [] } }) },
-      state: { load: () => Promise.resolve(EMPTY_STATE), save: () => Promise.resolve() },
-      setup: {
-        configuration: { caps: { ships: 4, running: 2 }, repositories: { 'aeolus-fleet': { path: '/srv/aeolus-fleet' } }, folders: {}, harnesses: { 'claude-code': { flags: [], options: {} } } },
-        version: '0.19.0',
-        adapterFlags: {},
-        riskyFlags: {},
-      },
-    })();
+    await reportAsTrierarch(fleetUrl, { shipId: machineShipId, secret: joined.secret, setup: { caps: { ships: 4, running: 2 }, flags: [], version: '0.19.0' } });
     const settings = { harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: {} };
 
     const fits = checkSchema.parse(await (await query(address, { procedure: 'requests.check', cookie, input: { settings } })).json()).result.data;
