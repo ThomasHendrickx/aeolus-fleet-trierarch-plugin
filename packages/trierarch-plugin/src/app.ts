@@ -152,7 +152,7 @@ export function createTrierarchPluginApp(options: {
   const declareScopes = createDeclareScopes({ door, connections });
   /** The fleets whose namespace was last refused, so a ship that cannot declare (no scopes:declare) is logged once, not every pass. */
   const refusedScopes = new Set<FleetId>();
-  /** Declares the trierarch plugin's namespace with trierarch-plugin:join (decision 0055); a refusal is logged once and the next pass tries again. */
+  /** Declares the trierarch plugin's namespace with trierarch:join (decision 0055); a refusal is logged once and the next pass tries again. */
   const declareScopesOnce = async (fleetId: FleetId): Promise<void> => {
     const declared = await declareScopes(fleetId);
     if (!declared.isOk) {
