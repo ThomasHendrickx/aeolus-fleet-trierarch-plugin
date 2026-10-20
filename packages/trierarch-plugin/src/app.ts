@@ -26,6 +26,7 @@ import { createCheckCrewSettings } from './core/assignment/check-crew-settings.j
 import { createTellModelMismatches } from './core/assignment/tell-model-mismatches.js';
 import { createJoinMachine } from './core/machines/join-machine.js';
 import { createDeclareNetworkRules, type Declarations } from './core/network/declare-network-rules.js';
+import { createDeclareScopes } from './core/scopes/declare-scopes.js';
 import { createWithdrawNetworkRules } from './core/network/withdraw-network-rules.js';
 import { createListMachines } from './core/machines/list-machines.js';
 import { DEFAULT_SILENT_AFTER_MS } from './core/machines/silent.js';
@@ -148,6 +149,24 @@ export function createTrierarchPluginApp(options: {
       server.log.info({ fleet: fleetId }, 'network rules declared');
     }
   };
+  const declareScopes = createDeclareScopes({ door, connections });
+  /** The fleets whose namespace was last refused, so a ship that cannot declare (no scopes:declare) is logged once, not every pass. */
+  const refusedScopes = new Set<FleetId>();
+  /** Declares the trierarch plugin's namespace with trierarch-plugin:join (decision 0055); a refusal is logged once and the next pass tries again. */
+  const declareScopesOnce = async (fleetId: FleetId): Promise<void> => {
+    const declared = await declareScopes(fleetId);
+    if (!declared.isOk) {
+      if (!refusedScopes.has(fleetId)) {
+        server.log.warn({ fleet: fleetId, refusal: declared.error }, 'scopes refused; the next pass tries again');
+      }
+      refusedScopes.add(fleetId);
+      return;
+    }
+    refusedScopes.delete(fleetId);
+    if (declared.value.isDeclared) {
+      server.log.info({ fleet: fleetId }, 'scopes declared');
+    }
+  };
   /** Withdraws the declared rules of a fleet that is off, which switching off could not while the fleet did not answer; logged, never thrown. */
   const withdrawOnce = async (fleetId: FleetId): Promise<void> => {
     const withdrawn = await withdraw(fleetId);
@@ -178,6 +197,7 @@ export function createTrierarchPluginApp(options: {
       }
       await labelOnce(crew.fleetId);
       await declareOnce(crew.fleetId);
+      await declareScopesOnce(crew.fleetId);
       const assigned = await assignCrews(crew.fleetId);
       await tellOnce(crew.fleetId);
       if (assigned.isOk) {
