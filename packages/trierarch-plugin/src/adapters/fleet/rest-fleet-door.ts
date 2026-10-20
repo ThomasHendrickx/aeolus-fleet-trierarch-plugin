@@ -8,7 +8,7 @@
  */
 import { setTimeout as wait } from 'node:timers/promises';
 
-import { busyWaitMs, commissionShipOutputSchema, declareNetworkRulesOutputSchema, defineLabelOutputSchema, FLEET_BUSY_WAITS_MS, fleetListOutputSchema, idSchema, isInReadReach, labelsOutputSchema, shipDetailOutputSchema } from '@aeolus-fleet/common';
+import { busyWaitMs, commissionShipOutputSchema, declareNetworkRulesOutputSchema, declareScopesOutputSchema, defineLabelOutputSchema, FLEET_BUSY_WAITS_MS, fleetListOutputSchema, idSchema, isInReadReach, labelsOutputSchema, scopesOutputSchema, shipDetailOutputSchema } from '@aeolus-fleet/common';
 import { z } from 'zod';
 
 import type { FleetDoor, FleetRefusal } from '../../core/connection/ports.js';
@@ -183,6 +183,14 @@ export function createRestFleetDoor(fleetUrl: string, options: { busyWaitsMs?: r
     },
     declareNetworkRules: (crewToken, declaration) =>
       call({ path: '/fleet/declareNetworkRules', method: 'POST', crewToken, body: declaration, answers: declareNetworkRulesOutputSchema }),
+    listScopes: async (crewToken) => {
+      const listed = await call({ path: '/fleet/scopes', method: 'GET', crewToken, answers: scopesOutputSchema });
+      return listed.isOk ? ok(listed.value.map(({ namespace, declaredBy }) => ({ namespace, declaredBy: declaredBy?.id ?? null }))) : listed;
+    },
+    declareScopes: async (crewToken, declaration) => {
+      const declared = await call({ path: '/fleet/declareScopes', method: 'POST', crewToken, body: declaration, answers: declareScopesOutputSchema });
+      return declared.isOk ? ok(undefined) : declared;
+    },
     tellArgo: async (crewToken, { text, idempotencyKey }) => {
       const sent = await call({
         path: '/ship/send',
