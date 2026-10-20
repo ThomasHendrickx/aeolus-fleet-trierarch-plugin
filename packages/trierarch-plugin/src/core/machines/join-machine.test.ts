@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { COMMISSIONED_SHIP_ID, FLEET_ID, FLEET_URL, SHIP_ID, fakePluginFleet, memoryConnectionStore } from '../../../test/support/connection-fakes.js';
-import { createJoinMachine } from './join-machine.js';
+import { createJoinMachine, type JoinMachine } from './join-machine.js';
 
 const AT = new Date('2026-10-06T22:00:00.000Z');
 
@@ -17,7 +17,10 @@ beforeEach(async () => {
   await connections.save({ fleetId: FLEET_ID, shipId: SHIP_ID, name: 'trierarch-plugin', crewToken: 'aeolus_ct_v1_plugin', crewedAt: AT });
 });
 
-const join = (name = 'mac-studio') =>
+/** argo, as its console session answers it: core's scopes only, a plugin's not among them. */
+const ARGO = { kind: 'operator', scopes: ['fleet:read', 'fleet:commission', 'fleet:manage'] } as const;
+
+const join = (name = 'mac-studio', actor: Parameters<JoinMachine>[0]['actor'] = ARGO) =>
   createJoinMachine({
     door: fleet.door,
     connections,
@@ -28,7 +31,7 @@ const join = (name = 'mac-studio') =>
       },
     },
     fleetUrl: FLEET_URL,
-  })({ fleetId: FLEET_ID, name });
+  })({ fleetId: FLEET_ID, name, actor });
 
 describe('a machine joining', () => {
   it('commissions a ship of type trierarch with exactly crew:run beside send and receive, named as the operator asked', async () => {
@@ -58,6 +61,22 @@ describe('a machine joining', () => {
     await join('linux-box');
 
     expect(fleet.state.commissioned.map((ship) => ship.idempotencyKey)).toEqual(['join-1', 'join-2']);
+  });
+
+  it('lets argo join a machine though its scopes list no plugin scope', async () => {
+    await expect(join('mac-studio', ARGO)).resolves.toMatchObject({ isOk: true });
+  });
+
+  it('lets an actor holding trierarch-plugin:join join a machine', async () => {
+    await expect(join('mac-studio', { kind: 'viewer', scopes: ['fleet:read', 'trierarch-plugin:join'] })).resolves.toMatchObject({ isOk: true });
+  });
+
+  it('is refused for an actor without trierarch-plugin:join, and commissions nothing', async () => {
+    await expect(join('mac-studio', { kind: 'viewer', scopes: ['fleet:read', 'fleet:manage'] })).resolves.toMatchObject({
+      isOk: false,
+      error: { kind: 'NEEDS_SCOPE', message: 'Adding a computer needs trierarch-plugin:join' },
+    });
+    expect(fleet.state.commissioned).toEqual([]);
   });
 
   it('is refused while the trierarch plugin is not connected to the fleet, and commissions nothing', async () => {
