@@ -236,7 +236,7 @@ describe('machine labels against a real fleet (#102)', () => {
     await apps[0]?.assignOnce();
 
     const labels = await useCases.listLabels(argo);
-    expect(labels.map((label) => ({ key: label.key, values: label.values.map((value) => value.value), owner: label.owner.name }))).toEqual([
+    expect(labels.map((label) => ({ key: label.key, values: label.values.map((value) => value.value), owner: label.owner.kind === 'ship' ? label.owner.name : label.owner.kind }))).toEqual([
       { key: 'arch', values: ['arm64', 'amd64'], owner: 'trierarch-plugin' },
       { key: 'os', values: ['macos', 'linux', 'windows'], owner: 'trierarch-plugin' },
       { key: 'trierarch', values: ['machine', 'plugin'], owner: 'trierarch-plugin' },
@@ -321,7 +321,7 @@ async function trierarchLabelId(): Promise<string> {
 
 /** Every rule the fleet holds declared, by the ship that declared it. */
 async function declared(): Promise<{ shipId: string; rules: unknown[] }[]> {
-  return (await useCases.readDeclaredNetworkRules(argo)).map(({ shipId: declaring, rules }) => ({ shipId: declaring, rules: [...rules] })).filter((each) => each.rules.length > 0);
+  return (await useCases.readDeclaredNetworkRules(argo)).map(({ declarer, rules }) => ({ shipId: declarer.kind === 'ship' ? declarer.shipId : declarer.kind, rules: [...rules] })).filter((each) => each.rules.length > 0);
 }
 
 /** The fleet down and up again on the same address: the trierarch plugin's calls meanwhile get no answer. */

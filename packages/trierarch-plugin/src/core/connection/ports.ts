@@ -57,12 +57,12 @@ export interface FleetShip {
   crewSettings: unknown;
 }
 
-/** A label of the fleet as `fleet.labels` lists it: its key, its values and the ship that owns it (#102). */
+/** A label of the fleet as `fleet.labels` lists it: its key, its values and the ship that owns it, none for the installation's (#102). */
 export interface ListedLabel {
   labelId: LabelId;
   key: string;
   values: { valueId: LabelValueId; value: string }[];
-  ownerShipId: ShipId;
+  ownerShipId: ShipId | null;
 }
 
 /**
