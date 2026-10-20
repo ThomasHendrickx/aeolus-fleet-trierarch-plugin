@@ -61,7 +61,7 @@ const operatorProcedure = t.procedure.use(async ({ ctx, next }) => {
   if (!operator.isOk) {
     throw new TRPCError({ code: 'UNAUTHORIZED', message: operator.error.message });
   }
-  return next({ ctx: { fleetId: operator.value.fleetId, scopes: operator.value.scopes } });
+  return next({ ctx: { fleetId: operator.value.fleetId, kind: operator.value.kind, scopes: operator.value.scopes } });
 });
 
 /**
@@ -126,6 +126,7 @@ const CONNECT_CODES = {
 
 /** The refusals of joining a machine, as the API states them. */
 const JOIN_CODES = {
+  NEEDS_SCOPE: 'FORBIDDEN',
   NOT_CONNECTED: 'PRECONDITION_FAILED',
   NAME_TAKEN: 'CONFLICT',
   FLEET_UNAVAILABLE: 'BAD_GATEWAY',
@@ -209,11 +210,11 @@ export const trierarchPluginRouter = t.router({
   }),
   machines: t.router({
     /** Brings a machine into the fleet: commissions its trierarch's ship and answers its starting prompt and setup line, once. */
-    join: managing(connectedProcedure)
+    join: connectedProcedure
       .input(z.strictObject({ name: shipHandleSchema }))
       .output(joinedMachineOutputSchema)
       .mutation(async ({ ctx, input }) => {
-        const joined = await ctx.joinMachine({ fleetId: ctx.fleetId, name: input.name });
+        const joined = await ctx.joinMachine({ fleetId: ctx.fleetId, name: input.name, actor: { kind: ctx.kind, scopes: ctx.scopes } });
         if (!joined.isOk) {
           throw new TRPCError({ code: JOIN_CODES[joined.error.kind], message: joined.error.message });
         }

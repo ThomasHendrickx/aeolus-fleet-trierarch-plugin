@@ -41,7 +41,7 @@ beforeEach(async () => {
       idempotencyKey: newKey(),
       name: 'trierarch-plugin',
       type: 'trierarch-plugin',
-      scopes: ['fleet:read', 'fleet:commission', 'crew:assign', 'crew:run', 'labels:define', 'labels:assign'],
+      scopes: ['fleet:read', 'fleet:commission', 'crew:assign', 'crew:run', 'labels:define', 'labels:assign', 'scopes:declare'],
     }),
   );
   shipId = commissioned.shipId;
@@ -349,6 +349,23 @@ describe('the trierarch reach against a real fleet (#573, decision 0037)', () =>
     const term = { labelId: await trierarchLabelId(), value: '*' };
     await expect(declared()).resolves.toEqual([{ shipId, rules: [{ verb: 'send', from: [term], to: [term] }] }]);
     await expect(fleetDatabase.event.count({ where: { type: 'NetworkRulesDeclared' } })).resolves.toBe(1);
+  });
+});
+
+describe('the trierarch plugin\'s scopes against a real fleet (decision 0055)', () => {
+  it('a pass declares the namespace trierarch-plugin with trierarch-plugin:join, once', async () => {
+    await connected();
+
+    await apps[0]?.assignOnce();
+    await apps[0]?.assignOnce();
+
+    const namespace = (await useCases.listScopes(argo)).find((each) => each.namespace === 'trierarch-plugin');
+    expect(namespace).toEqual({
+      namespace: 'trierarch-plugin',
+      declaredBy: { id: shipId, name: 'trierarch-plugin' },
+      scopes: [{ scope: 'trierarch-plugin:join', description: 'Add a computer: join its trierarch to the fleet' }],
+    });
+    await expect(fleetDatabase.event.count({ where: { type: 'ScopesDeclared' } })).resolves.toBe(1);
   });
 });
 

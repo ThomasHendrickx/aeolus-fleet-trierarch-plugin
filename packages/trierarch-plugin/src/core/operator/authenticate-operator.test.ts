@@ -29,13 +29,13 @@ describe('the operator', () => {
   ])('is the signed-in console session of $label: the trierarch plugin serves every fleet at its FLEET_URL, each as its own', async ({ cookie, fleetId }) => {
     const authenticate = createAuthenticateOperator({ sessions });
 
-    await expect(authenticate(cookie)).resolves.toEqual({ isOk: true, value: { fleetId, scopes: OPERATOR_SCOPES } });
+    await expect(authenticate(cookie)).resolves.toEqual({ isOk: true, value: { fleetId, kind: 'operator', scopes: OPERATOR_SCOPES } });
   });
 
   it("is a viewer session too, with the viewer ship's scopes, so the trierarch plugin serves it reads only (decision 0022)", async () => {
     const authenticate = createAuthenticateOperator({ sessions });
 
-    await expect(authenticate('aeolus_session=viewer')).resolves.toEqual({ isOk: true, value: { fleetId: FLEET, scopes: ['fleet:read'] } });
+    await expect(authenticate('aeolus_session=viewer')).resolves.toEqual({ isOk: true, value: { fleetId: FLEET, kind: 'viewer', scopes: ['fleet:read'] } });
   });
 
   it.each([

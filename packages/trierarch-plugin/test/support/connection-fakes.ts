@@ -60,6 +60,8 @@ export function fakePluginFleet() {
     labelWrites: new Array<string>(),
     /** Each list of network rules the trierarch plugin declared, in order; an empty one withdraws them (#573). */
     declarations: new Array<NetworkRule[]>(),
+    /** The fleet's scope namespaces, each with the ship that declared it (decision 0046). */
+    namespaces: new Array<{ namespace: string; declaredBy: ShipId; scopes: { scope: string; description: string }[] }>(),
     /** What argo was told, once per idempotency key, in order. */
     told: new Array<{ text: string; idempotencyKey: string }>(),
   };
@@ -253,6 +255,28 @@ export function fakePluginFleet() {
       }
       state.declarations.push(rules.map((rule) => ({ verb: 'send', from: [...rule.from], to: [...rule.to] })));
       return Promise.resolve(ok({ rules: rules.length }));
+    },
+    listScopes: (crewToken) => {
+      if (!state.isAnswering) {
+        return unavailable();
+      }
+      if (!state.liveTokens.has(crewToken)) {
+        return released();
+      }
+      return Promise.resolve(ok(state.namespaces.map(({ namespace, declaredBy }) => ({ namespace, declaredBy }))));
+    },
+    declareScopes: (crewToken, declaration) => {
+      if (!state.isAnswering) {
+        return unavailable();
+      }
+      if (!state.liveTokens.has(crewToken)) {
+        return released();
+      }
+      if (!state.scopes.includes('scopes:declare')) {
+        return forbidden('scopes:declare');
+      }
+      state.namespaces.push({ namespace: declaration.namespace, declaredBy: SHIP_ID, scopes: declaration.scopes.map((each) => ({ ...each })) });
+      return Promise.resolve(ok(undefined));
     },
     tellArgo: (crewToken, notice) => {
       if (!state.isAnswering) {
