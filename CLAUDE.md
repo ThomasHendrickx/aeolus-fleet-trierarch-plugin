@@ -32,6 +32,7 @@ If the docs do not answer a behaviour question, stop and ask. Never decide produ
 
 Load the matching skills from `.claude/skills/` (Codex: `.agents/skills/`) before the work they name. They are mandatory, not suggestions:
 
+- `software-development`: every code change.
 - `test-driven-development` and `aeolus-fleet-trierarch-plugin`: every code change. Strict red, green, refactor (decision 0014).
 - `domain-modelling`: anything under `src/core` or `src/adapters`.
 - `typescript`: every `.ts` change.
