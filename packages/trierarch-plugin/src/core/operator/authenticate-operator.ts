@@ -1,10 +1,25 @@
-import type { FleetId, Scope } from '@aeolus-fleet/common';
+import type {
+  ConsoleSessionOutput,
+  FleetId,
+  Scope,
+} from "@aeolus-fleet/common";
 
-import { refuse, type DomainError } from '../shared/errors.js';
-import { ok, type Result } from '../shared/result.js';
-import type { ConsoleSessions } from './ports.js';
+import { refuse, type DomainError } from "../shared/errors.js";
+import { ok, type Result } from "../shared/result.js";
+import type { ConsoleSessions } from "./ports.js";
 
-export type AuthenticateOperator = (cookie: string | undefined) => Promise<Result<{ fleetId: FleetId; scopes: readonly Scope[] }, DomainError<'NOT_THE_OPERATOR'>>>;
+export type AuthenticateOperator = (
+  cookie: string | undefined,
+) => Promise<
+  Result<
+    {
+      fleetId: FleetId;
+      kind: ConsoleSessionOutput["kind"];
+      scopes: readonly Scope[];
+    },
+    DomainError<"NOT_THE_OPERATOR">
+  >
+>;
 
 /**
  * Use case: whether a request comes from the operator. The trierarch plugin has no login
@@ -16,8 +31,13 @@ export type AuthenticateOperator = (cookie: string | undefined) => Promise<Resul
  * the fleet answers; what each scope may call is the API's to check
  * (decision 0022).
  */
-export function createAuthenticateOperator(deps: { sessions: ConsoleSessions }): AuthenticateOperator {
-  const refusal = refuse('NOT_THE_OPERATOR', 'Sign in to the console of your fleet');
+export function createAuthenticateOperator(deps: {
+  sessions: ConsoleSessions;
+}): AuthenticateOperator {
+  const refusal = refuse(
+    "NOT_THE_OPERATOR",
+    "Sign in to the console of your fleet",
+  );
   return async (cookie) => {
     if (cookie === undefined) {
       return refusal;
@@ -26,6 +46,10 @@ export function createAuthenticateOperator(deps: { sessions: ConsoleSessions }):
     if (!session.isOk) {
       return refusal;
     }
-    return ok({ fleetId: session.value.fleetId, scopes: session.value.scopes });
+    return ok({
+      fleetId: session.value.fleetId,
+      kind: session.value.kind,
+      scopes: session.value.scopes,
+    });
   };
 }

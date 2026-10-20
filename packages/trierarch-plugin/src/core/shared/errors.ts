@@ -10,6 +10,7 @@ export type DomainErrorKind =
   | 'REQUEST_ID_USED'
   | 'NOT_CONNECTED'
   | 'NAME_TAKEN'
+  | 'NEEDS_SCOPE'
   | 'FLEET_UNAVAILABLE';
 
 /** Why the core refused a request. Adapters map the kind to their own error shape; the message is safe to show. */
