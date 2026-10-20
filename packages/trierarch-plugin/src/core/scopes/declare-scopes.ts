@@ -9,7 +9,7 @@ import { JOIN_SCOPE, PLUGIN_NAMESPACE, PLUGIN_SCOPES } from './plugin-scopes.js'
 export type DeclareScopes = (fleetId: FleetId) => Promise<Result<{ isDeclared: boolean }, DomainError<'NOT_CONNECTED' | 'FLEET_UNAVAILABLE'>>>;
 
 /**
- * Use case: the trierarch plugin takes up its namespace `trierarch-plugin` in
+ * Use case: the trierarch plugin takes up its namespace `trierarch` in
  * a fleet with its scopes (decisions 0046 and 0055), which it enforces itself.
  * Each pass asks while its own ship does not hold it. While another ship
  * holds it the trierarch plugin declares nothing and tells argo, once.
