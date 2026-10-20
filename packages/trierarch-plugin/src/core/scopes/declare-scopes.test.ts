@@ -23,11 +23,11 @@ function declare() {
 }
 
 describe('the trierarch plugin declaring its scopes', () => {
-  it('declares the namespace trierarch-plugin with trierarch-plugin:join while its ship does not hold it', async () => {
+  it('declares the namespace trierarch with trierarch:join while its ship does not hold it', async () => {
     await expect(declare()).resolves.toEqual({ isOk: true, value: { isDeclared: true } });
 
     expect(fleet.state.namespaces).toEqual([
-      { namespace: 'trierarch-plugin', declaredBy: SHIP_ID, scopes: [{ scope: 'trierarch-plugin:join', description: 'Add a computer: join its trierarch to the fleet' }] },
+      { namespace: 'trierarch', declaredBy: SHIP_ID, scopes: [{ scope: 'trierarch:join', description: 'Add a computer: join its trierarch to the fleet' }] },
     ]);
   });
 
@@ -39,16 +39,16 @@ describe('the trierarch plugin declaring its scopes', () => {
   });
 
   it('declares nothing while another ship holds the namespace, and tells argo once', async () => {
-    fleet.state.namespaces.push({ namespace: 'trierarch-plugin', declaredBy: OTHER_SHIP, scopes: [] });
+    fleet.state.namespaces.push({ namespace: 'trierarch', declaredBy: OTHER_SHIP, scopes: [] });
 
     await expect(declare()).resolves.toEqual({ isOk: true, value: { isDeclared: false } });
     await declare();
 
     expect(fleet.state.namespaces).toHaveLength(1);
     expect(fleet.state.told.map((notice) => notice.text)).toEqual([
-      'The trierarch plugin cannot declare its scopes: another ship holds trierarch-plugin\n\n' +
+      'The trierarch plugin cannot declare its scopes: another ship holds trierarch\n\n' +
         `- The trierarch plugin's ship: trierarch-plugin\n- Held by: ${OTHER_SHIP}\n\n` +
-        'Until that ship is retired, no ship holds trierarch-plugin:join, so only argo adds a computer.',
+        'Until that ship is retired, no ship holds trierarch:join, so only argo adds a computer.',
     ]);
   });
 

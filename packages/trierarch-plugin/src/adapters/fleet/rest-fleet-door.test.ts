@@ -116,6 +116,7 @@ describe('the fleet door over REST within read reach (decision 0034)', () => {
       harness: null,
       awaitingCrewSince: null,
       retiredAt: null,
+      ownerShipId: null,
     };
     await aFleetAnswering([{ status: 200, body: [whole, { id: 'shp_01m3tbfspe96yf1rnr4ank9h2b', name: 'vault', type: 'keeper', status: 'crewed', isInReadReach: false }] }], async (fleetUrl) => {
       const listed = await createRestFleetDoor(fleetUrl).listShips('aeolus_ct_v1_x');

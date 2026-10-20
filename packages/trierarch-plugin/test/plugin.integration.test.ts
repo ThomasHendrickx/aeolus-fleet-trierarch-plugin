@@ -236,7 +236,7 @@ describe('machine labels against a real fleet (#102)', () => {
     await apps[0]?.assignOnce();
 
     const labels = await useCases.listLabels(argo);
-    expect(labels.map((label) => ({ key: label.key, values: label.values.map((value) => value.value), owner: label.owner.name }))).toEqual([
+    expect(labels.map((label) => ({ key: label.key, values: label.values.map((value) => value.value), owner: label.owner.kind === 'ship' ? label.owner.name : label.owner.kind }))).toEqual([
       { key: 'arch', values: ['arm64', 'amd64'], owner: 'trierarch-plugin' },
       { key: 'os', values: ['macos', 'linux', 'windows'], owner: 'trierarch-plugin' },
       { key: 'trierarch', values: ['machine', 'plugin'], owner: 'trierarch-plugin' },
@@ -321,7 +321,7 @@ async function trierarchLabelId(): Promise<string> {
 
 /** Every rule the fleet holds declared, by the ship that declared it. */
 async function declared(): Promise<{ shipId: string; rules: unknown[] }[]> {
-  return (await useCases.readDeclaredNetworkRules(argo)).map(({ shipId: declaring, rules }) => ({ shipId: declaring, rules: [...rules] })).filter((each) => each.rules.length > 0);
+  return (await useCases.readDeclaredNetworkRules(argo)).map(({ declarer, rules }) => ({ shipId: declarer.kind === 'ship' ? declarer.shipId : declarer.kind, rules: [...rules] })).filter((each) => each.rules.length > 0);
 }
 
 /** The fleet down and up again on the same address: the trierarch plugin's calls meanwhile get no answer. */
@@ -353,17 +353,17 @@ describe('the trierarch reach against a real fleet (#573, decision 0037)', () =>
 });
 
 describe('the trierarch plugin\'s scopes against a real fleet (decision 0055)', () => {
-  it('a pass declares the namespace trierarch-plugin with trierarch-plugin:join, once', async () => {
+  it('a pass declares the namespace trierarch with trierarch:join, once', async () => {
     await connected();
 
     await apps[0]?.assignOnce();
     await apps[0]?.assignOnce();
 
-    const namespace = (await useCases.listScopes(argo)).find((each) => each.namespace === 'trierarch-plugin');
+    const namespace = (await useCases.listScopes(argo)).find((each) => each.namespace === 'trierarch');
     expect(namespace).toEqual({
-      namespace: 'trierarch-plugin',
+      namespace: 'trierarch',
       declaredBy: { id: shipId, name: 'trierarch-plugin' },
-      scopes: [{ scope: 'trierarch-plugin:join', description: 'Add a computer: join its trierarch to the fleet' }],
+      scopes: [{ scope: 'trierarch:join', description: 'Add a computer: join its trierarch to the fleet' }],
     });
     await expect(fleetDatabase.event.count({ where: { type: 'ScopesDeclared' } })).resolves.toBe(1);
   });

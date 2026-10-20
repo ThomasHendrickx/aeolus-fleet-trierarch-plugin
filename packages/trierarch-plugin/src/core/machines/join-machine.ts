@@ -41,7 +41,7 @@ export type JoinMachine = (input: { fleetId: FleetId; name: string; actor: Joini
 
 /**
  * Use case: an actor brings a machine into the fleet (decision 0055). It
- * needs trierarch-plugin:join, which the trierarch plugin declares and
+ * needs trierarch:join, which the trierarch plugin declares and
  * enforces; argo holds every scope, though the fleet lists only core's for
  * it, so argo always may. The trierarch
  * plugin commissions its trierarch's ship, of type trierarch with crew:run

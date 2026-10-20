@@ -1,6 +1,6 @@
 # @aeolus-fleet/trierarch-plugin
 
-Brings your machines into the fleet and places each crew request on a machine that fits. It is the trierarchs' plugin on the server side (decision 0030). Optional: a fleet works without it. Aeolus knows nothing about it beyond its ship, which holds `fleet:read`, `fleet:commission`, `crew:assign`, `crew:run`, `labels:define`, `labels:assign` and `scopes:declare` and reaches the fleet only through its public API. What it does is in [docs/trierarch.md](../../docs/trierarch.md).
+Brings your machines into the fleet and places each crew request on a machine that fits. It is the trierarchs' plugin on the server side (decision 0030). Optional: a fleet works without it. Aeolus knows nothing about it beyond its ship, which holds `fleet:read`, `fleet:commission`, `crew:assign`, `crew:run`, `labels:define`, `labels:assign` and `scopes:declare` and reaches the fleet only through its public API. What it does is in [docs/trierarch.md](https://github.com/ThomasHendrickx/aeolus-fleet-trierarch/blob/main/docs/trierarch.md).
 
 So far: its own process and small database (each fleet's connection and switch), the connection the operator makes as its ship, a machine joining, the machines with their trierarchs' reports, assignment (docs/trierarch.md, "Assignment"), the installation procedures, `/api/health` and `/api/version`.
 
@@ -31,7 +31,7 @@ One tRPC router at `/trpc`, called with the console's session cookie, which the 
 | --- | --- |
 | `connection.status` | Whether it serves the fleet and is connected, as which ship, and the ship it was last connected as |
 | `connection.connect` | Connects with its ship's id and secret (`fleet:manage` session). Refused while connected (CONFLICT), for a ship of another fleet or without the three scopes (BAD_REQUEST) |
-| `machines.join` | Brings a machine in, by name (`trierarch-plugin:join`, or argo; otherwise FORBIDDEN): commissions a ship of type `trierarch` with `crew:run` and answers its starting prompt, crew lines, secret and setup line, `npx @aeolus-fleet/trierarch init --fleet-url <url> --ship-id <id> --secret <secret>`, each shown once. A name an active ship holds: CONFLICT |
+| `machines.join` | Brings a machine in, by name (`trierarch:join`, or argo; otherwise FORBIDDEN): commissions a ship of type `trierarch` with `crew:run` and answers its starting prompt, crew lines, secret and setup line, `npx @aeolus-fleet/trierarch init --fleet-url <url> --ship-id <id> --secret <secret>`, each shown once. A name an active ship holds: CONFLICT |
 | `machines.list` | The fleet's active ships of type `trierarch`, each with its trierarch's last report and details (null until it reports), and whether it is silent |
 | `requests.check` | Whether crew settings would be placed now, by assignment's rules, before a crew is requested with them: `fits`; `refused` with the settings field at fault and why; or `noRoom` when they fit but no trierarch has room (a request would wait). Writes nothing |
 | `installation.setEnabled`, `get`, `delete` | With `x-aeolus-installation-token`: switches a fleet on or off, reads it, forgets it (decision 0021) |
