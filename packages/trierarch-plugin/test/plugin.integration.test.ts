@@ -353,17 +353,17 @@ describe('the trierarch reach against a real fleet (#573, decision 0037)', () =>
 });
 
 describe('the trierarch plugin\'s scopes against a real fleet (decision 0055)', () => {
-  it('a pass declares the namespace trierarch-plugin with trierarch-plugin:join, once', async () => {
+  it('a pass declares the namespace trierarch with trierarch:join, once', async () => {
     await connected();
 
     await apps[0]?.assignOnce();
     await apps[0]?.assignOnce();
 
-    const namespace = (await useCases.listScopes(argo)).find((each) => each.namespace === 'trierarch-plugin');
+    const namespace = (await useCases.listScopes(argo)).find((each) => each.namespace === 'trierarch');
     expect(namespace).toEqual({
-      namespace: 'trierarch-plugin',
+      namespace: 'trierarch',
       declaredBy: { id: shipId, name: 'trierarch-plugin' },
-      scopes: [{ scope: 'trierarch-plugin:join', description: 'Add a computer: join its trierarch to the fleet' }],
+      scopes: [{ scope: 'trierarch:join', description: 'Add a computer: join its trierarch to the fleet' }],
     });
     await expect(fleetDatabase.event.count({ where: { type: 'ScopesDeclared' } })).resolves.toBe(1);
   });

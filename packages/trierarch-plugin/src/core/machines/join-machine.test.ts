@@ -67,14 +67,14 @@ describe('a machine joining', () => {
     await expect(join('mac-studio', ARGO)).resolves.toMatchObject({ isOk: true });
   });
 
-  it('lets an actor holding trierarch-plugin:join join a machine', async () => {
-    await expect(join('mac-studio', { kind: 'viewer', scopes: ['fleet:read', 'trierarch-plugin:join'] })).resolves.toMatchObject({ isOk: true });
+  it('lets an actor holding trierarch:join join a machine', async () => {
+    await expect(join('mac-studio', { kind: 'viewer', scopes: ['fleet:read', 'trierarch:join'] })).resolves.toMatchObject({ isOk: true });
   });
 
-  it('is refused for an actor without trierarch-plugin:join, and commissions nothing', async () => {
+  it('is refused for an actor without trierarch:join, and commissions nothing', async () => {
     await expect(join('mac-studio', { kind: 'viewer', scopes: ['fleet:read', 'fleet:manage'] })).resolves.toMatchObject({
       isOk: false,
-      error: { kind: 'NEEDS_SCOPE', message: 'Adding a computer needs trierarch-plugin:join' },
+      error: { kind: 'NEEDS_SCOPE', message: 'Adding a computer needs trierarch:join' },
     });
     expect(fleet.state.commissioned).toEqual([]);
   });
