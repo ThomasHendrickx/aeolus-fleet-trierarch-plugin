@@ -7,7 +7,6 @@ import { z } from 'zod';
 import { createApp, createMigratedDatabase, createPrismaClient, createUseCases, FLEET_URL, newKey, OPERATOR, operatorCaller, secretOf, unwrap, type PrismaClient } from '@aeolus-fleet/core/testing';
 
 import { createRestFleetDoor } from '../src/adapters/fleet/rest-fleet-door.js';
-import { runningVersion } from '../src/adapters/http/version.js';
 import { machineOutputSchema } from '../src/adapters/trpc/router.js';
 import { createTrierarchPluginApp, type TrierarchPluginApp } from '../src/app.js';
 import { connectPlugin, mutate, query, signIn } from './support/connection.js';
@@ -277,7 +276,7 @@ describe('checking crew settings before a request (#245)', () => {
 });
 
 describe('telling argo (#365)', () => {
-  it('tells argo once per idempotency key, as its own ship stating the trierarch plugin as its model', async () => {
+  it('tells argo once per idempotency key, as its own ship stating no model', async () => {
     const door = createRestFleetDoor(fleetUrl);
     const registered = await door.register({ shipId, secret });
     const crewToken = registered.isOk ? registered.value.crewToken : '';
@@ -290,7 +289,7 @@ describe('telling argo (#365)', () => {
     expect(inbox.map((entry) => ({ payload: entry.message.payload, sender: entry.message.sender.name }))).toEqual([{ payload: notice.text, sender: 'trierarch-plugin' }]);
     const listed = await door.listShips(crewToken);
     const self = listed.isOk ? listed.value.find((ship) => ship.shipId === shipId) : undefined;
-    expect(self?.model?.id).toBe(`@aeolus-fleet/trierarch-plugin@${runningVersion()}`);
+    expect(self?.model).toBeNull();
   });
 });
 
