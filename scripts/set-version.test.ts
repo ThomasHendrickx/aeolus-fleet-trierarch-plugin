@@ -55,8 +55,8 @@ describe('setVersion', () => {
   it("keeps the range of another train's package: common and core have versions of their own", () => {
     setVersion(copy, '0.28.0');
 
-    expect(manifest('trierarch-plugin').dependencies?.['@aeolus-fleet/common']).toBe('^0.29.0');
-    expect(manifest('trierarch-plugin').devDependencies?.['@aeolus-fleet/core']).toBe('^0.29.0');
+    expect(manifest('trierarch-plugin').dependencies?.['@aeolus-fleet/common']).toBe('^0.29.1');
+    expect(manifest('trierarch-plugin').devDependencies?.['@aeolus-fleet/core']).toBe('^0.29.1');
   });
 
   it("pins a dependency on this repository's own package to that version", () => {
