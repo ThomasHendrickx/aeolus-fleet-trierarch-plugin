@@ -1,14 +1,12 @@
 import type { ShipId } from '@aeolus-fleet/common';
 import { z } from 'zod';
 
-import { FLEET_URL, OPERATOR } from '@aeolus-fleet/core/testing';
-
-/** Signs the operator in to the fleet's console: the session cookie the console's server forwards. */
-export async function signIn(fleetUrl: string): Promise<string> {
-  const response = await fetch(`${fleetUrl}/trpc/console.signIn`, {
+/** Signs the operator in to the fleet's console with a sign-in link's ticket: the session cookie the console's server forwards. */
+export async function signIn(fleetUrl: string, ticket: string): Promise<string> {
+  const response = await fetch(`${fleetUrl}/trpc/console.redeemSignInTicket`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', origin: new URL(FLEET_URL).origin },
-    body: JSON.stringify({ email: OPERATOR.email, password: OPERATOR.password }),
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ticket }),
   });
   const set = response.headers.getSetCookie().find((each) => each.startsWith('aeolus_session='));
   return z.string().parse(set).split(';')[0] ?? '';

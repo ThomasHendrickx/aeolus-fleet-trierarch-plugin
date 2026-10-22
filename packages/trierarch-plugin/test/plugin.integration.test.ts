@@ -4,7 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { createApp, createMigratedDatabase, createPrismaClient, createUseCases, FLEET_URL, newKey, OPERATOR, operatorCaller, secretOf, unwrap, type PrismaClient } from '@aeolus-fleet/core/testing';
+import { createApp, createMigratedDatabase, createPrismaClient, createUseCases, FLEET_URL, newKey, operatorCaller, secretOf, unwrap, type PrismaClient } from '@aeolus-fleet/core/testing';
 
 import { createRestFleetDoor } from '../src/adapters/fleet/rest-fleet-door.js';
 import { machineOutputSchema } from '../src/adapters/trpc/router.js';
@@ -34,12 +34,13 @@ beforeEach(async () => {
   fleetDatabaseUrl = await createMigratedDatabase();
   fleetDatabase = createPrismaClient(fleetDatabaseUrl);
   useCases = createUseCases({ prisma: fleetDatabase });
-  argo = operatorCaller(unwrap(await useCases.initialiseFleet({ name: 'home fleet', ...OPERATOR })));
+  argo = operatorCaller(unwrap(await useCases.initialiseFleet({ name: 'home fleet' })));
   const commissioned = unwrap(
     await useCases.commissionShip(argo, {
       idempotencyKey: newKey(),
       name: 'trierarch-plugin',
       type: 'trierarch-plugin',
+      kind: 'plugin',
       scopes: ['fleet:read', 'fleet:commission', 'crew:assign', 'crew:run', 'labels:define', 'labels:assign', 'scopes:declare'],
     }),
   );
@@ -47,7 +48,7 @@ beforeEach(async () => {
   secret = secretOf(commissioned.secret);
   fleet = createApp({ databaseUrl: fleetDatabaseUrl, publicUrl: FLEET_URL, logger: false });
   fleetUrl = await fleet.listen({ host: '127.0.0.1', port: 0 });
-  cookie = await signIn(fleetUrl);
+  cookie = await signIn(fleetUrl, unwrap(await useCases.issueSignInLink({ fleetId: argo.fleetId })).ticket);
   pluginDatabaseUrl = await createPluginDatabase();
 });
 
