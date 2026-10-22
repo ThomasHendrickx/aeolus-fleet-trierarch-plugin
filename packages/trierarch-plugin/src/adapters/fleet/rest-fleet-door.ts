@@ -8,10 +8,10 @@
  */
 import { setTimeout as wait } from 'node:timers/promises';
 
-import { busyWaitMs, commissionShipOutputSchema, declareNetworkRulesOutputSchema, declareScopesOutputSchema, defineLabelOutputSchema, FLEET_BUSY_WAITS_MS, fleetListOutputSchema, idSchema, isInReadReach, labelsOutputSchema, scopesOutputSchema, shipDetailOutputSchema } from '@aeolus-fleet/common';
+import { busyWaitMs, commissionShipOutputSchema, declareNetworkRulesOutputSchema, declareScopesOutputSchema, defineLabelOutputSchema, FLEET_BUSY_WAITS_MS, fleetListOutputSchema, idSchema, isInReadReach, labelsOutputSchema, receiveOutputSchema, scopesOutputSchema, shipDetailOutputSchema } from '@aeolus-fleet/common';
 import { z } from 'zod';
 
-import type { FleetDoor, FleetRefusal } from '../../core/connection/ports.js';
+import type { FleetDoor, FleetRefusal, PluginInbox } from '../../core/connection/ports.js';
 import { err, ok, type Result } from '../../core/shared/result.js';
 
 const refusalSchema = z.object({ code: z.string(), message: z.string() });
@@ -83,7 +83,7 @@ function dateOf(iso: string | null): Date | null {
   return iso === null ? null : new Date(iso);
 }
 
-export function createRestFleetDoor(fleetUrl: string, options: { busyWaitsMs?: readonly number[]; random?: () => number; wait?: (waitMs: number, signal?: AbortSignal) => Promise<void> } = {}): FleetDoor {
+export function createRestFleetDoor(fleetUrl: string, options: { busyWaitsMs?: readonly number[]; random?: () => number; wait?: (waitMs: number, signal?: AbortSignal) => Promise<void> } = {}): FleetDoor & { inbox: PluginInbox } {
   const door = { fleetUrl, busyWaitsMs: options.busyWaitsMs ?? FLEET_BUSY_WAITS_MS, random: options.random ?? Math.random, wait: options.wait ?? ((waitMs: number) => wait(waitMs)) };
   const call = <T>(request: FleetCall<T>) => callFleet(door, request);
   return {
@@ -196,6 +196,21 @@ export function createRestFleetDoor(fleetUrl: string, options: { busyWaitsMs?: r
         answers: z.unknown(),
       });
       return sent.isOk ? ok(undefined) : sent;
+    },
+    // The plugin's own ship's deliveries: argo's ping, and whatever else reaches it.
+    inbox: {
+      receive: async (crewToken, max) => {
+        const taken = await call({ path: '/ship/receive', method: 'POST', crewToken, body: { max }, answers: receiveOutputSchema });
+        return taken.isOk ? ok(taken.value.deliveries.map(({ deliveryId, contentType, senderShipId }) => ({ deliveryId, contentType, senderShipId }))) : taken;
+      },
+      ack: async (crewToken, deliveryId) => {
+        const acked = await call({ path: '/ship/ack', method: 'POST', crewToken, body: { deliveryId }, answers: z.unknown() });
+        return acked.isOk ? ok(undefined) : acked;
+      },
+      pong: async (crewToken, deliveryId) => {
+        const ponged = await call({ path: '/ship/pong', method: 'POST', crewToken, body: { deliveryId }, answers: z.unknown() });
+        return ponged.isOk ? ok(undefined) : ponged;
+      },
     },
   };
 }

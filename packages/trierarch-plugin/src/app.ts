@@ -13,6 +13,7 @@ import { createPrismaFleetForgetter } from './adapters/prisma/fleet-forgetter.js
 import { createPrismaFleetSwitches } from './adapters/prisma/fleet-switches.js';
 import { createPrismaInstallationRequests } from './adapters/prisma/installation-requests.js';
 import { trierarchPluginRouter, type TrierarchPluginRouter } from './adapters/trpc/router.js';
+import { createAnswerPings } from './core/connection/answer-pings.js';
 import { createConnect } from './core/connection/connect.js';
 import { createReadConnection, type ReadConnection } from './core/connection/read-connection.js';
 import { createDeleteFleet } from './core/installation/delete-fleet.js';
@@ -32,6 +33,9 @@ import { createListMachines } from './core/machines/list-machines.js';
 import { DEFAULT_SILENT_AFTER_MS } from './core/machines/silent.js';
 import { createAuthenticateOperator } from './core/operator/authenticate-operator.js';
 import type { Clock } from './core/shared/clock.js';
+
+/** Between rounds of the plugin's ship taking what waits for it: a ping is answered within about this long. */
+const PING_ROUND_MS = 1000;
 
 export const systemClock: Clock = { now: () => new Date() };
 
@@ -209,6 +213,32 @@ export function createTrierarchPluginApp(options: {
     return done;
   };
   let assigning: NodeJS.Timeout | undefined;
+  const answerPings = createAnswerPings({ connections, inbox: door.inbox });
+  /** Answers argo's ping and acks what else reaches the plugin's ship in each fleet (aeolus-fleet#1113); logged, never thrown. */
+  const answerOnce = async (): Promise<void> => {
+    const { acked, refused } = await answerPings();
+    for (const { contentType, senderShipId } of acked) {
+      server.log.info({ contentType, senderShipId }, "the trierarch plugin's ship acked a message it does not handle");
+    }
+    if (refused > 0) {
+      server.log.debug({ refused }, "the fleet refused some calls of the trierarch plugin's ship's inbox");
+    }
+  };
+  // One round at a time, as the assignment pass: a round that outlasts the interval makes the next one wait.
+  let isAnswering = false;
+  const answering = setInterval(() => {
+    if (isAnswering) {
+      return;
+    }
+    isAnswering = true;
+    answerOnce()
+      .catch((error: unknown) => {
+        server.log.error({ err: error }, 'ping round failed; the next round tries again');
+      })
+      .finally(() => {
+        isAnswering = false;
+      });
+  }, PING_ROUND_MS);
 
   const trpc: FastifyTRPCPluginOptions<TrierarchPluginRouter> = {
     prefix: '/trpc',
@@ -242,6 +272,7 @@ export function createTrierarchPluginApp(options: {
 
   server.addHook('onClose', async () => {
     clearInterval(assigning);
+    clearInterval(answering);
     await prisma.$disconnect();
   });
 

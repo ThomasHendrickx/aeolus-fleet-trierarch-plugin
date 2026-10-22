@@ -1,4 +1,4 @@
-import type { CrewLine, FleetId, LabelId, LabelValueId, NetworkRule, ShipId } from '@aeolus-fleet/common';
+import type { CrewLine, DeliveryId, FleetId, LabelId, LabelValueId, NetworkRule, ShipId } from '@aeolus-fleet/common';
 
 import type { Result } from '../shared/result.js';
 
@@ -108,6 +108,22 @@ export interface FleetDoor {
   declareScopes(crewToken: string, declaration: { namespace: string; scopes: { scope: string; description: string }[] }): Promise<Result<undefined, FleetRefusal>>;
   /** Sends argo, the operator, plain text, stored once under its idempotency key. */
   tellArgo(crewToken: string, notice: { text: string; idempotencyKey: string }): Promise<Result<undefined, FleetRefusal>>;
+}
+
+/** A delivery to the trierarch plugin's own ship: what tells a ping apart, and who sent it. */
+export interface PluginDelivery {
+  deliveryId: DeliveryId;
+  contentType: string;
+  senderShipId: ShipId;
+}
+
+/** Outbound port: the deliveries to the trierarch plugin's own ship, as its crew takes, acks and pongs them. */
+export interface PluginInbox {
+  /** Takes up to max deliveries waiting for the ship; none when none wait. */
+  receive(crewToken: string, max: number): Promise<Result<PluginDelivery[], FleetRefusal>>;
+  ack(crewToken: string, deliveryId: DeliveryId): Promise<Result<undefined, FleetRefusal>>;
+  /** Answers argo's ping, in place of the ack. */
+  pong(crewToken: string, deliveryId: DeliveryId): Promise<Result<undefined, FleetRefusal>>;
 }
 
 /** The crew token the trierarch plugin holds for its ship in a fleet, and when it got it. */
