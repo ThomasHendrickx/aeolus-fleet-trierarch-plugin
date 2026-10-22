@@ -13,7 +13,6 @@ import { z } from 'zod';
 
 import type { FleetDoor, FleetRefusal } from '../../core/connection/ports.js';
 import { err, ok, type Result } from '../../core/shared/result.js';
-import { runningVersion } from '../http/version.js';
 
 const refusalSchema = z.object({ code: z.string(), message: z.string() });
 
@@ -25,9 +24,6 @@ const LOCATION = { kind: 'SERVER' } as const;
 
 /** The harness the trierarch plugin states when it registers its ship: it is software, not a model. */
 const HARNESS = 'aeolus-trierarch-plugin';
-
-/** The model the trierarch plugin states on every send: it is software, so it names its package and the version it runs. */
-const MODEL = `@aeolus-fleet/trierarch-plugin@${runningVersion()}`;
 
 /** The operator ship's name (decision 0012). */
 const OPERATOR_SHIP_NAME = 'argo';
@@ -196,7 +192,7 @@ export function createRestFleetDoor(fleetUrl: string, options: { busyWaitsMs?: r
         path: '/ship/send',
         method: 'POST',
         crewToken,
-        body: { selector: { kind: 'ship', name: OPERATOR_SHIP_NAME }, payload: text, contentType: 'text/plain', model: MODEL, idempotencyKey },
+        body: { selector: { kind: 'ship', name: OPERATOR_SHIP_NAME }, payload: text, contentType: 'text/plain', idempotencyKey },
         answers: z.unknown(),
       });
       return sent.isOk ? ok(undefined) : sent;

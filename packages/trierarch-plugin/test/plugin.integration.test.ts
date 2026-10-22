@@ -4,10 +4,9 @@ import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { createApp, createMigratedDatabase, createPrismaClient, createUseCases, FLEET_URL, newKey, OPERATOR, operatorCaller, secretOf, unwrap, type PrismaClient } from '@aeolus-fleet/core/testing';
+import { createApp, createMigratedDatabase, createPrismaClient, createUseCases, FLEET_URL, newKey, operatorCaller, secretOf, unwrap, type PrismaClient } from '@aeolus-fleet/core/testing';
 
 import { createRestFleetDoor } from '../src/adapters/fleet/rest-fleet-door.js';
-import { runningVersion } from '../src/adapters/http/version.js';
 import { machineOutputSchema } from '../src/adapters/trpc/router.js';
 import { createTrierarchPluginApp, type TrierarchPluginApp } from '../src/app.js';
 import { connectPlugin, mutate, query, signIn } from './support/connection.js';
@@ -35,12 +34,13 @@ beforeEach(async () => {
   fleetDatabaseUrl = await createMigratedDatabase();
   fleetDatabase = createPrismaClient(fleetDatabaseUrl);
   useCases = createUseCases({ prisma: fleetDatabase });
-  argo = operatorCaller(unwrap(await useCases.initialiseFleet({ name: 'home fleet', ...OPERATOR })));
+  argo = operatorCaller(unwrap(await useCases.initialiseFleet({ name: 'home fleet' })));
   const commissioned = unwrap(
     await useCases.commissionShip(argo, {
       idempotencyKey: newKey(),
       name: 'trierarch-plugin',
       type: 'trierarch-plugin',
+      kind: 'plugin',
       scopes: ['fleet:read', 'fleet:commission', 'crew:assign', 'crew:run', 'labels:define', 'labels:assign', 'scopes:declare'],
     }),
   );
@@ -48,7 +48,7 @@ beforeEach(async () => {
   secret = secretOf(commissioned.secret);
   fleet = createApp({ databaseUrl: fleetDatabaseUrl, publicUrl: FLEET_URL, logger: false });
   fleetUrl = await fleet.listen({ host: '127.0.0.1', port: 0 });
-  cookie = await signIn(fleetUrl);
+  cookie = await signIn(fleetUrl, unwrap(await useCases.issueSignInLink({ fleetId: argo.fleetId })).ticket);
   pluginDatabaseUrl = await createPluginDatabase();
 });
 
@@ -277,7 +277,7 @@ describe('checking crew settings before a request (#245)', () => {
 });
 
 describe('telling argo (#365)', () => {
-  it('tells argo once per idempotency key, as its own ship stating the trierarch plugin as its model', async () => {
+  it('tells argo once per idempotency key, as its own ship stating no model', async () => {
     const door = createRestFleetDoor(fleetUrl);
     const registered = await door.register({ shipId, secret });
     const crewToken = registered.isOk ? registered.value.crewToken : '';
@@ -290,7 +290,7 @@ describe('telling argo (#365)', () => {
     expect(inbox.map((entry) => ({ payload: entry.message.payload, sender: entry.message.sender.name }))).toEqual([{ payload: notice.text, sender: 'trierarch-plugin' }]);
     const listed = await door.listShips(crewToken);
     const self = listed.isOk ? listed.value.find((ship) => ship.shipId === shipId) : undefined;
-    expect(self?.model?.id).toBe(`@aeolus-fleet/trierarch-plugin@${runningVersion()}`);
+    expect(self?.model).toBeNull();
   });
 });
 
