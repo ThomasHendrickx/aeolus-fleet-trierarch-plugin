@@ -451,3 +451,21 @@ describe('the installation (decision 0021)', () => {
     await expect(declared()).resolves.toEqual([]);
   });
 });
+
+describe("argo pings the trierarch plugin's ship (blueprint, Ping; aeolus-fleet#1113)", () => {
+  it('answers with pong, so the ship shows the ping answered', async () => {
+    await connected();
+
+    const pinged = await fetch(`${fleetUrl}/trpc/fleet.ping`, { method: 'POST', headers: { 'content-type': 'application/json', origin: FLEET_URL, cookie }, body: JSON.stringify({ shipId }) });
+    expect(pinged.status, await pinged.clone().text()).toBe(200);
+
+    await expect.poll(async () => pingStateOf(shipId), { timeout: 15_000, interval: 500 }).toBe('answered');
+  });
+});
+
+/** How the ship's last ping stands, as argo reads the ship. */
+async function pingStateOf(ship: ShipId): Promise<string | undefined> {
+  const answer = await fetch(`${fleetUrl}/trpc/fleet.ship?input=${encodeURIComponent(JSON.stringify({ shipId: ship }))}`, { headers: { cookie } });
+  const read = z.object({ result: z.object({ data: z.object({ ping: z.object({ state: z.string() }).nullable() }) }) }).safeParse(await answer.json());
+  return read.success ? read.data.result.data.ping?.state : undefined;
+}
