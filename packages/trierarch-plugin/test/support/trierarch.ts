@@ -72,3 +72,32 @@ export async function receiveAsTrierarch(fleetUrl: string, machine: { shipId: Sh
   const deliveries = z.object({ deliveries: z.array(z.object({ senderShipId: z.string(), contentType: z.string(), payload: z.string() })) }).parse(received).deliveries;
   return deliveries.map(({ senderShipId, contentType, payload }) => ({ senderShipId, contentType, payload }));
 }
+
+/**
+ * A joined machine's trierarch registered with the secret the join answered:
+ * it receives and acks what waits for it, and sends as its own ship.
+ */
+export async function crewAsTrierarch(fleetUrl: string, machine: { shipId: ShipId; secret: string }) {
+  const registered = await shipCall(fleetUrl, {
+    path: '/ship/register',
+    body: { shipId: machine.shipId, secret: machine.secret, location: { kind: 'DEVICE' }, harness: 'aeolus-trierarch' },
+  });
+  const { crewToken } = z.object({ crewToken: z.string() }).parse(registered);
+  const deliveriesSchema = z.object({ deliveries: z.array(z.object({ deliveryId: z.string(), contentType: z.string(), payload: z.string() })) });
+  return {
+    receive: async (): Promise<{ contentType: string; payload: string }[]> => {
+      const { deliveries } = deliveriesSchema.parse(await shipCall(fleetUrl, { path: '/ship/receive', crewToken, body: { max: 10 } }));
+      for (const { deliveryId } of deliveries) {
+        await shipCall(fleetUrl, { path: '/ship/ack', crewToken, body: { deliveryId } });
+      }
+      return deliveries.map(({ contentType, payload }) => ({ contentType, payload }));
+    },
+    send: async (message: { shipId: ShipId; contentType: string; payload: string }): Promise<void> => {
+      await shipCall(fleetUrl, {
+        path: '/ship/send',
+        crewToken,
+        body: { selector: { kind: 'ship', shipId: message.shipId }, contentType: message.contentType, payload: message.payload, idempotencyKey: crypto.randomUUID(), model: 'claude-opus-5-5' },
+      });
+    },
+  };
+}
