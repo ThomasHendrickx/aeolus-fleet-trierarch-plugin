@@ -47,7 +47,8 @@ export type JoinMachine = (input: { fleetId: FleetId; name: string; actor: Joini
  * plugin commissions its trierarch's ship, of type trierarch with crew:run
  * beside the send and receive every agent ship has, under a new idempotency
  * key, and answers its starting prompt with one ready-to-run setup line built
- * from the fleet's URL, the ship's id and its secret: `aeolus-trierarch init`
+ * from the fleet's URL, the ship's id and secret, and the trierarch plugin's
+ * own ship: `aeolus-trierarch init`
  * takes them as flags and never parses a prompt. The secret is never kept or
  * logged.
  */
@@ -67,7 +68,8 @@ export function createJoinMachine(deps: { door: FleetDoor; connections: Connecti
         : refuse('FLEET_UNAVAILABLE', `The fleet did not commission the machine's ship: ${commissioned.error.message}`);
     }
     const { shipId, prompt, crewLines, secret } = commissioned.value;
-    const setupLine = `npx ${TRIERARCH_PACKAGE} init --fleet-url ${deps.fleetUrl} --ship-id ${shipId} --secret ${secret}`;
+    // The trierarch takes the trusted repositories only from this ship (aeolus-fleet#384): a ship's type proves nothing.
+    const setupLine = `npx ${TRIERARCH_PACKAGE} init --fleet-url ${deps.fleetUrl} --ship-id ${shipId} --plugin-ship-id ${crew.shipId} --secret ${secret}`;
     return ok({ shipId, name, prompt, crewLines, secret, setupLine });
   };
 }
