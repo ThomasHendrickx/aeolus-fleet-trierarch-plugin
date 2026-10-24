@@ -11,7 +11,8 @@ import { machineOutputSchema } from '../src/adapters/trpc/router.js';
 import { createTrierarchPluginApp, type TrierarchPluginApp } from '../src/app.js';
 import { connectPlugin, mutate, query, signIn } from './support/connection.js';
 import { createPluginDatabase } from '../src/testing/database.js';
-import { reportAsTrierarch } from './support/trierarch.js';
+import { readTrustedRepositories } from '../src/core/repositories/trusted-repositories.js';
+import { crewAsTrierarch, receiveAsTrierarch, reportAsTrierarch } from './support/trierarch.js';
 
 // The trierarch plugin against a real fleet: it starts not connected, with no
 // secret anywhere; the operator connects it as its ship (fleet:read,
@@ -46,7 +47,8 @@ beforeEach(async () => {
   );
   shipId = commissioned.shipId;
   secret = secretOf(commissioned.secret);
-  fleet = createApp({ databaseUrl: fleetDatabaseUrl, publicUrl: FLEET_URL, logger: false });
+  // A receive answers within 100 ms when nothing waits, so a test that receives nothing does not wait out the long poll.
+  fleet = createApp({ databaseUrl: fleetDatabaseUrl, publicUrl: FLEET_URL, logger: false, receiveWaitMs: 100 });
   fleetUrl = await fleet.listen({ host: '127.0.0.1', port: 0 });
   cookie = await signIn(fleetUrl, unwrap(await useCases.issueSignInLink({ fleetId: argo.fleetId })).ticket);
   pluginDatabaseUrl = await createPluginDatabase();
@@ -148,7 +150,7 @@ describe('a machine joining', () => {
     expect({ name: ship.name, type: ship.type, scopes: [...ship.scopes].sort() }).toEqual({ name: 'mac-studio', type: 'trierarch', scopes: ['crew:run', 'messages:receive', 'messages:send'] });
     expect(joined.prompt).toContain(joined.secret);
     expect(joined.crewLines.map((line) => line.harness)).toContain('claude-code');
-    expect(joined.setupLine).toBe(`npx @aeolus-fleet/trierarch init --fleet-url ${fleetUrl} --ship-id ${joined.shipId} --secret ${joined.secret}`);
+    expect(joined.setupLine).toBe(`npx @aeolus-fleet/trierarch init --fleet-url ${fleetUrl} --ship-id ${joined.shipId} --plugin-ship-id ${shipId} --secret ${joined.secret}`);
   });
 
   it('is refused for a name an active ship holds', async () => {
@@ -349,6 +351,56 @@ describe('the trierarch reach against a real fleet (#573, decision 0037)', () =>
     const term = { labelId: await trierarchLabelId(), value: '*' };
     await expect(declared()).resolves.toEqual([{ shipId, rules: [{ verb: 'send', from: [term], to: [term] }] }]);
     await expect(fleetDatabase.event.count({ where: { type: 'NetworkRulesDeclared' } })).resolves.toBe(1);
+  });
+});
+
+describe('the trusted repositories against a real fleet (aeolus-fleet#384)', () => {
+  it('a pass sends a joined trierarch the trusted repositories once, as the trierarch plugin\'s ship', async () => {
+    const listed = readTrustedRepositories({ hemma: 'git@github.com:ThomasHendrickx/hemma.git' });
+    const trustedRepositories = listed.isOk ? listed.value : { repositories: [] };
+    const app = createTrierarchPluginApp({ databaseUrl: pluginDatabaseUrl, fleetUrl, logger: false, trustedRepositories });
+    apps.push(app);
+    const address = await app.server.listen({ host: '127.0.0.1', port: 0 });
+    expect((await connectPlugin(address, { cookie, shipId, secret })).status).toBe(200);
+    const joined = joinedSchema.parse(await (await mutate(address, { procedure: 'machines.join', cookie, body: { name: 'mac-studio' } })).json()).result.data;
+
+    await app.assignOnce();
+    await app.assignOnce();
+
+    const machine = { shipId: z.templateLiteral(['shp_', z.string()]).parse(joined.shipId), secret: joined.secret };
+    await expect(receiveAsTrierarch(fleetUrl, machine)).resolves.toEqual([
+      {
+        senderShipId: shipId,
+        contentType: 'application/vnd.aeolus.trierarch.trusted-repositories+json',
+        payload: '{"repositories":[{"name":"hemma","url":"git@github.com:ThomasHendrickx/hemma.git"}]}',
+      },
+    ]);
+  });
+});
+
+describe('a trierarch asking for the trusted repositories again (aeolus-fleet#384)', () => {
+  it('a machine set up before, which dropped the list, asks once it knows the plugin\'s ship and gets the list on the next pass', async () => {
+    const listed = readTrustedRepositories({ hemma: 'git@github.com:ThomasHendrickx/hemma.git' });
+    const trustedRepositories = listed.isOk ? listed.value : { repositories: [] };
+    const app = createTrierarchPluginApp({ databaseUrl: pluginDatabaseUrl, fleetUrl, logger: false, trustedRepositories });
+    apps.push(app);
+    const address = await app.server.listen({ host: '127.0.0.1', port: 0 });
+    expect((await connectPlugin(address, { cookie, shipId, secret })).status).toBe(200);
+    const joined = joinedSchema.parse(await (await mutate(address, { procedure: 'machines.join', cookie, body: { name: 'mac-studio' } })).json()).result.data;
+    const machine = await crewAsTrierarch(fleetUrl, { shipId: z.templateLiteral(['shp_', z.string()]).parse(joined.shipId), secret: joined.secret });
+    await app.assignOnce();
+    await expect(machine.receive()).resolves.toHaveLength(1);
+
+    await machine.send({ shipId, contentType: 'application/vnd.aeolus.trierarch.trusted-repositories-request+json', payload: '{}' });
+    await expect
+      .poll(
+        async () => {
+          await app.assignOnce();
+          return (await machine.receive()).map((delivery) => delivery.contentType);
+        },
+        { timeout: 15_000, interval: 500 },
+      )
+      .toEqual(['application/vnd.aeolus.trierarch.trusted-repositories+json']);
   });
 });
 

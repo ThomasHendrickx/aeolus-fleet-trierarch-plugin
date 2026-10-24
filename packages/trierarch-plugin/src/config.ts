@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { DEFAULT_SILENT_AFTER_MS } from './core/machines/silent.js';
+import { readTrustedRepositories, type TrustedRepositories } from './core/repositories/trusted-repositories.js';
 
 /** The shortest installation token the trierarch plugin takes, as the fleet core does (decision 0020). */
 const INSTALLATION_TOKEN_MIN_LENGTH = 32;
@@ -19,6 +20,7 @@ const environmentSchema = z.object({
   INSTALLATION_TOKEN: z.string().min(INSTALLATION_TOKEN_MIN_LENGTH, { error: `must hold at least ${String(INSTALLATION_TOKEN_MIN_LENGTH)} characters` }).optional(),
   TRIERARCH_SILENT_AFTER_SECONDS: z.coerce.number().int().positive().default(DEFAULT_SILENT_AFTER_MS / MS_PER_SECOND),
   TRIERARCH_PASS_INTERVAL_SECONDS: z.coerce.number().int().positive().default(DEFAULT_PASS_INTERVAL_SECONDS),
+  TRUSTED_REPOSITORIES: z.string().default('{}'),
 });
 
 /** What `aeolus-trierarch-plugin migrate` reads: the database alone. */
@@ -48,6 +50,8 @@ export interface Config {
   silentAfterMs: number;
   /** How often the assignment runs a pass for each fleet it serves and is connected to. */
   passIntervalMs: number;
+  /** The repositories every trierarch may clone on demand, by name (aeolus-fleet#384); none by default. */
+  trustedRepositories: TrustedRepositories;
 }
 
 export class ConfigError extends Error {
@@ -62,6 +66,21 @@ function parsed<T>(schema: z.ZodType<T>, environment: Record<string, string | un
   return result.data;
 }
 
+/** TRUSTED_REPOSITORIES as JSON of names to git URLs; throws a ConfigError saying what is wrong. */
+function trustedRepositories(text: string): TrustedRepositories {
+  let listed: unknown;
+  try {
+    listed = JSON.parse(text);
+  } catch {
+    throw new ConfigError('TRUSTED_REPOSITORIES: must be JSON of names to git URLs');
+  }
+  const read = readTrustedRepositories(listed);
+  if (!read.isOk) {
+    throw new ConfigError(`TRUSTED_REPOSITORIES: ${read.error.reason}`);
+  }
+  return read.value;
+}
+
 /** The configuration from the environment; throws a ConfigError naming every variable that is wrong. */
 export function loadConfig(environment: Record<string, string | undefined>): Config {
   const variables = parsed(environmentSchema, environment);
@@ -74,6 +93,7 @@ export function loadConfig(environment: Record<string, string | undefined>): Con
     installationToken: variables.INSTALLATION_TOKEN,
     silentAfterMs: variables.TRIERARCH_SILENT_AFTER_SECONDS * MS_PER_SECOND,
     passIntervalMs: variables.TRIERARCH_PASS_INTERVAL_SECONDS * MS_PER_SECOND,
+    trustedRepositories: trustedRepositories(variables.TRUSTED_REPOSITORIES),
   };
 }
 
