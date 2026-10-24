@@ -40,7 +40,7 @@ describe('a machine joining', () => {
     expect(fleet.state.commissioned).toEqual([{ name: 'mac-studio', type: 'trierarch', scopes: ['crew:run'], idempotencyKey: 'join-1' }]);
   });
 
-  it('answers its starting prompt as the fleet issued it, and a setup line for the machine built from its fields', async () => {
+  it("answers its starting prompt as the fleet issued it, and a setup line for the machine built from its fields, naming the trierarch plugin's ship the trusted repositories come from", async () => {
     const secret = 'aeolus_sk_v1_machine';
 
     await expect(join()).resolves.toEqual({
@@ -51,7 +51,7 @@ describe('a machine joining', () => {
         prompt: `You crew the Aeolus ship mac-studio. Register with ship id ${COMMISSIONED_SHIP_ID} and secret ${secret}.`,
         crewLines: [{ harness: 'claude-code', line: `/aeolus:crew ${FLEET_URL} ${COMMISSIONED_SHIP_ID} ${secret}` }],
         secret,
-        setupLine: `npx @aeolus-fleet/trierarch init --fleet-url ${FLEET_URL} --ship-id ${COMMISSIONED_SHIP_ID} --secret ${secret}`,
+        setupLine: `npx @aeolus-fleet/trierarch init --fleet-url ${FLEET_URL} --ship-id ${COMMISSIONED_SHIP_ID} --plugin-ship-id ${SHIP_ID} --secret ${secret}`,
       },
     });
   });
