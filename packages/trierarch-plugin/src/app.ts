@@ -28,6 +28,8 @@ import { createTellModelMismatches } from './core/assignment/tell-model-mismatch
 import { createJoinMachine } from './core/machines/join-machine.js';
 import { createDeclareNetworkRules, type Declarations } from './core/network/declare-network-rules.js';
 import { createDeclareScopes } from './core/scopes/declare-scopes.js';
+import { createShareTrustedRepositories } from './core/repositories/share-trusted-repositories.js';
+import type { TrustedRepositories } from './core/repositories/trusted-repositories.js';
 import { createWithdrawNetworkRules } from './core/network/withdraw-network-rules.js';
 import { createListMachines } from './core/machines/list-machines.js';
 import { DEFAULT_SILENT_AFTER_MS } from './core/machines/silent.js';
@@ -74,6 +76,8 @@ export function createTrierarchPluginApp(options: {
   installationToken?: string;
   /** A trierarch whose last seen is older than this is silent; five minutes unless given. */
   silentAfterMs?: number;
+  /** The repositories every trierarch may clone on demand (aeolus-fleet#384); none unless given. */
+  trustedRepositories?: TrustedRepositories;
 }): TrierarchPluginApp {
   const prisma = createPrismaClient(options.databaseUrl);
   const server = Fastify({ logger: options.logger ?? true });
@@ -191,6 +195,23 @@ export function createTrierarchPluginApp(options: {
       server.log.info({ fleet: fleetId, ...told.value }, 'model check told argo');
     }
   };
+  // The trierarchs this process sent the list; a restart sends it to every trierarch again.
+  const shareTrustedRepositories = createShareTrustedRepositories({
+    door,
+    connections,
+    keys: randomIdempotencyKeys,
+    trustedRepositories: options.trustedRepositories ?? { repositories: [] },
+    shared: new Set(),
+  });
+  /** Sends each trierarch the trusted repositories once (aeolus-fleet#384); a refusal is logged and the pass goes on. */
+  const shareOnce = async (fleetId: FleetId): Promise<void> => {
+    const shared = await shareTrustedRepositories(fleetId);
+    if (!shared.isOk) {
+      server.log.warn({ fleet: fleetId, refusal: shared.error }, 'sharing the trusted repositories refused; the next pass tries again');
+    } else if (shared.value.shared > 0) {
+      server.log.info({ fleet: fleetId, ...shared.value }, 'trusted repositories sent');
+    }
+  };
   const checkCrewSettings = createCheckCrewSettings({ door, connections, clock, silentAfterMs });
   const assignOnce = async (): Promise<{ fleetId: FleetId; outcome: AssignOutcome }[]> => {
     const done: { fleetId: FleetId; outcome: AssignOutcome }[] = [];
@@ -202,6 +223,7 @@ export function createTrierarchPluginApp(options: {
       await labelOnce(crew.fleetId);
       await declareOnce(crew.fleetId);
       await declareScopesOnce(crew.fleetId);
+      await shareOnce(crew.fleetId);
       const assigned = await assignCrews(crew.fleetId);
       await tellOnce(crew.fleetId);
       if (assigned.isOk) {

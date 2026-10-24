@@ -23,6 +23,7 @@ async function start(): Promise<void> {
     fleetUrl: config.fleetUrl,
     logger: { level: config.logLevel },
     silentAfterMs: config.silentAfterMs,
+    trustedRepositories: config.trustedRepositories,
     ...(config.installationToken === undefined ? {} : { installationToken: config.installationToken }),
   });
   const restored = await app.restoreConnections();

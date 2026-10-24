@@ -366,7 +366,8 @@ describe('the trusted repositories against a real fleet (aeolus-fleet#384)', () 
     await app.assignOnce();
     await app.assignOnce();
 
-    await expect(receiveAsTrierarch(fleetUrl, joined)).resolves.toEqual([
+    const machine = { shipId: z.templateLiteral(['shp_', z.string()]).parse(joined.shipId), secret: joined.secret };
+    await expect(receiveAsTrierarch(fleetUrl, machine)).resolves.toEqual([
       {
         senderShipId: shipId,
         contentType: 'application/vnd.aeolus.trierarch.trusted-repositories+json',
