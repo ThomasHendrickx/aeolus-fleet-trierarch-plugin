@@ -8,7 +8,7 @@
  */
 import { setTimeout as wait } from 'node:timers/promises';
 
-import { busyWaitMs, commissionShipOutputSchema, declareNetworkRulesOutputSchema, declareScopesOutputSchema, defineLabelOutputSchema, FLEET_BUSY_WAITS_MS, fleetListOutputSchema, idSchema, isInReadReach, labelsOutputSchema, receiveOutputSchema, scopesOutputSchema, shipDetailOutputSchema } from '@aeolus-fleet/common';
+import { busyWaitMs, commissionShipOutputSchema, declareNetworkRulesOutputSchema, declareScopesOutputSchema, defineLabelOutputSchema, FLEET_BUSY_WAITS_MS, fleetListOutputSchema, idSchema, isInReadReach, labelsOutputSchema, PAGE_SIZE_MAX, receiveOutputSchema, scopesOutputSchema, shipDetailOutputSchema } from '@aeolus-fleet/common';
 import { z } from 'zod';
 
 import type { FleetDoor, FleetRefusal, PluginInbox } from '../../core/connection/ports.js';
@@ -79,6 +79,26 @@ async function callOnce<T>(fleetUrl: string, request: FleetCall<T>): Promise<Res
   return response.ok ? ok(request.answers.parse(body)) : err(refusalSchema.parse(body));
 }
 
+/**
+ * Every item of a paged list: each page asked from the cursor the last one
+ * answered, until it answers none (decision 4 of aeolus-fleet's
+ * docs/design/performance/performance.md). A page may hold fewer items than
+ * asked while more follow, so only a null cursor ends the list.
+ */
+async function listEveryPage<Item>(readPage: (cursor: string | undefined) => Promise<Result<{ items: Item[]; nextCursor: string | null }, FleetRefusal>>): Promise<Result<Item[], FleetRefusal>> {
+  const items: Item[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await readPage(cursor);
+    if (!page.isOk) {
+      return page;
+    }
+    items.push(...page.value.items);
+    cursor = page.value.nextCursor ?? undefined;
+  } while (cursor !== undefined);
+  return ok(items);
+}
+
 function dateOf(iso: string | null): Date | null {
   return iso === null ? null : new Date(iso);
 }
@@ -127,7 +147,7 @@ export function createRestFleetDoor(fleetUrl: string, options: { busyWaitsMs?: r
       return ok({ shipId, prompt, crewLines, secret });
     },
     listShips: async (crewToken) => {
-      const listed = await call({ path: '/fleet/list', method: 'POST', crewToken, body: {}, answers: fleetListOutputSchema });
+      const listed = await listEveryPage((cursor) => call({ path: '/fleet/list', method: 'POST', crewToken, body: { cursor, limit: PAGE_SIZE_MAX }, answers: fleetListOutputSchema }));
       return listed.isOk
         ? ok(
             // A ship outside read reach shows too little to crew (decision 0034).

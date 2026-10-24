@@ -96,32 +96,79 @@ describe('the fleet door over REST while the fleet is busy (#610)', () => {
   });
 });
 
+/** A ship as `fleet.list` lists it whole, inside the caller's read reach. */
+function aListedShip(id: string, name: string): Record<string, unknown> {
+  return {
+    id,
+    name,
+    type: 'reviewer',
+    kind: 'agent',
+    status: 'crewed',
+    startingPrompt: null,
+    location: null,
+    lastSeenAt: null,
+    ping: null,
+    scopes: ['messages:send', 'messages:receive'],
+    report: null,
+    crewRequest: null,
+    labels: [{ labelId: 'lbl_01m3tbfspe96yf1rnr4ank9h2c', key: 'team', valueId: 'lbv_01m3tbfspe96yf1rnr4ank9h2d', value: 'a' }],
+    model: null,
+    harness: null,
+    awaitingCrewSince: null,
+    retiredAt: null,
+    ownerShipId: null,
+  };
+}
+
+const SCOUT_ID = 'shp_01m3tbfspe96yf1rnr4ank9h2a';
+const KEEPER_ID = 'shp_01m3tbfspe96yf1rnr4ank9h2e';
+
 describe('the fleet door over REST within read reach (decision 0034)', () => {
   it('lists only the ships it reads whole, leaving out those outside its read reach', async () => {
-    const whole = {
-      id: 'shp_01m3tbfspe96yf1rnr4ank9h2a',
-      name: 'scout',
-      type: 'reviewer',
-      kind: 'agent',
-      status: 'crewed',
-      startingPrompt: null,
-      location: null,
-      lastSeenAt: null,
-      ping: null,
-      scopes: ['messages:send', 'messages:receive'],
-      report: null,
-      crewRequest: null,
-      labels: [{ labelId: 'lbl_01m3tbfspe96yf1rnr4ank9h2c', key: 'team', valueId: 'lbv_01m3tbfspe96yf1rnr4ank9h2d', value: 'a' }],
-      model: null,
-      harness: null,
-      awaitingCrewSince: null,
-      retiredAt: null,
-      ownerShipId: null,
-    };
-    await aFleetAnswering([{ status: 200, body: [whole, { id: 'shp_01m3tbfspe96yf1rnr4ank9h2b', name: 'vault', type: 'keeper', status: 'crewed', isInReadReach: false }] }], async (fleetUrl) => {
+    const page = { items: [aListedShip(SCOUT_ID, 'scout'), { id: 'shp_01m3tbfspe96yf1rnr4ank9h2b', name: 'vault', type: 'keeper', status: 'crewed', isInReadReach: false }], nextCursor: null };
+    await aFleetAnswering([{ status: 200, body: page }], async (fleetUrl) => {
       const listed = await createRestFleetDoor(fleetUrl).listShips('aeolus_ct_v1_x');
 
-      expect(listed.isOk && listed.value.map((ship) => ship.shipId)).toEqual([whole.id]);
+      expect(listed.isOk && listed.value.map((ship) => ship.shipId)).toEqual([SCOUT_ID]);
+    });
+  });
+});
+
+describe('the fleet door over REST when fleet.list answers in pages (aeolus-fleet#1144)', () => {
+  it('lists the ships of every page, reading on from each next cursor until it is null', async () => {
+    const pages = [
+      { status: 200, body: { items: [aListedShip(SCOUT_ID, 'scout')], nextCursor: 'cursor-after-scout' } },
+      { status: 200, body: { items: [aListedShip(KEEPER_ID, 'keeper')], nextCursor: null } },
+    ];
+    await aFleetAnswering(pages, async (fleetUrl, asked) => {
+      const listed = await createRestFleetDoor(fleetUrl).listShips('aeolus_ct_v1_x');
+
+      expect(listed.isOk && listed.value.map((ship) => ship.shipId)).toEqual([SCOUT_ID, KEEPER_ID]);
+      expect(asked.map((call): unknown => JSON.parse(call.body))).toEqual([{ limit: 500 }, { cursor: 'cursor-after-scout', limit: 500 }]);
+    });
+  });
+
+  it('reads on past a page that holds no ship it reads whole while more follow', async () => {
+    const pages = [
+      { status: 200, body: { items: [{ id: 'shp_01m3tbfspe96yf1rnr4ank9h2b', name: 'vault', type: 'keeper', status: 'crewed', isInReadReach: false }], nextCursor: 'cursor-after-vault' } },
+      { status: 200, body: { items: [aListedShip(KEEPER_ID, 'keeper')], nextCursor: null } },
+    ];
+    await aFleetAnswering(pages, async (fleetUrl) => {
+      const listed = await createRestFleetDoor(fleetUrl).listShips('aeolus_ct_v1_x');
+
+      expect(listed.isOk && listed.value.map((ship) => ship.shipId)).toEqual([KEEPER_ID]);
+    });
+  });
+
+  it('answers the refusal of a later page, not the ships read before it', async () => {
+    const pages = [
+      { status: 200, body: { items: [aListedShip(SCOUT_ID, 'scout')], nextCursor: 'cursor-after-scout' } },
+      { status: 403, body: { code: 'FORBIDDEN', message: 'The crew token lacks fleet:read' } },
+    ];
+    await aFleetAnswering(pages, async (fleetUrl) => {
+      const listed = await createRestFleetDoor(fleetUrl).listShips('aeolus_ct_v1_x');
+
+      expect(!listed.isOk && listed.error.code).toBe('FORBIDDEN');
     });
   });
 });
