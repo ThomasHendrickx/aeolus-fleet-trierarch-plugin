@@ -217,6 +217,16 @@ export function createRestFleetDoor(fleetUrl: string, options: { busyWaitsMs?: r
       });
       return sent.isOk ? ok(undefined) : sent;
     },
+    send: async (crewToken, { shipId, contentType, payload, idempotencyKey }) => {
+      const sent = await call({
+        path: '/ship/send',
+        method: 'POST',
+        crewToken,
+        body: { selector: { kind: 'ship', shipId }, payload, contentType, idempotencyKey },
+        answers: z.unknown(),
+      });
+      return sent.isOk ? ok(undefined) : sent;
+    },
     // The plugin's own ship's deliveries: argo's ping, and whatever else reaches it.
     inbox: {
       receive: async (crewToken, max) => {

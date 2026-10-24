@@ -15,6 +15,9 @@ export interface TrustedRepositories {
   readonly repositories: readonly { readonly name: string; readonly url: string }[];
 }
 
+/** The content type of the message that carries the list to a trierarch. */
+export const TRUSTED_REPOSITORIES_CONTENT_TYPE = 'application/vnd.aeolus.trierarch.trusted-repositories+json';
+
 const BYTES_PER_KB = 1024;
 
 const URL_REFUSED = 'a trusted repository is an https:// or ssh URL, never a path, a file URL or a credential';

@@ -108,6 +108,8 @@ export interface FleetDoor {
   declareScopes(crewToken: string, declaration: { namespace: string; scopes: { scope: string; description: string }[] }): Promise<Result<undefined, FleetRefusal>>;
   /** Sends argo, the operator, plain text, stored once under its idempotency key. */
   tellArgo(crewToken: string, notice: { text: string; idempotencyKey: string }): Promise<Result<undefined, FleetRefusal>>;
+  /** Sends a ship a message of the given content type, stored once under its idempotency key. */
+  send(crewToken: string, message: { shipId: ShipId; contentType: string; payload: string; idempotencyKey: string }): Promise<Result<undefined, FleetRefusal>>;
 }
 
 /** A delivery to the trierarch plugin's own ship: what tells a ping apart, and who sent it. */
