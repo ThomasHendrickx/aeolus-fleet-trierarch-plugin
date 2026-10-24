@@ -45,6 +45,7 @@ describe('the trusted repositories', () => {
     ['an scp-like URL whose host reads as an option', { hemma: 'git@-oProxyCommand=x:a/b.git' }],
     ['a URL that reads as an option', { hemma: '--upload-pack=touch x' }],
     ['a URL with a space', { hemma: 'git@github.com:a/b c.git' }],
+    ['an ssh URL whose user does not decode', { hemma: 'ssh://%zz@github.com/a/b.git' }],
     ['a URL with no repository path', { hemma: 'https://github.com/' }],
   ])('refuses %s', (_label, listed) => {
     expect(readTrustedRepositories(listed)).toMatchObject({ isOk: false });

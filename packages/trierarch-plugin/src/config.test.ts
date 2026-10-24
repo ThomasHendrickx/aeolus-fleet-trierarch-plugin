@@ -48,6 +48,7 @@ describe('loadConfig', () => {
     ['an installation token shorter than 32 characters', { ...environment, INSTALLATION_TOKEN: 'x'.repeat(31) }],
     ['a silent threshold of no seconds', { ...environment, TRIERARCH_SILENT_AFTER_SECONDS: '0' }],
     ['trusted repositories that are not JSON', { ...environment, TRUSTED_REPOSITORIES: 'hemma=git@github.com:a/b.git' }],
+    ['a trusted repository whose ssh user does not decode', { ...environment, TRUSTED_REPOSITORIES: '{"hemma":"ssh://%zz@github.com/a/b.git"}' }],
     ['a trusted repository whose URL holds a credential', { ...environment, TRUSTED_REPOSITORIES: '{"hemma":"https://me:secret@github.com/a/b.git"}' }],
   ])('refuses %s', (_label, invalid) => {
     expect(() => loadConfig(invalid)).toThrow(ConfigError);
