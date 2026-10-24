@@ -15,6 +15,7 @@ Layout (`packages/trierarch-plugin/src`):
 The fleet door:
 - Core only over `/api/v1`, through `adapters/fleet`, with `@aeolus-fleet/common` for the shapes. Only the calls aeolus-fleet's `docs/compatibility.md` lists for the trierarch plugin.
 - A call core added later raises `MINIMUM_CORE_VERSION` (`adapters/fleet/core-version.ts`) in the same PR.
+- When core has a release candidate with a breaking change, run the fleet contract tests against it before core is released.
 
 Testing (decision 0014, strict):
 - A `test(<context>): <rule> (red)` commit with only tests, then the `feat` or `fix` that makes it pass.
