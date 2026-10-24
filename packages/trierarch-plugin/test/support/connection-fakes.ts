@@ -64,6 +64,10 @@ export function fakePluginFleet() {
     namespaces: new Array<{ namespace: string; declaredBy: ShipId; scopes: { scope: string; description: string }[] }>(),
     /** What argo was told, once per idempotency key, in order. */
     told: new Array<{ text: string; idempotencyKey: string }>(),
+    /** What the trierarch plugin's ship sent other ships, in order. */
+    sent: new Array<{ shipId: ShipId; contentType: string; payload: string; idempotencyKey: string }>(),
+    /** Ships a send to is refused, as when the network rules do not allow it. */
+    refusingSends: new Set<ShipId>(),
   };
   let nextLabel = 0;
   const labelId = (): LabelId => `lbl_01m3tbfspe96yf1rnr4ank9${String(nextLabel).padStart(3, '0')}`;
@@ -292,6 +296,19 @@ export function fakePluginFleet() {
       if (earlier === undefined) {
         state.told.push({ ...notice });
       }
+      return Promise.resolve(ok(undefined));
+    },
+    send: (crewToken, message) => {
+      if (!state.isAnswering) {
+        return unavailable();
+      }
+      if (!state.liveTokens.has(crewToken)) {
+        return released();
+      }
+      if (state.refusingSends.has(message.shipId)) {
+        return Promise.resolve(err({ code: 'FORBIDDEN', message: 'No network rule allows this message' }));
+      }
+      state.sent.push({ ...message });
       return Promise.resolve(ok(undefined));
     },
   };
