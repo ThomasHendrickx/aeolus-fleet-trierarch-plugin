@@ -11,7 +11,8 @@ import { machineOutputSchema } from '../src/adapters/trpc/router.js';
 import { createTrierarchPluginApp, type TrierarchPluginApp } from '../src/app.js';
 import { connectPlugin, mutate, query, signIn } from './support/connection.js';
 import { createPluginDatabase } from '../src/testing/database.js';
-import { reportAsTrierarch } from './support/trierarch.js';
+import { readTrustedRepositories } from '../src/core/repositories/trusted-repositories.js';
+import { receiveAsTrierarch, reportAsTrierarch } from './support/trierarch.js';
 
 // The trierarch plugin against a real fleet: it starts not connected, with no
 // secret anywhere; the operator connects it as its ship (fleet:read,
@@ -349,6 +350,29 @@ describe('the trierarch reach against a real fleet (#573, decision 0037)', () =>
     const term = { labelId: await trierarchLabelId(), value: '*' };
     await expect(declared()).resolves.toEqual([{ shipId, rules: [{ verb: 'send', from: [term], to: [term] }] }]);
     await expect(fleetDatabase.event.count({ where: { type: 'NetworkRulesDeclared' } })).resolves.toBe(1);
+  });
+});
+
+describe('the trusted repositories against a real fleet (aeolus-fleet#384)', () => {
+  it('a pass sends a joined trierarch the trusted repositories once, as the trierarch plugin\'s ship', async () => {
+    const listed = readTrustedRepositories({ hemma: 'git@github.com:ThomasHendrickx/hemma.git' });
+    const trustedRepositories = listed.isOk ? listed.value : { repositories: [] };
+    const app = createTrierarchPluginApp({ databaseUrl: pluginDatabaseUrl, fleetUrl, logger: false, trustedRepositories });
+    apps.push(app);
+    const address = await app.server.listen({ host: '127.0.0.1', port: 0 });
+    expect((await connectPlugin(address, { cookie, shipId, secret })).status).toBe(200);
+    const joined = joinedSchema.parse(await (await mutate(address, { procedure: 'machines.join', cookie, body: { name: 'mac-studio' } })).json()).result.data;
+
+    await app.assignOnce();
+    await app.assignOnce();
+
+    await expect(receiveAsTrierarch(fleetUrl, joined)).resolves.toEqual([
+      {
+        senderShipId: shipId,
+        contentType: 'application/vnd.aeolus.trierarch.trusted-repositories+json',
+        payload: '{"repositories":[{"name":"hemma","url":"git@github.com:ThomasHendrickx/hemma.git"}]}',
+      },
+    ]);
   });
 });
 

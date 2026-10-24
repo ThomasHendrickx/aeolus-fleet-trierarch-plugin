@@ -57,3 +57,18 @@ export async function reportAsTrierarch(fleetUrl: string, machine: { shipId: Shi
     body: { state: 'idle', note: `0 of ${String(machine.setup.caps.ships)} running`, details: trierarchDetails(machine.setup) },
   });
 }
+
+/**
+ * What waits for a joined machine's trierarch, as it receives once registered
+ * with the secret the join answered: each delivery's sender, content type and payload.
+ */
+export async function receiveAsTrierarch(fleetUrl: string, machine: { shipId: ShipId; secret: string }): Promise<{ senderShipId: string; contentType: string; payload: string }[]> {
+  const registered = await shipCall(fleetUrl, {
+    path: '/ship/register',
+    body: { shipId: machine.shipId, secret: machine.secret, location: { kind: 'DEVICE' }, harness: 'aeolus-trierarch' },
+  });
+  const { crewToken } = z.object({ crewToken: z.string() }).parse(registered);
+  const received = await shipCall(fleetUrl, { path: '/ship/receive', crewToken, body: { max: 10 } });
+  const deliveries = z.object({ deliveries: z.array(z.object({ senderShipId: z.string(), contentType: z.string(), payload: z.string() })) }).parse(received).deliveries;
+  return deliveries.map(({ senderShipId, contentType, payload }) => ({ senderShipId, contentType, payload }));
+}
