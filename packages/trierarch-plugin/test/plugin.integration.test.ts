@@ -241,7 +241,7 @@ describe('machine labels against a real fleet (#102)', () => {
       { key: 'os', values: ['macos', 'linux', 'windows'], owner: 'trierarch-plugin' },
       { key: 'trierarch', values: ['machine', 'plugin'], owner: 'trierarch-plugin' },
     ]);
-    const machine = (await useCases.listFleet(argo)).filter(isInReadReach).find((ship) => ship.id === machineShipId);
+    const machine = (await useCases.listFleet(argo)).ships.filter(isInReadReach).find((ship) => ship.id === machineShipId);
     expect(machine?.labels.map((label) => `${label.key}=${label.value}`)).toEqual(['arch=arm64', 'os=macos', 'trierarch=machine']);
 
     const valueOf = async (key: string, value: string) => unwrap(await useCases.findLabelValue(argo, { key, value })).valueId;
@@ -287,7 +287,7 @@ describe('telling argo (#365)', () => {
     await expect(door.tellArgo(crewToken, notice)).resolves.toEqual({ isOk: true, value: undefined });
 
     const inbox = await useCases.readInbox(argo, { filter: 'all' });
-    expect(inbox.map((entry) => ({ payload: entry.message.payload, sender: entry.message.sender.name }))).toEqual([{ payload: notice.text, sender: 'trierarch-plugin' }]);
+    expect(inbox.items.map((entry) => ({ payload: entry.message.payload, sender: entry.message.sender.name }))).toEqual([{ payload: notice.text, sender: 'trierarch-plugin' }]);
     const listed = await door.listShips(crewToken);
     const self = listed.isOk ? listed.value.find((ship) => ship.shipId === shipId) : undefined;
     expect(self?.model).toBeNull();
@@ -342,9 +342,9 @@ describe('the trierarch reach against a real fleet (#573, decision 0037)', () =>
     await apps[0]?.assignOnce();
     await apps[0]?.assignOnce();
 
-    const machine = (await useCases.listFleet(argo)).filter(isInReadReach).find((ship) => ship.id === joined.shipId);
+    const machine = (await useCases.listFleet(argo)).ships.filter(isInReadReach).find((ship) => ship.id === joined.shipId);
     expect(machine?.labels.map((label) => `${label.key}=${label.value}`)).toEqual(['trierarch=machine']);
-    const own = (await useCases.listFleet(argo)).filter(isInReadReach).find((ship) => ship.id === shipId);
+    const own = (await useCases.listFleet(argo)).ships.filter(isInReadReach).find((ship) => ship.id === shipId);
     expect(own?.labels.map((label) => `${label.key}=${label.value}`)).toEqual(['trierarch=plugin']);
     const term = { labelId: await trierarchLabelId(), value: '*' };
     await expect(declared()).resolves.toEqual([{ shipId, rules: [{ verb: 'send', from: [term], to: [term] }] }]);
