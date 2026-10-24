@@ -1,4 +1,4 @@
-import type { FleetId } from '@aeolus-fleet/common';
+import type { FleetId, ShipId } from '@aeolus-fleet/common';
 import { fastifyTRPCPlugin, type FastifyTRPCPluginOptions } from '@trpc/server/adapters/fastify';
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 
@@ -28,6 +28,7 @@ import { createTellModelMismatches } from './core/assignment/tell-model-mismatch
 import { createJoinMachine } from './core/machines/join-machine.js';
 import { createDeclareNetworkRules, type Declarations } from './core/network/declare-network-rules.js';
 import { createDeclareScopes } from './core/scopes/declare-scopes.js';
+import { createResendTrustedRepositories } from './core/repositories/resend-trusted-repositories.js';
 import { createShareTrustedRepositories } from './core/repositories/share-trusted-repositories.js';
 import type { TrustedRepositories } from './core/repositories/trusted-repositories.js';
 import { createWithdrawNetworkRules } from './core/network/withdraw-network-rules.js';
@@ -195,14 +196,16 @@ export function createTrierarchPluginApp(options: {
       server.log.info({ fleet: fleetId, ...told.value }, 'model check told argo');
     }
   };
-  // The trierarchs this process sent the list; a restart sends it to every trierarch again.
+  // The trierarchs this process sent the list; a restart sends it to every trierarch again, and so does a trierarch asking.
+  const shared = new Set<ShipId>();
   const shareTrustedRepositories = createShareTrustedRepositories({
     door,
     connections,
     keys: randomIdempotencyKeys,
     trustedRepositories: options.trustedRepositories ?? { repositories: [] },
-    shared: new Set(),
+    shared,
   });
+  const resendTrustedRepositories = createResendTrustedRepositories({ shared });
   /** Sends each trierarch the trusted repositories once (aeolus-fleet#384); a refusal is logged and the pass goes on. */
   const shareOnce = async (fleetId: FleetId): Promise<void> => {
     const shared = await shareTrustedRepositories(fleetId);
@@ -239,8 +242,13 @@ export function createTrierarchPluginApp(options: {
   /** Answers argo's ping and acks what else reaches the plugin's ship in each fleet (aeolus-fleet#1113); logged, never thrown. */
   const answerOnce = async (): Promise<void> => {
     const { acked, refused } = await answerPings();
-    for (const { contentType, senderShipId } of acked) {
-      server.log.info({ contentType, senderShipId }, "the trierarch plugin's ship acked a message it does not handle");
+    for (const delivery of acked) {
+      const { contentType, senderShipId } = delivery;
+      if (resendTrustedRepositories(delivery)) {
+        server.log.info({ senderShipId }, 'a trierarch asked for the trusted repositories: the next pass sends them');
+      } else {
+        server.log.info({ contentType, senderShipId }, "the trierarch plugin's ship acked a message it does not handle");
+      }
     }
     if (refused > 0) {
       server.log.debug({ refused }, "the fleet refused some calls of the trierarch plugin's ship's inbox");
