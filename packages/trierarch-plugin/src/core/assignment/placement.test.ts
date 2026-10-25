@@ -247,6 +247,14 @@ describe("placement under the fleet's enabled models (model governance, M3)", ()
     ]);
   });
 
+  it('names its default harness in the reason for a request naming neither a model nor a harness', () => {
+    const request = { ...namingNone(), settings: { workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: {} } };
+
+    expect(place([request], { trierarchs: [aTrierarch(MAC, { details: offering(SONNET) })], enabledModels: [OPUS] })).toEqual([
+      { kind: 'explain', shipId: SCOUT, reason: 'model disabled: no enabled default model for its default harness' },
+    ]);
+  });
+
   it('places a request given back under the rule: on a trierarch with an enabled default that did not give it back', () => {
     const request = { ...namingNone(), givenBack: [{ trierarchShipId: MAC, reason: 'mac-studio: nothing on screen within a minute' }] };
     const gaveItBack = aTrierarch(MAC, { details: offering(OPUS) });
