@@ -2,6 +2,7 @@ import type { ShipId, TrierarchReportDetails } from '@aeolus-fleet/common';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { FLEET_ID, OTHER_ASSIGNEE, SHIP_ID, fakePluginFleet, memoryConnectionStore } from '../../../test/support/connection-fakes.js';
+import { memoryEnabledModels } from '../../../test/support/memory-models.js';
 import { createAssignCrews } from './assign-crews.js';
 
 const AT = new Date('2026-10-06T22:00:00.000Z');
@@ -26,10 +27,12 @@ const SETTINGS = { harness: 'claude-code', workspace: { kind: 'worktree', reposi
 
 let fleet: ReturnType<typeof fakePluginFleet>;
 let connections: ReturnType<typeof memoryConnectionStore>;
+let models: ReturnType<typeof memoryEnabledModels>;
 
 beforeEach(async () => {
   fleet = fakePluginFleet();
   connections = memoryConnectionStore();
+  models = memoryEnabledModels();
   fleet.state.liveTokens.add('aeolus_ct_v1_plugin');
   await connections.save({ fleetId: FLEET_ID, shipId: SHIP_ID, name: 'trierarch-plugin', crewToken: 'aeolus_ct_v1_plugin', crewedAt: AT });
 });
@@ -57,9 +60,18 @@ function aRequest(shipId: ShipId, at: { status?: 'awaitingCrew' | 'crewed'; assi
 
 const assignedTo = (shipId: ShipId) => fleet.state.ships.find((ship) => ship.shipId === shipId)?.crewRequest?.assignedTo;
 
-const pass = () => createAssignCrews({ door: fleet.door, connections, clock: { now: () => NOW }, silentAfterMs: SILENT_AFTER_MS })(FLEET_ID);
+const pass = () => createAssignCrews({ door: fleet.door, connections, models, clock: { now: () => NOW }, silentAfterMs: SILENT_AFTER_MS })(FLEET_ID);
 
 describe("a pass of the trierarch plugin's assignment", () => {
+  it("places by the fleet's enabled models as they are at the pass: a request naming none waits on model disabled (model governance, M3, M5)", async () => {
+    aTrierarch(MAC);
+    aRequest(SCOUT);
+    await models.enable(FLEET_ID, 'claude-opus-5-5');
+
+    await expect(pass()).resolves.toEqual({ isOk: true, value: { assigned: 0, explained: 1, lost: 0 } });
+    expect(fleet.state.ships.find((ship) => ship.shipId === SCOUT)?.crewRequest?.reason).toBe('model disabled: no enabled default model for claude-code');
+  });
+
   it('claims each unassigned request for the trierarch placement picks', async () => {
     aTrierarch(MAC);
     aRequest(SCOUT);
