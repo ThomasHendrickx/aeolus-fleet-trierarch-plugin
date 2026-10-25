@@ -9,6 +9,7 @@ const SCOUT: ShipId = 'shp_01m3tbfspe96yf1rnr4ank9h1a';
 const LOOKOUT: ShipId = 'shp_01m3tbfspe96yf1rnr4ank9h1b';
 const MAC: ShipId = 'shp_01m3tbfspe96yf1rnr4ank9h2a';
 const LINUX: ShipId = 'shp_01m3tbfspe96yf1rnr4ank9h2b';
+const WINDOWS: ShipId = 'shp_01m3tbfspe96yf1rnr4ank9h2c';
 
 /** What a trierarch offers by default: Claude Code with a model option, aeolus-fleet and notes, room for four. */
 function details(overrides: Partial<TrierarchReportDetails> = {}): TrierarchReportDetails {
@@ -189,6 +190,90 @@ describe('placement (docs/trierarch.md, Assignment)', () => {
 
   it('does not write a reason again that still holds', () => {
     expect(place([aRequest(SCOUT, { settings: { harness: 'codex' }, reason: 'no trierarch offers harness codex' })], { trierarchs: [aTrierarch(MAC)] })).toEqual([]);
+  });
+});
+
+describe("placement under the fleet's enabled models (model governance, M3)", () => {
+  const OPUS = 'claude-opus-5-5';
+  const SONNET = 'claude-sonnet-5-5';
+
+  /** Claude Code offering both exact ids, with `defaultModel` as its default when given. */
+  function offering(defaultModel?: string): TrierarchReportDetails {
+    const model = { enum: [OPUS, SONNET], ...(defaultModel === undefined ? {} : { default: defaultModel }) };
+    return details({ harnesses: [{ harness: 'claude-code', options: { type: 'object', properties: { model }, additionalProperties: false }, flags: [] }] });
+  }
+
+  const naming = (model: string) => aRequest(SCOUT, { settings: { options: { model } } });
+  const namingNone = () => aRequest(SCOUT, { settings: { options: {} } });
+
+  it('places as today when the fleet enabled no model: an empty set is no rule', () => {
+    expect(place([naming(OPUS)], { trierarchs: [aTrierarch(MAC, { details: offering(OPUS) })], enabledModels: [] })).toEqual([{ kind: 'assign', shipId: SCOUT, trierarchShipId: MAC }]);
+  });
+
+  it('leaves a request naming a model the fleet did not enable unassigned, with the reason model disabled', () => {
+    expect(place([naming(OPUS)], { trierarchs: [aTrierarch(MAC, { details: offering(OPUS) })], enabledModels: [SONNET] })).toEqual([
+      { kind: 'explain', shipId: SCOUT, reason: 'model disabled: claude-opus-5-5' },
+    ]);
+  });
+
+  it('checks a named model first, before any trierarch: model disabled even while no trierarch reports', () => {
+    expect(place([naming(OPUS)], { trierarchs: [], enabledModels: [SONNET] })).toEqual([{ kind: 'explain', shipId: SCOUT, reason: 'model disabled: claude-opus-5-5' }]);
+  });
+
+  it('keeps the model disabled reason for a long model within the 200 characters a reason may hold', () => {
+    const [placement] = place([naming('x'.repeat(300))], { trierarchs: [aTrierarch(MAC)], enabledModels: [SONNET] });
+
+    expect(placement?.kind === 'explain' ? placement.reason.length : 0).toBe(200);
+  });
+
+  it('places a request naming an enabled model as today', () => {
+    expect(place([naming(SONNET)], { trierarchs: [aTrierarch(MAC, { details: offering(OPUS) })], enabledModels: [SONNET] })).toEqual([{ kind: 'assign', shipId: SCOUT, trierarchShipId: MAC }]);
+  });
+
+  it('places a request naming no model only on a trierarch whose default for the harness is enabled', () => {
+    const roomierWithDisabledDefault = aTrierarch(LINUX, { details: { ...offering(SONNET), caps: { ships: 8, running: 4 } } });
+    const enabledDefault = aTrierarch(MAC, { details: offering(OPUS), assigned: 2 });
+
+    expect(place([namingNone()], { trierarchs: [roomierWithDisabledDefault, enabledDefault], enabledModels: [OPUS] })).toEqual([{ kind: 'assign', shipId: SCOUT, trierarchShipId: MAC }]);
+  });
+
+  it.each([
+    { label: 'its default is not enabled', trierarch: aTrierarch(MAC, { details: offering(SONNET) }) },
+    { label: 'its harness reports no default model', trierarch: aTrierarch(MAC, { details: offering() }) },
+    { label: 'its harness has no model option', trierarch: aTrierarch(MAC, { details: details({ harnesses: [{ harness: 'claude-code', options: {}, flags: [] }] }) }) },
+  ])('leaves a request naming no model unassigned when $label, with the reason', ({ trierarch }) => {
+    expect(place([namingNone()], { trierarchs: [trierarch], enabledModels: [OPUS] })).toEqual([
+      { kind: 'explain', shipId: SCOUT, reason: 'model disabled: no enabled default model for claude-code' },
+    ]);
+  });
+
+  it('places a request given back under the rule: on a trierarch with an enabled default that did not give it back', () => {
+    const request = { ...namingNone(), givenBack: [{ trierarchShipId: MAC, reason: 'mac-studio: nothing on screen within a minute' }] };
+    const gaveItBack = aTrierarch(MAC, { details: offering(OPUS) });
+    const disabledDefault = aTrierarch(LINUX, { details: offering(SONNET) });
+    const enabledDefault = aTrierarch(WINDOWS, { details: offering(OPUS), commissionedAt: LATER });
+
+    expect(place([request], { trierarchs: [gaveItBack, disabledDefault, enabledDefault], enabledModels: [OPUS] })).toEqual([{ kind: 'assign', shipId: SCOUT, trierarchShipId: WINDOWS }]);
+  });
+
+  it('refuses before a request a named model the fleet did not enable, with the field options and the same reason (M4)', () => {
+    const settings = { harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: { model: OPUS } };
+
+    expect(checkPlacement(settings, { trierarchs: [aTrierarch(MAC, { details: offering(OPUS) })], enabledModels: [SONNET] })).toEqual({
+      kind: 'refused',
+      field: 'options',
+      reason: 'model disabled: claude-opus-5-5',
+    });
+  });
+
+  it('refuses before a request settings naming no model where no trierarch has an enabled default, with the field options and the same reason (M4)', () => {
+    const settings = { harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: {} };
+
+    expect(checkPlacement(settings, { trierarchs: [aTrierarch(MAC, { details: offering(SONNET) })], enabledModels: [OPUS] })).toEqual({
+      kind: 'refused',
+      field: 'options',
+      reason: 'model disabled: no enabled default model for claude-code',
+    });
   });
 });
 
