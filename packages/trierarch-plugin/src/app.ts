@@ -34,6 +34,8 @@ import { createShareTrustedRepositories } from './core/repositories/share-truste
 import type { TrustedRepositories } from './core/repositories/trusted-repositories.js';
 import { createWithdrawNetworkRules } from './core/network/withdraw-network-rules.js';
 import { createListMachines } from './core/machines/list-machines.js';
+import { createListEnabledModels } from './core/models/list-enabled-models.js';
+import { createSetModelEnabled } from './core/models/set-model-enabled.js';
 import { DEFAULT_SILENT_AFTER_MS } from './core/machines/silent.js';
 import { createAuthenticateOperator } from './core/operator/authenticate-operator.js';
 import type { Clock } from './core/shared/clock.js';
@@ -218,6 +220,8 @@ export function createTrierarchPluginApp(options: {
     }
   };
   const checkCrewSettings = createCheckCrewSettings({ door, connections, models, clock, silentAfterMs });
+  const listEnabledModels = createListEnabledModels({ models });
+  const setModelEnabled = createSetModelEnabled({ models });
   const assignOnce = async (): Promise<{ fleetId: FleetId; outcome: AssignOutcome }[]> => {
     const done: { fleetId: FleetId; outcome: AssignOutcome }[] = [];
     for (const crew of await connections.connected()) {
@@ -297,6 +301,8 @@ export function createTrierarchPluginApp(options: {
         joinMachine,
         listMachines,
         checkCrewSettings,
+        listEnabledModels,
+        setModelEnabled,
       }),
     },
   };
