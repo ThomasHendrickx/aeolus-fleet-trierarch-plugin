@@ -23,6 +23,16 @@ export interface PlacementTrierarch {
   labelValueIds: readonly string[];
 }
 
+/**
+ * What placement places by: the fleet's trierarchs as they are now, and the
+ * fleet's enabled models (model governance, M1): exact model ids, none being
+ * no rule.
+ */
+export interface PlacementFleet {
+  trierarchs: readonly PlacementTrierarch[];
+  enabledModels: readonly string[];
+}
+
 /** What placement decides for a request: the trierarch to claim it for, or why none fits. */
 export type Placement = { kind: 'assign'; shipId: ShipId; trierarchShipId: ShipId } | { kind: 'explain'; shipId: ShipId; reason: string };
 
@@ -79,6 +89,33 @@ function workspaceName(workspace: CrewSettings['workspace']): string {
   return workspace.kind === 'worktree' ? `repository ${workspace.repository}` : `folder ${workspace.name}`;
 }
 
+/** A harness options schema that reports a default model (`properties.model.default`). */
+const defaultModelSchema = z.object({ properties: z.object({ model: z.object({ default: z.string() }) }) });
+
+/** Whether the harness reports a default model and the fleet enabled it: a harness with no default or no model option does not. */
+function isDefaultEnabled(schema: TrierarchReportDetails['harnesses'][number]['options'], enabledModels: readonly string[]): boolean {
+  const read = defaultModelSchema.safeParse(schema);
+  return read.success && enabledModels.includes(read.data.properties.model.default);
+}
+
+/** Why a request waits on a model the fleet did not enable, within what a reason may hold. */
+function modelDisabledReason(what: string): string {
+  return `model disabled: ${what}`.slice(0, CREW_REQUEST_REASON_MAX_LENGTH);
+}
+
+/**
+ * Why a request naming a model the fleet did not enable waits, or undefined
+ * when the fleet has no rule or the model is enabled (M3): checked before any
+ * trierarch.
+ */
+function namedModelRefusal(settings: CrewSettings, enabledModels: readonly string[]): Misfit | undefined {
+  const named = settings.options.model;
+  if (enabledModels.length === 0 || named === undefined || (typeof named === 'string' && enabledModels.includes(named))) {
+    return undefined;
+  }
+  return { reason: modelDisabledReason(typeof named === 'string' ? named : JSON.stringify(named)), field: 'options' };
+}
+
 /** Room left as a share of its cap: what placement compares. */
 function roomShare(trierarch: PlacementTrierarch): number {
   return (trierarch.details.caps.ships - trierarch.assigned) / trierarch.details.caps.ships;
@@ -91,14 +128,17 @@ function givenBackReason(givenBack: readonly { reason: string }[]): string {
 }
 
 /**
- * The trierarch to claim for the settings, or why none fits: machine labels,
- * harness (the named one, or each trierarch's default), workspace, options,
- * then the trierarchs that gave the request back (#382), then room.
+ * The trierarch to claim for the settings, or why none fits: a named model
+ * the fleet did not enable, first (M3); machine labels, harness (the named
+ * one, or each trierarch's default), workspace, options; an enabled default
+ * model for a request naming none; then the trierarchs that gave the request
+ * back (#382), then room.
  */
-function fit(
-  settings: CrewSettings,
-  { trierarchs, givenBack }: { trierarchs: readonly PlacementTrierarch[]; givenBack: PlacementRequest['givenBack'] },
-): { trierarch: PlacementTrierarch } | Misfit {
+function fit(settings: CrewSettings, { trierarchs, enabledModels, givenBack }: PlacementFleet & { givenBack: PlacementRequest['givenBack'] }): { trierarch: PlacementTrierarch } | Misfit {
+  const disabled = namedModelRefusal(settings, enabledModels);
+  if (disabled !== undefined) {
+    return disabled;
+  }
   if (trierarchs.length === 0) {
     return { reason: 'no trierarch reports yet' };
   }
@@ -122,13 +162,18 @@ function fit(
   if (withWorkspace.length === 0) {
     return { reason: `no trierarch offering ${harnessWords} has ${workspaceName(settings.workspace)}`, field: 'workspace' };
   }
-  const refusals = withWorkspace.map(({ trierarch, harness }) => ({ trierarch, refusal: optionsRefusal(harness.options, settings.options) }));
-  const taking = refusals.filter(({ refusal }) => refusal === undefined).map(({ trierarch }) => trierarch);
+  const refusals = withWorkspace.map(({ trierarch, harness }) => ({ trierarch, harness, refusal: optionsRefusal(harness.options, settings.options) }));
+  const taking = refusals.filter(({ refusal }) => refusal === undefined);
   const [firstRefusal] = refusals;
   if (taking.length === 0) {
     return { reason: `no trierarch takes these options for ${harnessWords}: ${firstRefusal?.refusal ?? ''}`, field: 'options' };
   }
-  const left = taking.filter((trierarch) => !givenBack.some((back) => back.trierarchShipId === trierarch.shipId));
+  // A request naming no model runs on the harness's default: only an enabled one fits (M3).
+  const allowed = enabledModels.length === 0 || settings.options.model !== undefined ? taking : taking.filter(({ harness }) => isDefaultEnabled(harness.options, enabledModels));
+  if (allowed.length === 0) {
+    return { reason: modelDisabledReason(`no enabled default model for ${harnessWords}`), field: 'options' };
+  }
+  const left = allowed.map(({ trierarch }) => trierarch).filter((trierarch) => !givenBack.some((back) => back.trierarchShipId === trierarch.shipId));
   if (left.length === 0) {
     return { reason: givenBackReason(givenBack) };
   }
@@ -148,9 +193,9 @@ function parsed(settings: unknown): { settings: CrewSettings } | Misfit {
  * Policy: whether settings would be placed now, before anything is requested
  * (#245): by the same rules as placement, against the trierarchs as they are.
  */
-export function checkPlacement(settings: unknown, trierarchs: readonly PlacementTrierarch[]): PlacementCheck {
+export function checkPlacement(settings: unknown, fleet: PlacementFleet): PlacementCheck {
   const read = parsed(settings);
-  const fitted = 'settings' in read ? fit(read.settings, { trierarchs, givenBack: [] }) : read;
+  const fitted = 'settings' in read ? fit(read.settings, { ...fleet, givenBack: [] }) : read;
   if ('trierarch' in fitted) {
     return { kind: 'fits' };
   }
@@ -159,14 +204,16 @@ export function checkPlacement(settings: unknown, trierarchs: readonly Placement
 
 /**
  * Policy: where each unassigned request goes (docs/trierarch.md,
- * "Assignment"). Oldest request first, each to a trierarch whose ship
+ * "Assignment"). Oldest request first; in a fleet that enabled models, only
+ * a request whose model is enabled, or that names none and runs on an enabled
+ * default (model governance, M3). Each to a trierarch whose ship
  * carries every machine label it names, that offers its harness and workspace, takes its options against the schema it reports for
  * that harness, did not give it back (#382), and has room (its cap above the requests assigned to it);
  * of those, the most room as a share of its cap, then the oldest. What it
  * assigns counts against the room of later requests in the same pass. A
  * request none fits gets the reason, unless that reason is written already.
  */
-export function place(requests: readonly PlacementRequest[], trierarchs: readonly PlacementTrierarch[]): Placement[] {
+export function place(requests: readonly PlacementRequest[], { trierarchs, enabledModels }: PlacementFleet): Placement[] {
   const assigned = new Map(trierarchs.map((trierarch) => [trierarch.shipId, trierarch.assigned]));
   const placements: Placement[] = [];
   const oldestFirst = [...requests].sort((first, second) => first.requestedAt.getTime() - second.requestedAt.getTime() || first.shipId.localeCompare(second.shipId));
@@ -175,6 +222,7 @@ export function place(requests: readonly PlacementRequest[], trierarchs: readonl
     const fitted =
       'settings' in read
         ? fit(read.settings, {
+            enabledModels,
             trierarchs: trierarchs.map((trierarch) => ({ ...trierarch, assigned: assigned.get(trierarch.shipId) ?? trierarch.assigned })),
             givenBack: request.givenBack,
           })

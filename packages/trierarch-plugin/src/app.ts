@@ -9,6 +9,7 @@ import { createRestFleetDoor } from './adapters/fleet/rest-fleet-door.js';
 import { runningVersion } from './adapters/http/version.js';
 import { checkDatabase, createPrismaClient } from './adapters/prisma/client.js';
 import { createPrismaConnectionStore } from './adapters/prisma/connection-store.js';
+import { createPrismaEnabledModels } from './adapters/prisma/enabled-models.js';
 import { createPrismaFleetForgetter } from './adapters/prisma/fleet-forgetter.js';
 import { createPrismaFleetSwitches } from './adapters/prisma/fleet-switches.js';
 import { createPrismaInstallationRequests } from './adapters/prisma/installation-requests.js';
@@ -33,6 +34,8 @@ import { createShareTrustedRepositories } from './core/repositories/share-truste
 import type { TrustedRepositories } from './core/repositories/trusted-repositories.js';
 import { createWithdrawNetworkRules } from './core/network/withdraw-network-rules.js';
 import { createListMachines } from './core/machines/list-machines.js';
+import { createListEnabledModels } from './core/models/list-enabled-models.js';
+import { createSetModelEnabled } from './core/models/set-model-enabled.js';
 import { DEFAULT_SILENT_AFTER_MS } from './core/machines/silent.js';
 import { createAuthenticateOperator } from './core/operator/authenticate-operator.js';
 import type { Clock } from './core/shared/clock.js';
@@ -124,7 +127,8 @@ export function createTrierarchPluginApp(options: {
   const joinMachine = createJoinMachine({ door, connections, keys: randomIdempotencyKeys, fleetUrl: options.fleetUrl });
   const silentAfterMs = options.silentAfterMs ?? DEFAULT_SILENT_AFTER_MS;
   const listMachines = createListMachines({ door, connections, clock, silentAfterMs });
-  const assignCrews = createAssignCrews({ door, connections, clock, silentAfterMs });
+  const models = createPrismaEnabledModels(prisma);
+  const assignCrews = createAssignCrews({ door, connections, models, clock, silentAfterMs });
   const labelMachines = createLabelMachines({ door, connections });
   /** The fleets whose machine labels were last skipped, so the reason is logged once, not every pass. */
   const skippedLabels = new Set<FleetId>();
@@ -215,7 +219,9 @@ export function createTrierarchPluginApp(options: {
       server.log.info({ fleet: fleetId, ...shared.value }, 'trusted repositories sent');
     }
   };
-  const checkCrewSettings = createCheckCrewSettings({ door, connections, clock, silentAfterMs });
+  const checkCrewSettings = createCheckCrewSettings({ door, connections, models, clock, silentAfterMs });
+  const listEnabledModels = createListEnabledModels({ models });
+  const setModelEnabled = createSetModelEnabled({ models });
   const assignOnce = async (): Promise<{ fleetId: FleetId; outcome: AssignOutcome }[]> => {
     const done: { fleetId: FleetId; outcome: AssignOutcome }[] = [];
     for (const crew of await connections.connected()) {
@@ -295,6 +301,8 @@ export function createTrierarchPluginApp(options: {
         joinMachine,
         listMachines,
         checkCrewSettings,
+        listEnabledModels,
+        setModelEnabled,
       }),
     },
   };

@@ -228,6 +228,28 @@ describe('assignment against a real fleet', () => {
   });
 });
 
+describe("the fleet's enabled models against a real fleet (model governance)", () => {
+  it("an operator enables a model, and the next pass leaves a request naming another waiting with model disabled; disabling the last places it", async () => {
+    const address = await connected();
+    const joined = joinedSchema.parse(await (await mutate(address, { procedure: 'machines.join', cookie, body: { name: 'mac-studio' } })).json()).result.data;
+    const machineShipId = z.templateLiteral(['shp_', z.string()]).parse(joined.shipId);
+    await reportAsTrierarch(fleetUrl, { shipId: machineShipId, secret: joined.secret, setup: { caps: { ships: 4, running: 2 }, flags: [], version: '0.19.0' } });
+    const scout = unwrap(await useCases.commissionShip(argo, { idempotencyKey: newKey(), name: 'scout', type: 'implementer' }));
+    unwrap(await useCases.requestCrew(argo, { shipId: scout.shipId, settings: { harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: { model: 'claude-opus-5-5' } } }));
+
+    const enabled = await mutate(address, { procedure: 'models.enable', cookie, body: { model: 'claude-sonnet-5-5' } });
+    expect(await enabled.json()).toEqual({ result: { data: ['claude-sonnet-5-5'] } });
+    await apps[0]?.assignOnce();
+
+    await expect(fleetDatabase.crewRequest.findUniqueOrThrow({ where: { shipId: scout.shipId } })).resolves.toMatchObject({ assignedTo: null, reason: 'model disabled: claude-opus-5-5' });
+
+    await mutate(address, { procedure: 'models.disable', cookie, body: { model: 'claude-sonnet-5-5' } });
+    await apps[0]?.assignOnce();
+
+    await expect(fleetDatabase.crewRequest.findUniqueOrThrow({ where: { shipId: scout.shipId } })).resolves.toMatchObject({ assignedTo: joined.shipId });
+  });
+});
+
 describe('machine labels against a real fleet (#102)', () => {
   it('labels a machine from the machine its trierarch reports, and places a request only on a machine that carries its labels', async () => {
     const address = await connected();

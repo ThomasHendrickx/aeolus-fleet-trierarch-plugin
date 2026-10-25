@@ -2,6 +2,7 @@ import type { ShipId, TrierarchReportDetails } from '@aeolus-fleet/common';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { FLEET_ID, SHIP_ID, fakePluginFleet, memoryConnectionStore } from '../../../test/support/connection-fakes.js';
+import { memoryEnabledModels } from '../../../test/support/memory-models.js';
 import { createCheckCrewSettings } from './check-crew-settings.js';
 
 const AT = new Date('2026-10-07T09:00:00.000Z');
@@ -24,10 +25,12 @@ const SETTINGS = { harness: 'claude-code', workspace: { kind: 'worktree', reposi
 
 let fleet: ReturnType<typeof fakePluginFleet>;
 let connections: ReturnType<typeof memoryConnectionStore>;
+let models: ReturnType<typeof memoryEnabledModels>;
 
 beforeEach(async () => {
   fleet = fakePluginFleet();
   connections = memoryConnectionStore();
+  models = memoryEnabledModels();
   fleet.state.liveTokens.add('aeolus_ct_v1_plugin');
   await connections.save({ fleetId: FLEET_ID, shipId: SHIP_ID, name: 'trierarch-plugin', crewToken: 'aeolus_ct_v1_plugin', crewedAt: AT });
 });
@@ -37,13 +40,23 @@ function aTrierarch(shipId: ShipId, lastSeenAt = RECENTLY): void {
   fleet.state.reports.set(shipId, { state: 'idle', note: null, reportedAt: lastSeenAt, details: DETAILS });
 }
 
-const check = (settings: unknown) => createCheckCrewSettings({ door: fleet.door, connections, clock: { now: () => NOW }, silentAfterMs: SILENT_AFTER_MS })(FLEET_ID, settings);
+const check = (settings: unknown) => createCheckCrewSettings({ door: fleet.door, connections, models, clock: { now: () => NOW }, silentAfterMs: SILENT_AFTER_MS })(FLEET_ID, settings);
 
 describe('checking crew settings against the fleet’s trierarchs (#245)', () => {
   it('fits on a trierarch that offers them and has room', async () => {
     aTrierarch(MAC);
 
     await expect(check(SETTINGS)).resolves.toEqual({ isOk: true, value: { kind: 'fits' } });
+  });
+
+  it("refuses a model the fleet did not enable with the field options and placement's reason (model governance, M4)", async () => {
+    aTrierarch(MAC);
+    await models.enable(FLEET_ID, 'claude-sonnet-5-5');
+
+    await expect(check({ ...SETTINGS, options: { model: 'claude-opus-5-5' } })).resolves.toEqual({
+      isOk: true,
+      value: { kind: 'refused', field: 'options', reason: 'model disabled: claude-opus-5-5' },
+    });
   });
 
   it('names the field no trierarch offers', async () => {

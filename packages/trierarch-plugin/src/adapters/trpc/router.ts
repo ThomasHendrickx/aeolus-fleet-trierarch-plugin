@@ -10,7 +10,7 @@
  */
 import { timingSafeEqual } from 'node:crypto';
 
-import { crewLineSchema, idempotencyKeySchema, idSchema, shipHandleSchema, trierarchReportDetailsSchema, type FleetId } from '@aeolus-fleet/common';
+import { crewLineSchema, idempotencyKeySchema, idSchema, modelSchema, shipHandleSchema, trierarchReportDetailsSchema, type FleetId } from '@aeolus-fleet/common';
 import { initTRPC, TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -24,6 +24,8 @@ import type { SetFleetEnabled } from '../../core/installation/set-fleet-enabled.
 import type { CheckCrewSettings } from '../../core/assignment/check-crew-settings.js';
 import type { JoinMachine } from '../../core/machines/join-machine.js';
 import type { ListMachines } from '../../core/machines/list-machines.js';
+import type { ListEnabledModels } from '../../core/models/list-enabled-models.js';
+import type { SetModelEnabled } from '../../core/models/set-model-enabled.js';
 import type { AuthenticateOperator } from '../../core/operator/authenticate-operator.js';
 
 export interface Context {
@@ -46,6 +48,8 @@ export interface Context {
   joinMachine: JoinMachine;
   listMachines: ListMachines;
   checkCrewSettings: CheckCrewSettings;
+  listEnabledModels: ListEnabledModels;
+  setModelEnabled: SetModelEnabled;
 }
 
 /** What a caller reads of a failure: nothing of it, so no crew token, secret or query ever leaves; the log holds it whole. */
@@ -248,6 +252,20 @@ export const trierarchPluginRouter = t.router({
         }
         return checked.value;
       }),
+  }),
+  models: t.router({
+    /** The fleet's enabled models by id (model governance, M6): every signed-in session's, viewer included; none is no rule. */
+    list: connectedProcedure.output(z.array(z.string())).query(({ ctx }) => ctx.listEnabledModels(ctx.fleetId)),
+    /** Enables a model by its exact id and answers the fleet's enabled models; the next assignment pass places by them. */
+    enable: managing(connectedProcedure)
+      .input(z.strictObject({ model: modelSchema }))
+      .output(z.array(z.string()))
+      .mutation(({ ctx, input }) => ctx.setModelEnabled({ fleetId: ctx.fleetId, model: input.model, isEnabled: true })),
+    /** Disables a model by its exact id and answers the fleet's enabled models; crews already running keep their model. */
+    disable: managing(connectedProcedure)
+      .input(z.strictObject({ model: modelSchema }))
+      .output(z.array(z.string()))
+      .mutation(({ ctx, input }) => ctx.setModelEnabled({ fleetId: ctx.fleetId, model: input.model, isEnabled: false })),
   }),
   installation: t.router({
     /** Switches the trierarch plugin on or off for a fleet; off keeps everything of it. A replayed request id answers its first answer. */

@@ -1,6 +1,7 @@
 import type { FleetId } from '@aeolus-fleet/common';
 
 import type { ConnectionStore, FleetDoor } from '../connection/ports.js';
+import type { EnabledModels } from '../models/ports.js';
 import type { Clock } from '../shared/clock.js';
 import { refuse, type DomainError } from '../shared/errors.js';
 import { ok, type Result } from '../shared/result.js';
@@ -11,11 +12,11 @@ export type CheckCrewSettings = (fleetId: FleetId, settings: unknown) => Promise
 
 /**
  * Use case: whether crew settings would be placed now, before a request is
- * made (#245): read the fleet's trierarchs as assignment does, and check the
- * settings by placement's rules. It writes nothing; the request itself goes
+ * made (#245): read the fleet's trierarchs and enabled models as assignment
+ * does, and check the settings by placement's rules. It writes nothing; the request itself goes
  * to the fleet, and assignment places it as always.
  */
-export function createCheckCrewSettings(deps: { door: FleetDoor; connections: ConnectionStore; clock: Clock; silentAfterMs: number }): CheckCrewSettings {
+export function createCheckCrewSettings(deps: { door: FleetDoor; connections: ConnectionStore; models: EnabledModels; clock: Clock; silentAfterMs: number }): CheckCrewSettings {
   return async (fleetId, settings) => {
     const crew = await deps.connections.find(fleetId);
     if (!crew) {
@@ -25,6 +26,6 @@ export function createCheckCrewSettings(deps: { door: FleetDoor; connections: Co
     if (!read.isOk) {
       return refuse('FLEET_UNAVAILABLE', `The fleet did not answer the check: ${read.error.message}`);
     }
-    return ok(checkPlacement(settings, read.value.trierarchs));
+    return ok(checkPlacement(settings, { trierarchs: read.value.trierarchs, enabledModels: await deps.models.list(fleetId) }));
   };
 }
