@@ -1,6 +1,7 @@
 import type { FleetId } from '@aeolus-fleet/common';
 
 import type { ConnectionStore, FleetDoor, FleetRefusal } from '../connection/ports.js';
+import type { EnabledModels } from '../models/ports.js';
 import type { Clock } from '../shared/clock.js';
 import { refuse, type DomainError } from '../shared/errors.js';
 import { ok, type Result } from '../shared/result.js';
@@ -23,12 +24,13 @@ const CHANGED = new Set(['CONFLICT', 'NOT_FOUND']);
  * Use case: one pass of assignment for a fleet (docs/trierarch.md,
  * "Assignment"). It reads the fleet whole each time: the unassigned requests
  * of ships that await crew, and the trierarchs that report details and are
- * not silent, with the requests assigned to each. Placement decides; each
+ * not silent, with the requests assigned to each, and the fleet's enabled
+ * models as they are now (model governance, M5). Placement decides; each
  * claim is optimistic, and one the fleet refuses because the request changed
  * is no error: the next pass reads it again. A silent trierarch gets nothing
  * new and keeps what it holds.
  */
-export function createAssignCrews(deps: { door: FleetDoor; connections: ConnectionStore; clock: Clock; silentAfterMs: number }): AssignCrews {
+export function createAssignCrews(deps: { door: FleetDoor; connections: ConnectionStore; models: EnabledModels; clock: Clock; silentAfterMs: number }): AssignCrews {
   const unavailable = (refusal: FleetRefusal) => refuse('FLEET_UNAVAILABLE', `The fleet did not answer the assignment: ${refusal.message}`);
   return async (fleetId) => {
     const crew = await deps.connections.find(fleetId);
@@ -40,9 +42,10 @@ export function createAssignCrews(deps: { door: FleetDoor; connections: Connecti
       return unavailable(read.error);
     }
     const { requests, trierarchs } = read.value;
+    const enabledModels = await deps.models.list(fleetId);
 
     const outcome: AssignOutcome = { assigned: 0, explained: 0, lost: 0 };
-    for (const placement of place(requests, { trierarchs, enabledModels: [] })) {
+    for (const placement of place(requests, { trierarchs, enabledModels })) {
       const done =
         placement.kind === 'assign'
           ? await deps.door.assignCrew(crew.crewToken, { shipId: placement.shipId, trierarchShipId: placement.trierarchShipId })

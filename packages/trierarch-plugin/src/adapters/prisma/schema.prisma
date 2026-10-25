@@ -1,5 +1,6 @@
 // The trierarch plugin's tables, in its own small database (decision 0030): per
-// fleet only its connection and its switch, and the installation's requests.
+// fleet only its connection, its switch and its enabled models (decision 0063),
+// and the installation's requests.
 // Everything else (crew requests, statuses, machines) lives in the fleet, which
 // it reaches only through its public API, as the ship it crews.
 //
@@ -55,4 +56,15 @@ model InstallationRequest {
 
   @@index([fleetId])
   @@map("installation_requests")
+}
+
+/// The models each fleet's agent ships may be crewed with (decision 0063): exact
+/// model ids, one row each. None is no rule. Forgotten with the fleet; switching
+/// the trierarch plugin off keeps them.
+model EnabledModel {
+  fleetId String @map("fleet_id")
+  model   String
+
+  @@id([fleetId, model])
+  @@map("enabled_models")
 }

@@ -37,7 +37,8 @@ export interface InstallationRequests {
 
 /**
  * Outbound port: forgets everything the trierarch plugin holds of a fleet,
- * in one go: its connection, its switch and the requests that name it.
+ * in one go: its connection, its switch, its enabled models and the requests
+ * that name it.
  */
 export interface FleetForgetter {
   forget(fleetId: FleetId): Promise<void>;
