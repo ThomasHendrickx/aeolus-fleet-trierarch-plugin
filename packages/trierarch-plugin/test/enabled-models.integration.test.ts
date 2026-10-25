@@ -2,7 +2,6 @@ import type { FleetId } from '@aeolus-fleet/common';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createPrismaClient, type PrismaClient } from '../src/adapters/prisma/client.js';
-import { createPrismaConnectionStore } from '../src/adapters/prisma/connection-store.js';
 import { createPrismaEnabledModels } from '../src/adapters/prisma/enabled-models.js';
 import { createPrismaFleetForgetter } from '../src/adapters/prisma/fleet-forgetter.js';
 import { createPrismaFleetSwitches } from '../src/adapters/prisma/fleet-switches.js';
@@ -63,7 +62,7 @@ describe("the fleet's enabled models in Postgres", () => {
     await expect(models.list(FLEET)).resolves.toEqual([OPUS]);
   });
 
-  it("forgets a fleet's enabled models with its connection and switch when the fleet is deleted, keeping another fleet's", async () => {
+  it("forgets a fleet's enabled models with its switch when the fleet is deleted, keeping another fleet's", async () => {
     const models = createPrismaEnabledModels(db);
     await createPrismaFleetSwitches(db).set(FLEET, { isEnabled: true, at: AT });
     await models.enable(FLEET, OPUS);
@@ -72,7 +71,7 @@ describe("the fleet's enabled models in Postgres", () => {
     await createPrismaFleetForgetter(db).forget(FLEET);
 
     await expect(models.list(FLEET)).resolves.toEqual([]);
-    await expect(createPrismaConnectionStore(db).binding(FLEET)).resolves.toBeUndefined();
+    await expect(createPrismaFleetSwitches(db).find(FLEET)).resolves.toBeUndefined();
     await expect(models.list(OTHER)).resolves.toEqual([OPUS]);
   });
 
