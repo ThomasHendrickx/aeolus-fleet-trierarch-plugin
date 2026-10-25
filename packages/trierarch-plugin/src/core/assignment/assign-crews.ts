@@ -42,7 +42,7 @@ export function createAssignCrews(deps: { door: FleetDoor; connections: Connecti
     const { requests, trierarchs } = read.value;
 
     const outcome: AssignOutcome = { assigned: 0, explained: 0, lost: 0 };
-    for (const placement of place(requests, trierarchs)) {
+    for (const placement of place(requests, { trierarchs })) {
       const done =
         placement.kind === 'assign'
           ? await deps.door.assignCrew(crew.crewToken, { shipId: placement.shipId, trierarchShipId: placement.trierarchShipId })

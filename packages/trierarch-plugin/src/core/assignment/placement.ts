@@ -23,6 +23,11 @@ export interface PlacementTrierarch {
   labelValueIds: readonly string[];
 }
 
+/** What placement places by: the fleet's trierarchs as they are now. */
+export interface PlacementFleet {
+  trierarchs: readonly PlacementTrierarch[];
+}
+
 /** What placement decides for a request: the trierarch to claim it for, or why none fits. */
 export type Placement = { kind: 'assign'; shipId: ShipId; trierarchShipId: ShipId } | { kind: 'explain'; shipId: ShipId; reason: string };
 
@@ -148,7 +153,7 @@ function parsed(settings: unknown): { settings: CrewSettings } | Misfit {
  * Policy: whether settings would be placed now, before anything is requested
  * (#245): by the same rules as placement, against the trierarchs as they are.
  */
-export function checkPlacement(settings: unknown, trierarchs: readonly PlacementTrierarch[]): PlacementCheck {
+export function checkPlacement(settings: unknown, { trierarchs }: PlacementFleet): PlacementCheck {
   const read = parsed(settings);
   const fitted = 'settings' in read ? fit(read.settings, { trierarchs, givenBack: [] }) : read;
   if ('trierarch' in fitted) {
@@ -166,7 +171,7 @@ export function checkPlacement(settings: unknown, trierarchs: readonly Placement
  * assigns counts against the room of later requests in the same pass. A
  * request none fits gets the reason, unless that reason is written already.
  */
-export function place(requests: readonly PlacementRequest[], trierarchs: readonly PlacementTrierarch[]): Placement[] {
+export function place(requests: readonly PlacementRequest[], { trierarchs }: PlacementFleet): Placement[] {
   const assigned = new Map(trierarchs.map((trierarch) => [trierarch.shipId, trierarch.assigned]));
   const placements: Placement[] = [];
   const oldestFirst = [...requests].sort((first, second) => first.requestedAt.getTime() - second.requestedAt.getTime() || first.shipId.localeCompare(second.shipId));

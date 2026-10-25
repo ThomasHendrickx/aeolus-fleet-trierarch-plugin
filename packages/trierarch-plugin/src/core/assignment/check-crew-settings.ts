@@ -25,6 +25,6 @@ export function createCheckCrewSettings(deps: { door: FleetDoor; connections: Co
     if (!read.isOk) {
       return refuse('FLEET_UNAVAILABLE', `The fleet did not answer the check: ${read.error.message}`);
     }
-    return ok(checkPlacement(settings, read.value.trierarchs));
+    return ok(checkPlacement(settings, { trierarchs: read.value.trierarchs }));
   };
 }
