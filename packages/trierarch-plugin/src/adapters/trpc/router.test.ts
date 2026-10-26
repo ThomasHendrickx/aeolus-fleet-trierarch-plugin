@@ -1,4 +1,4 @@
-import type { FleetId, Scope } from '@aeolus-fleet/common';
+import type { FleetId, ScopeName } from '@aeolus-fleet/common';
 import { TRPCError } from '@trpc/server';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -16,8 +16,8 @@ import { trierarchPluginRouter, type Context } from './router.js';
 
 const OPUS = 'claude-opus-5-5';
 const SONNET = 'claude-sonnet-5-5';
-const OPERATOR: readonly Scope[] = ['fleet:read', 'fleet:manage'];
-const VIEWER: readonly Scope[] = ['fleet:read'];
+const OPERATOR: readonly ScopeName[] = ['fleet:read', 'fleet:manage'];
+const VIEWER: readonly ScopeName[] = ['fleet:read'];
 
 /** Procedures these tests never reach. */
 const notReached = () => Promise.reject(new Error('not reached by the models procedures'));
@@ -29,7 +29,7 @@ beforeEach(() => {
 });
 
 /** The router as the console's server calls it, for a session of the given scopes, on a fleet served and connected unless it says otherwise. */
-function caller(session: { kind?: 'operator' | 'viewer'; scopes: readonly Scope[]; isServed?: boolean; isConnected?: boolean }) {
+function caller(session: { kind?: 'operator' | 'viewer'; scopes: readonly ScopeName[]; isServed?: boolean; isConnected?: boolean }) {
   const context: Context = {
     cookie: 'aeolus_session=a-session',
     authenticateOperator: () => Promise.resolve(ok({ fleetId: FLEET_ID, kind: session.kind ?? 'operator', scopes: session.scopes })),

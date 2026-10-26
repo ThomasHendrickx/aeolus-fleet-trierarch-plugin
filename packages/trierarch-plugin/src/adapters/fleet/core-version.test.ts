@@ -40,24 +40,24 @@ function aCoreAnswering(...answers: readonly string[]): { readonly fetch: Versio
 
 describe('the trierarch plugin starts only against a core it runs with (decision 0049)', () => {
   it('starts against a core at its minimum', async () => {
-    await expect(requireCoreVersion('https://fleet.example', { fetch: aCoreAt('0.30.0') })).resolves.toBeUndefined();
+    await expect(requireCoreVersion('https://fleet.example', { fetch: aCoreAt('0.32.0') })).resolves.toBeUndefined();
   });
 
   it('refuses to start against an older core, naming the trierarch plugin and both versions', async () => {
-    await expect(requireCoreVersion('https://fleet.example', { fetch: aCoreAt('0.29.2') })).rejects.toThrow(
-      new ConfigError('trierarch-plugin 0.0.0 needs core 0.30.0 or later; the fleet at https://fleet.example runs core 0.29.2: upgrade core first'),
+    await expect(requireCoreVersion('https://fleet.example', { fetch: aCoreAt('0.31.0') })).rejects.toThrow(
+      new ConfigError('trierarch-plugin 0.0.0 needs core 0.32.0 or later; the fleet at https://fleet.example runs core 0.31.0: upgrade core first'),
     );
   });
 
   it('refuses to start when the fleet does not answer', async () => {
     const down: VersionFetch = () => Promise.reject(new Error('connect ECONNREFUSED 127.0.0.1:4000'));
     await expect(requireCoreVersion('https://fleet.example', { fetch: down, ...aFleetClock() })).rejects.toThrow(
-      new ConfigError('trierarch-plugin 0.0.0 needs core 0.30.0 or later, and could not read the version of the fleet at https://fleet.example: connect ECONNREFUSED 127.0.0.1:4000'),
+      new ConfigError('trierarch-plugin 0.0.0 needs core 0.32.0 or later, and could not read the version of the fleet at https://fleet.example: connect ECONNREFUSED 127.0.0.1:4000'),
     );
   });
 
   it('starts once a core that was restarting answers its version', async () => {
-    const core = aCoreAnswering('restarting', 'unreachable', '0.30.0');
+    const core = aCoreAnswering('restarting', 'unreachable', '0.32.0');
     await expect(requireCoreVersion('https://fleet.example', { fetch: core.fetch, ...aFleetClock() })).resolves.toBeUndefined();
     expect(core.calls()).toBe(3);
   });
@@ -65,7 +65,7 @@ describe('the trierarch plugin starts only against a core it runs with (decision
   it('refuses after the wait runs out, saying why the version could not be read', async () => {
     const core = aCoreAnswering('restarting');
     await expect(requireCoreVersion('https://fleet.example', { fetch: core.fetch, ...aFleetClock() })).rejects.toThrow(
-      new ConfigError('trierarch-plugin 0.0.0 needs core 0.30.0 or later, and could not read the version of the fleet at https://fleet.example: HTTP 502'),
+      new ConfigError('trierarch-plugin 0.0.0 needs core 0.32.0 or later, and could not read the version of the fleet at https://fleet.example: HTTP 502'),
     );
     expect(core.calls()).toBeGreaterThan(1);
   });
