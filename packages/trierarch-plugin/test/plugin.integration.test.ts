@@ -435,6 +435,7 @@ describe('the trierarch plugin\'s scopes against a real fleet (decision 0055)', 
 
     const namespace = (await useCases.listScopes(argo)).find((each) => each.namespace === 'trierarch');
     expect(namespace).toEqual({
+      kind: 'plugin',
       namespace: 'trierarch',
       declaredBy: { id: shipId, name: 'trierarch-plugin' },
       scopes: [{ scope: 'trierarch:join', description: 'Add a computer: join its trierarch to the fleet' }],
