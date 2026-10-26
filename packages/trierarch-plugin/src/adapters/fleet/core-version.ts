@@ -4,7 +4,7 @@ import { ConfigError } from '../../config.js';
 import { runningVersion } from '../http/version.js';
 
 /** The oldest core the trierarch plugin runs against (decision 0049, docs/compatibility.md). */
-export const MINIMUM_CORE_VERSION = '0.30.0';
+export const MINIMUM_CORE_VERSION = '0.32.0';
 
 /** How long the start waits for a core that does not answer, such as one restarting beside it. */
 const CORE_WAIT_MS = 60_000;

@@ -1,4 +1,4 @@
-import type { ConsoleSessionOutput, FleetId, Scope } from '@aeolus-fleet/common';
+import type { ConsoleSessionOutput, FleetId, ScopeName } from '@aeolus-fleet/common';
 
 import type { FleetRefusal } from '../connection/ports.js';
 import type { Result } from '../shared/result.js';
@@ -9,5 +9,5 @@ import type { Result } from '../shared/result.js';
  * 0022), with its ship's scopes.
  */
 export interface ConsoleSessions {
-  check(cookie: string): Promise<Result<{ fleetId: FleetId; kind: ConsoleSessionOutput['kind']; scopes: readonly Scope[] }, FleetRefusal>>;
+  check(cookie: string): Promise<Result<{ fleetId: FleetId; kind: ConsoleSessionOutput['kind']; scopes: readonly ScopeName[] }, FleetRefusal>>;
 }

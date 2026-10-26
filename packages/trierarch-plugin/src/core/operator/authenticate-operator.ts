@@ -1,7 +1,7 @@
 import type {
   ConsoleSessionOutput,
   FleetId,
-  Scope,
+  ScopeName,
 } from "@aeolus-fleet/common";
 
 import { refuse, type DomainError } from "../shared/errors.js";
@@ -15,7 +15,7 @@ export type AuthenticateOperator = (
     {
       fleetId: FleetId;
       kind: ConsoleSessionOutput["kind"];
-      scopes: readonly Scope[];
+      scopes: readonly ScopeName[];
     },
     DomainError<"NOT_THE_OPERATOR">
   >
