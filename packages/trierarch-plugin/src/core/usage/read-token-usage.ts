@@ -31,11 +31,11 @@ export interface TokenUsageRequest {
   readonly filters: UsageFilters;
 }
 
-/** A series' amounts; split by token kind, a kind has no cost of its own, nor tokens not priced. */
+/** A series' tokens per kind, with its estimated cost (of the priced tokens only) and its tokens not priced, each added up over the kinds. */
 export interface SeriesAmounts {
   readonly tokens: TokenCounts;
-  readonly estimatedCostUsd: number | null;
-  readonly unpricedTokens: number | null;
+  readonly estimatedCostUsd: number;
+  readonly unpricedTokens: number;
 }
 
 export type TokenUsageSeriesKey = UsageSeriesKey | { readonly kind: 'tokenKind'; readonly tokenKind: TokenKind };
@@ -46,7 +46,7 @@ export interface TokenUsageView {
   /** Largest first, other last. A name is null for other, all, a token kind, a login not reported and a ship the fleet does not know. */
   readonly series: readonly { readonly key: TokenUsageSeriesKey; readonly name: string | null; readonly amounts: SeriesAmounts }[];
   readonly buckets: readonly { readonly at: Date; readonly amounts: readonly (SeriesAmounts & { readonly series: number })[] }[];
-  readonly totals: UsageAmounts;
+  readonly totals: SeriesAmounts;
   readonly unpricedModels: readonly string[];
 }
 
@@ -76,12 +76,12 @@ export function createReadTokenUsage(deps: { usage: UsageHistory; door: FleetDoo
     if (!names.isOk) {
       return names;
     }
-    const split = isByKind ? byTokenKind(usage) : { series: usage.series.map((key): TokenUsageSeriesKey => key), buckets: usage.buckets };
+    const split = isByKind ? byTokenKind(usage) : unsplitByKind(usage);
     return ok({
       grain,
-      series: split.series.map((key, index) => ({ key, name: nameOf(key, names.value), amounts: seriesTotal(split.buckets, { series: index, isByKind }) })),
+      series: split.series.map((key, index) => ({ key, name: nameOf(key, names.value), amounts: addUp(split.buckets.flatMap((bucket) => bucket.amounts.filter((amount) => amount.series === index))) })),
       buckets: split.buckets,
-      totals: rangeTotal(usage),
+      totals: addUp(usage.buckets.flatMap((bucket) => bucket.amounts.map(addedOverKinds))),
       unpricedModels: usage.unpricedModels,
     });
   };
@@ -92,31 +92,39 @@ function nameOf(key: TokenUsageSeriesKey, shipNames: ReadonlyMap<string, string>
   return key.kind === 'value' ? nameOfValue(key.value, shipNames) : null;
 }
 
-/** The one unsplit series as four, one per token kind, each holding only its kind's tokens. */
+/** The series as the history answers them, each amount's cost and tokens not priced added up over the kinds. */
+function unsplitByKind(usage: TokenUsage): { series: TokenUsageSeriesKey[]; buckets: TokenUsageView['buckets'] } {
+  return {
+    series: usage.series.map((key): TokenUsageSeriesKey => key),
+    buckets: usage.buckets.map((bucket) => ({ at: bucket.at, amounts: bucket.amounts.map((amount) => ({ series: amount.series, ...addedOverKinds(amount) })) })),
+  };
+}
+
+/** The one unsplit series as four, one per token kind, each holding only its kind's tokens, cost and tokens not priced. */
 function byTokenKind(usage: TokenUsage): { series: TokenUsageSeriesKey[]; buckets: TokenUsageView['buckets'] } {
   return {
     series: TOKEN_KINDS.map((tokenKind) => ({ kind: 'tokenKind', tokenKind })),
     buckets: usage.buckets.map((bucket) => ({
       at: bucket.at,
       amounts: bucket.amounts.flatMap((amount) =>
-        TOKEN_KINDS.map((tokenKind, series) => ({ series, tokens: { ...NO_TOKENS, [tokenKind]: amount.tokens[tokenKind] }, estimatedCostUsd: null, unpricedTokens: null })),
+        TOKEN_KINDS.map((tokenKind, series) => ({
+          series,
+          tokens: { ...NO_TOKENS, [tokenKind]: amount.tokens[tokenKind] },
+          estimatedCostUsd: amount.estimatedCostUsd[tokenKind],
+          unpricedTokens: amount.unpricedTokens[tokenKind],
+        })),
       ),
     })),
   };
 }
 
-function seriesTotal(buckets: TokenUsageView['buckets'], { series, isByKind }: { series: number; isByKind: boolean }): SeriesAmounts {
-  const amounts = buckets.flatMap((bucket) => bucket.amounts.filter((amount) => amount.series === series));
-  const total = addUp(amounts.map((amount) => ({ tokens: amount.tokens, estimatedCostUsd: amount.estimatedCostUsd ?? 0, unpricedTokens: amount.unpricedTokens ?? 0 })));
-  return isByKind ? { tokens: total.tokens, estimatedCostUsd: null, unpricedTokens: null } : total;
+function addedOverKinds(amount: UsageAmounts): SeriesAmounts {
+  const sum = (counts: TokenCounts | UsageAmounts['estimatedCostUsd']) => TOKEN_KINDS.reduce((total, kind) => total + counts[kind], 0);
+  return { tokens: amount.tokens, estimatedCostUsd: sum(amount.estimatedCostUsd), unpricedTokens: sum(amount.unpricedTokens) };
 }
 
-function rangeTotal(usage: TokenUsage): UsageAmounts {
-  return addUp(usage.buckets.flatMap((bucket) => bucket.amounts));
-}
-
-function addUp(amounts: readonly UsageAmounts[]): UsageAmounts {
-  return amounts.reduce<UsageAmounts>(
+function addUp(amounts: readonly SeriesAmounts[]): SeriesAmounts {
+  return amounts.reduce<SeriesAmounts>(
     (total, amount) => ({
       tokens: {
         input: total.tokens.input + amount.tokens.input,

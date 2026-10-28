@@ -74,22 +74,25 @@ model EnabledModel {
 /// hour's total so far: a row is kept only when its read_at is newer than the
 /// stored one. Its primary key, fleet and hour first, serves a range of hours.
 model UsageHour {
-  fleetId          String   @map("fleet_id")
-  hour             DateTime @db.Timestamptz(3)
-  machineShipId    String   @map("machine_ship_id")
-  shipId           String   @map("ship_id")
-  folderMadeAt     DateTime @map("folder_made_at") @db.Timestamptz(3)
-  model            String
-  harness          String
+  fleetId                    String   @map("fleet_id")
+  hour                       DateTime @db.Timestamptz(3)
+  machineShipId              String   @map("machine_ship_id")
+  shipId                     String   @map("ship_id")
+  folderMadeAt               DateTime @map("folder_made_at") @db.Timestamptz(3)
+  model                      String
+  harness                    String
   /// Null: the trierarch reported no login.
-  login            String?
-  input            BigInt
-  output           BigInt
-  cacheRead        BigInt   @map("cache_read")
-  cacheWrite       BigInt   @map("cache_write")
-  /// Null: the trierarch does not price the model.
-  estimatedCostUsd Decimal? @map("estimated_cost_usd") @db.Decimal(18, 6)
-  readAt           DateTime @map("read_at") @db.Timestamptz(3)
+  login                      String?
+  input                      BigInt
+  output                     BigInt
+  cacheRead                  BigInt   @map("cache_read")
+  cacheWrite                 BigInt   @map("cache_write")
+  /// The estimated cost of each kind of tokens; all four null: the trierarch does not price the model.
+  estimatedCostInputUsd      Decimal? @map("estimated_cost_input_usd") @db.Decimal(18, 6)
+  estimatedCostOutputUsd     Decimal? @map("estimated_cost_output_usd") @db.Decimal(18, 6)
+  estimatedCostCacheReadUsd  Decimal? @map("estimated_cost_cache_read_usd") @db.Decimal(18, 6)
+  estimatedCostCacheWriteUsd Decimal? @map("estimated_cost_cache_write_usd") @db.Decimal(18, 6)
+  readAt                     DateTime @map("read_at") @db.Timestamptz(3)
 
   @@id([fleetId, hour, machineShipId, shipId, folderMadeAt, model])
   @@map("usage_hours")
@@ -101,22 +104,28 @@ model UsageHour {
 /// Its key holds the login, which may be null, so the migration makes that
 /// unique index NULLS NOT DISTINCT, which this schema cannot say.
 model UsageDay {
-  id               BigInt   @id @default(autoincrement())
-  fleetId          String   @map("fleet_id")
-  day              DateTime @db.Date
-  machineShipId    String   @map("machine_ship_id")
-  shipId           String   @map("ship_id")
-  model            String
-  harness          String
-  login            String?
-  input            BigInt
-  output           BigInt
-  cacheRead        BigInt   @map("cache_read")
-  cacheWrite       BigInt   @map("cache_write")
-  /// Of the priced hours only.
-  estimatedCostUsd Decimal  @map("estimated_cost_usd") @db.Decimal(18, 6)
-  /// The tokens of the hours whose model the trierarch does not price.
-  unpricedTokens   BigInt   @map("unpriced_tokens")
+  id                         BigInt   @id @default(autoincrement())
+  fleetId                    String   @map("fleet_id")
+  day                        DateTime @db.Date
+  machineShipId              String   @map("machine_ship_id")
+  shipId                     String   @map("ship_id")
+  model                      String
+  harness                    String
+  login                      String?
+  input                      BigInt
+  output                     BigInt
+  cacheRead                  BigInt   @map("cache_read")
+  cacheWrite                 BigInt   @map("cache_write")
+  /// The estimated cost of each kind of tokens, of the priced hours only.
+  estimatedCostInputUsd      Decimal  @map("estimated_cost_input_usd") @db.Decimal(18, 6)
+  estimatedCostOutputUsd     Decimal  @map("estimated_cost_output_usd") @db.Decimal(18, 6)
+  estimatedCostCacheReadUsd  Decimal  @map("estimated_cost_cache_read_usd") @db.Decimal(18, 6)
+  estimatedCostCacheWriteUsd Decimal  @map("estimated_cost_cache_write_usd") @db.Decimal(18, 6)
+  /// The tokens of each kind of the hours whose model the trierarch does not price.
+  unpricedInput              BigInt   @map("unpriced_input")
+  unpricedOutput             BigInt   @map("unpriced_output")
+  unpricedCacheRead          BigInt   @map("unpriced_cache_read")
+  unpricedCacheWrite         BigInt   @map("unpriced_cache_write")
 
   @@unique([fleetId, day, machineShipId, shipId, model, harness, login])
   @@map("usage_days")

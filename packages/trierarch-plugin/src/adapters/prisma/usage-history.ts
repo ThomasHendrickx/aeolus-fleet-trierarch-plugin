@@ -30,7 +30,11 @@ interface StoredValues {
   readonly output: string;
   readonly cache_read: string;
   readonly cache_write: string;
-  readonly estimated_cost_usd: string | null;
+  /** All four null when the trierarch does not price the model. */
+  readonly estimated_cost_input_usd: string | null;
+  readonly estimated_cost_output_usd: string | null;
+  readonly estimated_cost_cache_read_usd: string | null;
+  readonly estimated_cost_cache_write_usd: string | null;
 }
 
 /** The transaction one reading is recorded in, with its fleet. */
@@ -83,15 +87,21 @@ async function setHour({ tx, fleetId, reading }: Scope, hour: UsageHour): Promis
     output: String(hour.tokens.output),
     cache_read: String(hour.tokens.cacheRead),
     cache_write: String(hour.tokens.cacheWrite),
-    estimated_cost_usd: hour.estimatedCostUsd === null ? null : String(hour.estimatedCostUsd),
+    estimated_cost_input_usd: costText(hour.estimatedCostUsd?.input),
+    estimated_cost_output_usd: costText(hour.estimatedCostUsd?.output),
+    estimated_cost_cache_read_usd: costText(hour.estimatedCostUsd?.cacheRead),
+    estimated_cost_cache_write_usd: costText(hour.estimatedCostUsd?.cacheWrite),
   };
   const change = (dayValues: StoredValues, isTakenAway: boolean): DayChange => ({ shipId: hour.shipId, day: utcDay(hour.hour), model: hour.model, values: dayValues, isTakenAway });
 
   // A row another reading is inserting makes this wait for it, then do nothing.
   const inserted = await tx.$queryRaw<unknown[]>`
-    INSERT INTO usage_hours (fleet_id, hour, machine_ship_id, ship_id, folder_made_at, model, harness, login, input, output, cache_read, cache_write, estimated_cost_usd, read_at)
+    INSERT INTO usage_hours (fleet_id, hour, machine_ship_id, ship_id, folder_made_at, model, harness, login, input, output, cache_read, cache_write,
+      estimated_cost_input_usd, estimated_cost_output_usd, estimated_cost_cache_read_usd, estimated_cost_cache_write_usd, read_at)
     VALUES (${fleetId}, ${hour.hour}, ${reading.machineShipId}, ${hour.shipId}, ${hour.folderMadeAt}, ${hour.model}, ${hour.harness}, ${hour.login},
-      ${values.input}::bigint, ${values.output}::bigint, ${values.cache_read}::bigint, ${values.cache_write}::bigint, ${values.estimated_cost_usd}::numeric, ${reading.readAt})
+      ${values.input}::bigint, ${values.output}::bigint, ${values.cache_read}::bigint, ${values.cache_write}::bigint,
+      ${values.estimated_cost_input_usd}::numeric, ${values.estimated_cost_output_usd}::numeric, ${values.estimated_cost_cache_read_usd}::numeric,
+      ${values.estimated_cost_cache_write_usd}::numeric, ${reading.readAt})
     ON CONFLICT DO NOTHING
     RETURNING 1`;
   if (inserted.length > 0) {
@@ -99,7 +109,8 @@ async function setHour({ tx, fleetId, reading }: Scope, hour: UsageHour): Promis
   }
 
   const [stored] = await tx.$queryRaw<(StoredValues & { read_at: Date })[]>`
-    SELECT harness, login, input::text, output::text, cache_read::text, cache_write::text, estimated_cost_usd::text, read_at
+    SELECT harness, login, input::text, output::text, cache_read::text, cache_write::text, estimated_cost_input_usd::text, estimated_cost_output_usd::text,
+      estimated_cost_cache_read_usd::text, estimated_cost_cache_write_usd::text, read_at
     FROM usage_hours
     WHERE fleet_id = ${fleetId} AND hour = ${hour.hour} AND machine_ship_id = ${reading.machineShipId} AND ship_id = ${hour.shipId} AND folder_made_at = ${hour.folderMadeAt} AND model = ${hour.model}
     FOR UPDATE`;
@@ -109,26 +120,47 @@ async function setHour({ tx, fleetId, reading }: Scope, hour: UsageHour): Promis
   await tx.$executeRaw`
     UPDATE usage_hours
     SET harness = ${hour.harness}, login = ${hour.login}, input = ${values.input}::bigint, output = ${values.output}::bigint, cache_read = ${values.cache_read}::bigint,
-      cache_write = ${values.cache_write}::bigint, estimated_cost_usd = ${values.estimated_cost_usd}::numeric, read_at = ${reading.readAt}
+      cache_write = ${values.cache_write}::bigint, estimated_cost_input_usd = ${values.estimated_cost_input_usd}::numeric,
+      estimated_cost_output_usd = ${values.estimated_cost_output_usd}::numeric, estimated_cost_cache_read_usd = ${values.estimated_cost_cache_read_usd}::numeric,
+      estimated_cost_cache_write_usd = ${values.estimated_cost_cache_write_usd}::numeric, read_at = ${reading.readAt}
     WHERE fleet_id = ${fleetId} AND hour = ${hour.hour} AND machine_ship_id = ${reading.machineShipId} AND ship_id = ${hour.shipId} AND folder_made_at = ${hour.folderMadeAt} AND model = ${hour.model}`;
   return [change(stored, true), change(values, false)];
 }
 
-/** Adds an hour row's values to its day row, or takes them away; the hour's tokens count as not priced when it has no cost. */
+/**
+ * Adds an hour row's values to its day row, or takes them away: each kind's
+ * cost, or, when the trierarch does not price the model, each kind's tokens as
+ * not priced.
+ */
 async function addToDay({ tx, fleetId, reading }: Scope, change: DayChange): Promise<void> {
   const sign = change.isTakenAway ? -1 : 1;
   const { values } = change;
   await tx.$executeRaw`
-    INSERT INTO usage_days (fleet_id, day, machine_ship_id, ship_id, model, harness, login, input, output, cache_read, cache_write, estimated_cost_usd, unpriced_tokens)
+    INSERT INTO usage_days (fleet_id, day, machine_ship_id, ship_id, model, harness, login, input, output, cache_read, cache_write,
+      estimated_cost_input_usd, estimated_cost_output_usd, estimated_cost_cache_read_usd, estimated_cost_cache_write_usd,
+      unpriced_input, unpriced_output, unpriced_cache_read, unpriced_cache_write)
     SELECT ${fleetId}, ${change.day}::date, ${reading.machineShipId}, ${change.shipId}, ${change.model}, ${values.harness}, ${values.login},
       ${sign} * t.input, ${sign} * t.output, ${sign} * t.cache_read, ${sign} * t.cache_write,
-      ${sign} * coalesce(t.cost, 0), ${sign} * CASE WHEN t.cost IS NULL THEN t.input + t.output + t.cache_read + t.cache_write ELSE 0 END
+      ${sign} * coalesce(t.cost_input, 0), ${sign} * coalesce(t.cost_output, 0), ${sign} * coalesce(t.cost_cache_read, 0), ${sign} * coalesce(t.cost_cache_write, 0),
+      ${sign} * CASE WHEN t.cost_input IS NULL THEN t.input ELSE 0 END, ${sign} * CASE WHEN t.cost_input IS NULL THEN t.output ELSE 0 END,
+      ${sign} * CASE WHEN t.cost_input IS NULL THEN t.cache_read ELSE 0 END, ${sign} * CASE WHEN t.cost_input IS NULL THEN t.cache_write ELSE 0 END
     FROM (SELECT ${values.input}::bigint AS input, ${values.output}::bigint AS output, ${values.cache_read}::bigint AS cache_read,
-      ${values.cache_write}::bigint AS cache_write, ${values.estimated_cost_usd}::numeric AS cost) AS t
+      ${values.cache_write}::bigint AS cache_write, ${values.estimated_cost_input_usd}::numeric AS cost_input, ${values.estimated_cost_output_usd}::numeric AS cost_output,
+      ${values.estimated_cost_cache_read_usd}::numeric AS cost_cache_read, ${values.estimated_cost_cache_write_usd}::numeric AS cost_cache_write) AS t
     ON CONFLICT (fleet_id, day, machine_ship_id, ship_id, model, harness, login) DO UPDATE
     SET input = usage_days.input + EXCLUDED.input, output = usage_days.output + EXCLUDED.output, cache_read = usage_days.cache_read + EXCLUDED.cache_read,
-      cache_write = usage_days.cache_write + EXCLUDED.cache_write, estimated_cost_usd = usage_days.estimated_cost_usd + EXCLUDED.estimated_cost_usd,
-      unpriced_tokens = usage_days.unpriced_tokens + EXCLUDED.unpriced_tokens`;
+      cache_write = usage_days.cache_write + EXCLUDED.cache_write,
+      estimated_cost_input_usd = usage_days.estimated_cost_input_usd + EXCLUDED.estimated_cost_input_usd,
+      estimated_cost_output_usd = usage_days.estimated_cost_output_usd + EXCLUDED.estimated_cost_output_usd,
+      estimated_cost_cache_read_usd = usage_days.estimated_cost_cache_read_usd + EXCLUDED.estimated_cost_cache_read_usd,
+      estimated_cost_cache_write_usd = usage_days.estimated_cost_cache_write_usd + EXCLUDED.estimated_cost_cache_write_usd,
+      unpriced_input = usage_days.unpriced_input + EXCLUDED.unpriced_input, unpriced_output = usage_days.unpriced_output + EXCLUDED.unpriced_output,
+      unpriced_cache_read = usage_days.unpriced_cache_read + EXCLUDED.unpriced_cache_read, unpriced_cache_write = usage_days.unpriced_cache_write + EXCLUDED.unpriced_cache_write`;
+}
+
+/** A cost as Postgres numeric reads it exactly; none when the model is not priced. */
+function costText(usd: number | undefined): string | null {
+  return usd === undefined ? null : String(usd);
 }
 
 async function addSubscriptionReadings({ tx, fleetId, reading }: Scope): Promise<void> {
@@ -186,9 +218,31 @@ interface BucketRow {
   readonly output: number;
   readonly cache_read: number;
   readonly cache_write: number;
-  readonly cost: number;
-  readonly unpriced: number;
+  readonly cost_input: number;
+  readonly cost_output: number;
+  readonly cost_cache_read: number;
+  readonly cost_cache_write: number;
+  readonly unpriced_input: number;
+  readonly unpriced_output: number;
+  readonly unpriced_cache_read: number;
+  readonly unpriced_cache_write: number;
 }
+
+/** The amounts every read row carries and the buckets add up, each kind apart. */
+const AMOUNT_COLUMNS = [
+  'input',
+  'output',
+  'cache_read',
+  'cache_write',
+  'cost_input',
+  'cost_output',
+  'cost_cache_read',
+  'cost_cache_write',
+  'unpriced_input',
+  'unpriced_output',
+  'unpriced_cache_read',
+  'unpriced_cache_write',
+] as const;
 
 /** The rows of a read, one per hour or day row in range and filter: its bucket, its series key, its amounts and its model. */
 interface Source {
@@ -203,17 +257,25 @@ function sourceOf(fleetId: FleetId, query: TokenUsageQuery): Source {
   if (query.grain === 'hour') {
     const where = Prisma.sql`fleet_id = ${fleetId} AND hour >= ${query.from} AND hour < ${query.to} AND ${filters}`;
     return {
-      rows: Prisma.sql`SELECT hour AS at, ${key} AS key, input, output, cache_read, cache_write, coalesce(estimated_cost_usd, 0) AS cost,
-        CASE WHEN estimated_cost_usd IS NULL THEN input + output + cache_read + cache_write ELSE 0 END AS unpriced
+      // A model not priced has all four costs null: its tokens of each kind count as not priced.
+      rows: Prisma.sql`SELECT hour AS at, ${key} AS key, input, output, cache_read, cache_write,
+        coalesce(estimated_cost_input_usd, 0) AS cost_input, coalesce(estimated_cost_output_usd, 0) AS cost_output,
+        coalesce(estimated_cost_cache_read_usd, 0) AS cost_cache_read, coalesce(estimated_cost_cache_write_usd, 0) AS cost_cache_write,
+        CASE WHEN estimated_cost_input_usd IS NULL THEN input ELSE 0 END AS unpriced_input,
+        CASE WHEN estimated_cost_input_usd IS NULL THEN output ELSE 0 END AS unpriced_output,
+        CASE WHEN estimated_cost_input_usd IS NULL THEN cache_read ELSE 0 END AS unpriced_cache_read,
+        CASE WHEN estimated_cost_input_usd IS NULL THEN cache_write ELSE 0 END AS unpriced_cache_write
         FROM usage_hours WHERE ${where}`,
-      unpricedRows: Prisma.sql`SELECT model FROM usage_hours WHERE ${where} AND estimated_cost_usd IS NULL`,
+      unpricedRows: Prisma.sql`SELECT model FROM usage_hours WHERE ${where} AND estimated_cost_input_usd IS NULL`,
     };
   }
   const where = Prisma.sql`fleet_id = ${fleetId} AND day >= (${query.from}::timestamptz AT TIME ZONE 'UTC')::date AND day < (${query.to}::timestamptz AT TIME ZONE 'UTC')::date AND ${filters}`;
   return {
-    rows: Prisma.sql`SELECT day::timestamp AT TIME ZONE 'UTC' AS at, ${key} AS key, input, output, cache_read, cache_write, estimated_cost_usd AS cost, unpriced_tokens AS unpriced
+    rows: Prisma.sql`SELECT day::timestamp AT TIME ZONE 'UTC' AS at, ${key} AS key, input, output, cache_read, cache_write,
+      estimated_cost_input_usd AS cost_input, estimated_cost_output_usd AS cost_output, estimated_cost_cache_read_usd AS cost_cache_read,
+      estimated_cost_cache_write_usd AS cost_cache_write, unpriced_input, unpriced_output, unpriced_cache_read, unpriced_cache_write
       FROM usage_days WHERE ${where}`,
-    unpricedRows: Prisma.sql`SELECT model FROM usage_days WHERE ${where} AND unpriced_tokens > 0`,
+    unpricedRows: Prisma.sql`SELECT model FROM usage_days WHERE ${where} AND unpriced_input + unpriced_output + unpriced_cache_read + unpriced_cache_write > 0`,
   };
 }
 
@@ -239,7 +301,10 @@ function filtersOf(filters: UsageFilters): Prisma.Sql {
 
 /** The series ranked by their total of the measure, largest first (then by key), the ones past MOST_SERIES as other, added up per bucket. */
 function bucketsQuery(source: Source, query: TokenUsageQuery): Prisma.Sql {
-  const measure = query.measure === 'tokens' ? Prisma.sql`input + output + cache_read + cache_write` : Prisma.sql`cost`;
+  const measure = query.measure === 'tokens' ? Prisma.sql`input + output + cache_read + cache_write` : Prisma.sql`cost_input + cost_output + cost_cache_read + cost_cache_write`;
+  // Raw only over AMOUNT_COLUMNS, this file's own constants: no input reaches it.
+  const sums = Prisma.raw(AMOUNT_COLUMNS.map((column) => `sum(p.${column}) AS ${column}`).join(', '));
+  const amounts = Prisma.raw(AMOUNT_COLUMNS.map((column) => `${column}::float8 AS ${column}`).join(', '));
   return Prisma.sql`
     WITH picked AS (${source.rows}),
     ranked AS (
@@ -250,12 +315,11 @@ function bucketsQuery(source: Source, query: TokenUsageQuery): Prisma.Sql {
       SELECT p.at,
         CASE WHEN r.keys > ${MOST_SERIES} AND r.rank > ${MOST_SERIES} THEN ${MOST_SERIES + 1} ELSE r.rank END AS rank,
         CASE WHEN r.keys > ${MOST_SERIES} AND r.rank > ${MOST_SERIES} THEN NULL ELSE p.key END AS key,
-        sum(p.input) AS input, sum(p.output) AS output, sum(p.cache_read) AS cache_read, sum(p.cache_write) AS cache_write, sum(p.cost) AS cost, sum(p.unpriced) AS unpriced
+        ${sums}
       FROM picked p JOIN ranked r ON r.key IS NOT DISTINCT FROM p.key
       GROUP BY 1, 2, 3
     )
-    SELECT at, rank::int AS rank, key, input::float8 AS input, output::float8 AS output, cache_read::float8 AS cache_read, cache_write::float8 AS cache_write,
-      cost::float8 AS cost, unpriced::float8 AS unpriced
+    SELECT at, rank::int AS rank, key, ${amounts}
     FROM grouped ORDER BY at, rank`;
 }
 
@@ -349,8 +413,8 @@ function toTokenUsage(rows: readonly BucketRow[], read: { splitBy: UsageBreakdow
     const amount = {
       series: row.rank - 1,
       tokens: { input: row.input, output: row.output, cacheRead: row.cache_read, cacheWrite: row.cache_write },
-      estimatedCostUsd: row.cost,
-      unpricedTokens: row.unpriced,
+      estimatedCostUsd: { input: row.cost_input, output: row.cost_output, cacheRead: row.cost_cache_read, cacheWrite: row.cost_cache_write },
+      unpricedTokens: { input: row.unpriced_input, output: row.unpriced_output, cacheRead: row.unpriced_cache_read, cacheWrite: row.unpriced_cache_write },
     };
     const last = buckets.at(-1);
     if (last?.at.getTime() === row.at.getTime()) {

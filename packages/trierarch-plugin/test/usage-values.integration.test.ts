@@ -27,7 +27,7 @@ function anHour(overrides: Partial<UsageHour> = {}): UsageHour {
     harness: 'claude-code',
     login: null,
     tokens: { input: 10, output: 0, cacheRead: 0, cacheWrite: 0 },
-    estimatedCostUsd: 1,
+    estimatedCostUsd: { input: 1, output: 0, cacheRead: 0, cacheWrite: 0 },
     ...overrides,
   };
 }

@@ -33,7 +33,19 @@ const NINE = new Date('2026-10-28T09:00:00.000Z');
 /** One hour of Opus usage, as the history answers it. */
 const OPUS_HOUR: TokenUsage = {
   series: [{ kind: 'value', value: OPUS }],
-  buckets: [{ at: NINE, amounts: [{ series: 0, tokens: { input: 10, output: 2, cacheRead: 100, cacheWrite: 5 }, estimatedCostUsd: 1.5, unpricedTokens: 0 }] }],
+  buckets: [
+    {
+      at: NINE,
+      amounts: [
+        {
+          series: 0,
+          tokens: { input: 10, output: 2, cacheRead: 100, cacheWrite: 5 },
+          estimatedCostUsd: { input: 0.5, output: 0.5, cacheRead: 0.25, cacheWrite: 0.25 },
+          unpricedTokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        },
+      ],
+    },
+  ],
   unpricedModels: ['gpt-6-sol'],
 };
 

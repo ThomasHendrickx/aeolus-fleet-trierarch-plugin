@@ -40,15 +40,21 @@ function aRequest(overrides: Partial<TokenUsageRequest> = {}): TokenUsageRequest
   return { fleetId: FLEET_ID, from: NINE, to: new Date(NINE.getTime() + DAY_MS), splitBy: 'model', measure: 'tokens', filters: {}, ...overrides };
 }
 
-const amounts = (input: number, estimatedCostUsd: number) => ({ tokens: { input, output: 0, cacheRead: 0, cacheWrite: 0 }, estimatedCostUsd, unpricedTokens: 0 });
+const NO_TOKENS = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+
+/** Amounts as the history answers them: input tokens with their cost, each kind apart. */
+const stored = (input: number, cost: number) => ({ tokens: { ...NO_TOKENS, input }, estimatedCostUsd: { ...NO_TOKENS, input: cost }, unpricedTokens: NO_TOKENS });
+
+/** Amounts as the read answers them: the cost and the tokens not priced added up over the kinds. */
+const amounts = (input: number, estimatedCostUsd: number) => ({ tokens: { ...NO_TOKENS, input }, estimatedCostUsd, unpricedTokens: 0 });
 
 /** Two hours of usage in two series, as the history answers them. */
 function twoSeries(series: TokenUsage['series']): TokenUsage {
   return {
     series,
     buckets: [
-      { at: NINE, amounts: [{ series: 0, ...amounts(30, 3) }, { series: 1, ...amounts(10, 1) }] },
-      { at: TEN, amounts: [{ series: 0, ...amounts(5, 0.5) }] },
+      { at: NINE, amounts: [{ series: 0, ...stored(30, 3) }, { series: 1, ...stored(10, 1) }] },
+      { at: TEN, amounts: [{ series: 0, ...stored(5, 0.5) }] },
     ],
     unpricedModels: [],
   };
@@ -107,9 +113,25 @@ describe("reading the fleet's token usage", () => {
     expect(usage).toMatchObject({ isOk: true, value: { series: [{ name: 'subscription:thomas' }, { name: null }] } });
   });
 
-  it('splits by token kind into input, output, cache read and cache write, each with its own tokens and no cost', async () => {
+  it('splits by token kind into input, output, cache read and cache write, each with its own tokens, cost and tokens not priced', async () => {
     const usage = await read(
-      { series: [{ kind: 'all' }], buckets: [{ at: NINE, amounts: [{ series: 0, tokens: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4 }, estimatedCostUsd: 9, unpricedTokens: 0 }] }], unpricedModels: [] },
+      {
+        series: [{ kind: 'all' }],
+        buckets: [
+          {
+            at: NINE,
+            amounts: [
+              {
+                series: 0,
+                tokens: { input: 11, output: 22, cacheRead: 33, cacheWrite: 44 },
+                estimatedCostUsd: { input: 0.5, output: 2, cacheRead: 0.25, cacheWrite: 1 },
+                unpricedTokens: { input: 10, output: 20, cacheRead: 30, cacheWrite: 40 },
+              },
+            ],
+          },
+        ],
+        unpricedModels: ['gpt-6-sol'],
+      },
       aRequest({ splitBy: 'kind' }),
     );
 
@@ -126,14 +148,14 @@ describe("reading the fleet's token usage", () => {
           {
             at: NINE,
             amounts: [
-              { series: 0, tokens: { input: 1, output: 0, cacheRead: 0, cacheWrite: 0 }, estimatedCostUsd: null, unpricedTokens: null },
-              { series: 1, tokens: { input: 0, output: 2, cacheRead: 0, cacheWrite: 0 }, estimatedCostUsd: null, unpricedTokens: null },
-              { series: 2, tokens: { input: 0, output: 0, cacheRead: 3, cacheWrite: 0 }, estimatedCostUsd: null, unpricedTokens: null },
-              { series: 3, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 4 }, estimatedCostUsd: null, unpricedTokens: null },
+              { series: 0, tokens: { ...NO_TOKENS, input: 11 }, estimatedCostUsd: 0.5, unpricedTokens: 10 },
+              { series: 1, tokens: { ...NO_TOKENS, output: 22 }, estimatedCostUsd: 2, unpricedTokens: 20 },
+              { series: 2, tokens: { ...NO_TOKENS, cacheRead: 33 }, estimatedCostUsd: 0.25, unpricedTokens: 30 },
+              { series: 3, tokens: { ...NO_TOKENS, cacheWrite: 44 }, estimatedCostUsd: 1, unpricedTokens: 40 },
             ],
           },
         ],
-        totals: { tokens: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4 }, estimatedCostUsd: 9, unpricedTokens: 0 },
+        totals: { tokens: { input: 11, output: 22, cacheRead: 33, cacheWrite: 44 }, estimatedCostUsd: 3.75, unpricedTokens: 100 },
       },
     });
   });

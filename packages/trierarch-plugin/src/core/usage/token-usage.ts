@@ -1,6 +1,6 @@
 import type { ShipId } from '@aeolus-fleet/common';
 
-import type { TokenCounts } from './usage-reading.js';
+import type { TokenCosts, TokenCounts } from './usage-reading.js';
 
 /** What usage splits by, besides token kind: one of the setup that used the tokens. */
 export const USAGE_BREAKDOWNS = ['machine', 'harness', 'model', 'ship', 'login'] as const;
@@ -33,13 +33,13 @@ export interface TokenUsageQuery {
   readonly filters: UsageFilters;
 }
 
-/** The tokens and estimated cost of one series in one bucket, or in all of the range. */
+/** The tokens and estimated cost of one series in one bucket, each kind apart. */
 export interface UsageAmounts {
   readonly tokens: TokenCounts;
   /** Of the priced tokens only. */
-  readonly estimatedCostUsd: number;
+  readonly estimatedCostUsd: TokenCosts;
   /** The tokens of models the trierarch does not price. */
-  readonly unpricedTokens: number;
+  readonly unpricedTokens: TokenCounts;
 }
 
 /** A series of the read: one value of the breakdown (a null login is "not reported"), the rest as other, or all of it unsplit. */

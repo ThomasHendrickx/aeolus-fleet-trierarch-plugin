@@ -34,7 +34,7 @@ function anHour(overrides: Partial<UsageHour> = {}): UsageHour {
     harness: 'claude-code',
     login: null,
     tokens: { input: 100, output: 20, cacheRead: 1000, cacheWrite: 50 },
-    estimatedCostUsd: 1.25,
+    estimatedCostUsd: costOf(1.25),
     ...overrides,
   };
 }
@@ -42,6 +42,14 @@ function anHour(overrides: Partial<UsageHour> = {}): UsageHour {
 function aReading(hours: readonly UsageHour[], overrides: Partial<UsageReading> = {}): UsageReading {
   return { machineShipId: MACHINE, readAt: READ_AT, hours, subscriptions: [], ...overrides };
 }
+
+/** A cost all on input tokens, as most tests need one number of it. */
+function costOf(usd: number): UsageHour['estimatedCostUsd'] {
+  return { input: usd, output: 0, cacheRead: 0, cacheWrite: 0 };
+}
+
+/** The four costs of a row added up, as the tests read one cost of it. */
+const COST = 'estimated_cost_input_usd + estimated_cost_output_usd + estimated_cost_cache_read_usd + estimated_cost_cache_write_usd';
 
 function tokens(total: number): UsageHour['tokens'] {
   return { input: total, output: 0, cacheRead: 0, cacheWrite: 0 };
@@ -58,20 +66,27 @@ afterEach(async () => {
 });
 
 async function storedHours(fleetId: FleetId = FLEET): Promise<unknown[]> {
-  return db.$queryRaw`SELECT hour, folder_made_at, input::int, output::int, cache_read::int, cache_write::int, estimated_cost_usd::float8, login, read_at
-    FROM usage_hours WHERE fleet_id = ${fleetId} ORDER BY hour, folder_made_at`;
+  return db.$queryRawUnsafe(
+    `SELECT hour, folder_made_at, input::int, output::int, cache_read::int, cache_write::int, (${COST})::float8 AS estimated_cost_usd, login, read_at
+    FROM usage_hours WHERE fleet_id = $1 ORDER BY hour, folder_made_at`,
+    fleetId,
+  );
 }
 
 async function storedDays(fleetId: FleetId = FLEET): Promise<unknown[]> {
-  return db.$queryRaw`SELECT day::text, login, input::int, output::int, cache_read::int, cache_write::int, estimated_cost_usd::float8, unpriced_tokens::int
-    FROM usage_days WHERE fleet_id = ${fleetId} ORDER BY day, login NULLS FIRST`;
+  return db.$queryRawUnsafe(
+    `SELECT day::text, login, input::int, output::int, cache_read::int, cache_write::int, (${COST})::float8 AS estimated_cost_usd,
+      (unpriced_input + unpriced_output + unpriced_cache_read + unpriced_cache_write)::int AS unpriced_tokens
+    FROM usage_days WHERE fleet_id = $1 ORDER BY day, login NULLS FIRST`,
+    fleetId,
+  );
 }
 
 describe("the fleet's usage history in Postgres", () => {
   it('keeps each hour of a reading, and adds the hours of one UTC day up in its day', async () => {
     const history = createPrismaUsageHistory(db);
 
-    await history.record(FLEET, aReading([anHour({ hour: NINE }), anHour({ hour: TEN, tokens: tokens(7), estimatedCostUsd: 0.5 }), anHour({ hour: NEXT_DAY, tokens: tokens(3), estimatedCostUsd: 0.25 })]));
+    await history.record(FLEET, aReading([anHour({ hour: NINE }), anHour({ hour: TEN, tokens: tokens(7), estimatedCostUsd: costOf(0.5) }), anHour({ hour: NEXT_DAY, tokens: tokens(3), estimatedCostUsd: costOf(0.25) })]));
 
     await expect(storedHours()).resolves.toEqual([
       { hour: NINE, folder_made_at: FOLDER_MADE_AT, input: 100, output: 20, cache_read: 1000, cache_write: 50, estimated_cost_usd: 1.25, login: null, read_at: READ_AT },
@@ -95,9 +110,9 @@ describe("the fleet's usage history in Postgres", () => {
 
   it("sets an hour to a newer reading's totals, and its day takes the difference", async () => {
     const history = createPrismaUsageHistory(db);
-    await history.record(FLEET, aReading([anHour({ tokens: tokens(100), estimatedCostUsd: 1 })]));
+    await history.record(FLEET, aReading([anHour({ tokens: tokens(100), estimatedCostUsd: costOf(1) })]));
 
-    await history.record(FLEET, aReading([anHour({ tokens: tokens(150), estimatedCostUsd: 1.5 })], { readAt: LATER }));
+    await history.record(FLEET, aReading([anHour({ tokens: tokens(150), estimatedCostUsd: costOf(1.5) })], { readAt: LATER }));
 
     await expect(storedHours()).resolves.toEqual([{ hour: NINE, folder_made_at: FOLDER_MADE_AT, input: 150, output: 0, cache_read: 0, cache_write: 0, estimated_cost_usd: 1.5, login: null, read_at: LATER }]);
     await expect(storedDays()).resolves.toEqual([{ day: '2026-10-28', login: null, input: 150, output: 0, cache_read: 0, cache_write: 0, estimated_cost_usd: 1.5, unpriced_tokens: 0 }]);
@@ -105,9 +120,9 @@ describe("the fleet's usage history in Postgres", () => {
 
   it('keeps the newer reading when an older one arrives after it', async () => {
     const history = createPrismaUsageHistory(db);
-    await history.record(FLEET, aReading([anHour({ tokens: tokens(150), estimatedCostUsd: 1.5 })], { readAt: LATER }));
+    await history.record(FLEET, aReading([anHour({ tokens: tokens(150), estimatedCostUsd: costOf(1.5) })], { readAt: LATER }));
 
-    await history.record(FLEET, aReading([anHour({ tokens: tokens(100), estimatedCostUsd: 1 })]));
+    await history.record(FLEET, aReading([anHour({ tokens: tokens(100), estimatedCostUsd: costOf(1) })]));
 
     await expect(storedHours()).resolves.toEqual([{ hour: NINE, folder_made_at: FOLDER_MADE_AT, input: 150, output: 0, cache_read: 0, cache_write: 0, estimated_cost_usd: 1.5, login: null, read_at: LATER }]);
     await expect(storedDays()).resolves.toEqual([{ day: '2026-10-28', login: null, input: 150, output: 0, cache_read: 0, cache_write: 0, estimated_cost_usd: 1.5, unpriced_tokens: 0 }]);
@@ -115,9 +130,9 @@ describe("the fleet's usage history in Postgres", () => {
 
   it("keeps a fresh folder's hour apart from the old folder's hour of the same ship", async () => {
     const history = createPrismaUsageHistory(db);
-    await history.record(FLEET, aReading([anHour({ tokens: tokens(100), estimatedCostUsd: 1 })]));
+    await history.record(FLEET, aReading([anHour({ tokens: tokens(100), estimatedCostUsd: costOf(1) })]));
 
-    await history.record(FLEET, aReading([anHour({ folderMadeAt: FRESH_FOLDER_MADE_AT, tokens: tokens(5), estimatedCostUsd: 0.05 })], { readAt: LATER }));
+    await history.record(FLEET, aReading([anHour({ folderMadeAt: FRESH_FOLDER_MADE_AT, tokens: tokens(5), estimatedCostUsd: costOf(0.05) })], { readAt: LATER }));
 
     await expect(storedHours()).resolves.toEqual([
       { hour: NINE, folder_made_at: FOLDER_MADE_AT, input: 100, output: 0, cache_read: 0, cache_write: 0, estimated_cost_usd: 1, login: null, read_at: READ_AT },
@@ -129,23 +144,33 @@ describe("the fleet's usage history in Postgres", () => {
   it('keeps no cost for a model the trierarch does not price, and its day counts those tokens as not priced', async () => {
     const history = createPrismaUsageHistory(db);
 
-    await history.record(FLEET, aReading([anHour({ model: OPUS, tokens: tokens(100), estimatedCostUsd: 1 }), anHour({ model: 'gpt-6', tokens: { input: 40, output: 2, cacheRead: 0, cacheWrite: 0 }, estimatedCostUsd: null })]));
+    await history.record(FLEET, aReading([anHour({ model: OPUS, tokens: tokens(100), estimatedCostUsd: costOf(1) }), anHour({ model: 'gpt-6', tokens: { input: 40, output: 2, cacheRead: 0, cacheWrite: 0 }, estimatedCostUsd: null })]));
 
-    await expect(db.$queryRaw`SELECT model, estimated_cost_usd IS NULL AS is_unpriced FROM usage_hours ORDER BY model`).resolves.toEqual([
+    await expect(db.$queryRaw`SELECT model, estimated_cost_input_usd IS NULL AS is_unpriced FROM usage_hours ORDER BY model`).resolves.toEqual([
       { model: OPUS, is_unpriced: false },
       { model: 'gpt-6', is_unpriced: true },
     ]);
-    await expect(db.$queryRaw`SELECT model, estimated_cost_usd::float8, unpriced_tokens::int FROM usage_days ORDER BY model`).resolves.toEqual([
-      { model: OPUS, estimated_cost_usd: 1, unpriced_tokens: 0 },
-      { model: 'gpt-6', estimated_cost_usd: 0, unpriced_tokens: 42 },
+    await expect(db.$queryRaw`SELECT model, estimated_cost_input_usd::float8 AS cost, unpriced_input::int, unpriced_output::int FROM usage_days ORDER BY model`).resolves.toEqual([
+      { model: OPUS, cost: 1, unpriced_input: 0, unpriced_output: 0 },
+      { model: 'gpt-6', cost: 0, unpriced_input: 40, unpriced_output: 2 },
     ]);
+  });
+
+  it('keeps the estimated cost of each token kind apart, in its hour and in its day', async () => {
+    const history = createPrismaUsageHistory(db);
+
+    await history.record(FLEET, aReading([anHour({ tokens: { input: 10, output: 2, cacheRead: 100, cacheWrite: 5 }, estimatedCostUsd: { input: 0.05, output: 0.04, cacheRead: 0.03, cacheWrite: 0.02 } })]));
+
+    const columns = 'estimated_cost_input_usd::float8 AS input, estimated_cost_output_usd::float8 AS output, estimated_cost_cache_read_usd::float8 AS cache_read, estimated_cost_cache_write_usd::float8 AS cache_write';
+    await expect(db.$queryRawUnsafe(`SELECT ${columns} FROM usage_hours`)).resolves.toEqual([{ input: 0.05, output: 0.04, cache_read: 0.03, cache_write: 0.02 }]);
+    await expect(db.$queryRawUnsafe(`SELECT ${columns} FROM usage_days`)).resolves.toEqual([{ input: 0.05, output: 0.04, cache_read: 0.03, cache_write: 0.02 }]);
   });
 
   it("moves an hour's tokens in its day from not reported to the login a newer reading names", async () => {
     const history = createPrismaUsageHistory(db);
-    await history.record(FLEET, aReading([anHour({ tokens: tokens(100), estimatedCostUsd: 1 })]));
+    await history.record(FLEET, aReading([anHour({ tokens: tokens(100), estimatedCostUsd: costOf(1) })]));
 
-    await history.record(FLEET, aReading([anHour({ login: 'subscription:thomas', tokens: tokens(120), estimatedCostUsd: 1.2 })], { readAt: LATER }));
+    await history.record(FLEET, aReading([anHour({ login: 'subscription:thomas', tokens: tokens(120), estimatedCostUsd: costOf(1.2) })], { readAt: LATER }));
 
     await expect(storedDays()).resolves.toEqual([
       { day: '2026-10-28', login: null, input: 0, output: 0, cache_read: 0, cache_write: 0, estimated_cost_usd: 0, unpriced_tokens: 0 },
@@ -157,8 +182,8 @@ describe("the fleet's usage history in Postgres", () => {
     const history = createPrismaUsageHistory(db);
 
     await Promise.all([
-      history.record(FLEET, aReading([anHour({ tokens: tokens(100), estimatedCostUsd: 1 })])),
-      history.record(FLEET, aReading([anHour({ tokens: tokens(150), estimatedCostUsd: 1.5 })], { readAt: LATER })),
+      history.record(FLEET, aReading([anHour({ tokens: tokens(100), estimatedCostUsd: costOf(1) })])),
+      history.record(FLEET, aReading([anHour({ tokens: tokens(150), estimatedCostUsd: costOf(1.5) })], { readAt: LATER })),
     ]);
 
     await expect(storedDays()).resolves.toEqual([{ day: '2026-10-28', login: null, input: 150, output: 0, cache_read: 0, cache_write: 0, estimated_cost_usd: 1.5, unpriced_tokens: 0 }]);
@@ -181,13 +206,13 @@ describe("the fleet's usage history in Postgres", () => {
 
   it('stores nothing of a reading whose last step fails, leaving the stored hours, days and subscription readings as they were', async () => {
     const history = createPrismaUsageHistory(db);
-    await history.record(FLEET, aReading([anHour({ tokens: tokens(100), estimatedCostUsd: 1 })]));
+    await history.record(FLEET, aReading([anHour({ tokens: tokens(100), estimatedCostUsd: costOf(1) })]));
     const hoursBefore = await storedHours();
     const daysBefore = await storedDays();
     // A used percent numeric(5,2) cannot hold fails the subscription insert, the step after hours and days.
     const failingSubscriptions: UsageReading['subscriptions'] = [{ harness: 'claude-code', readAt: LATER, windows: [{ windowMinutes: 300, usedPercent: 1000, resetsAt: new Date('2026-10-28T15:00:00.000Z') }] }];
 
-    await expect(history.record(FLEET, aReading([anHour({ tokens: tokens(150), estimatedCostUsd: 1.5 }), anHour({ hour: TEN, tokens: tokens(7), estimatedCostUsd: 0.07 })], { readAt: LATER, subscriptions: failingSubscriptions }))).rejects.toThrow();
+    await expect(history.record(FLEET, aReading([anHour({ tokens: tokens(150), estimatedCostUsd: costOf(1.5) }), anHour({ hour: TEN, tokens: tokens(7), estimatedCostUsd: costOf(0.07) })], { readAt: LATER, subscriptions: failingSubscriptions }))).rejects.toThrow();
 
     await expect(storedHours()).resolves.toEqual(hoursBefore);
     await expect(storedDays()).resolves.toEqual(daysBefore);
@@ -196,9 +221,9 @@ describe("the fleet's usage history in Postgres", () => {
 
   it("keeps each fleet's usage apart", async () => {
     const history = createPrismaUsageHistory(db);
-    await history.record(FLEET, aReading([anHour({ tokens: tokens(100), estimatedCostUsd: 1 })]));
+    await history.record(FLEET, aReading([anHour({ tokens: tokens(100), estimatedCostUsd: costOf(1) })]));
 
-    await history.record(OTHER, aReading([anHour({ tokens: tokens(9), estimatedCostUsd: 0.09 })], { readAt: LATER }));
+    await history.record(OTHER, aReading([anHour({ tokens: tokens(9), estimatedCostUsd: costOf(0.09) })], { readAt: LATER }));
 
     await expect(storedDays(FLEET)).resolves.toEqual([{ day: '2026-10-28', login: null, input: 100, output: 0, cache_read: 0, cache_write: 0, estimated_cost_usd: 1, unpriced_tokens: 0 }]);
     await expect(storedDays(OTHER)).resolves.toEqual([{ day: '2026-10-28', login: null, input: 9, output: 0, cache_read: 0, cache_write: 0, estimated_cost_usd: 0.09, unpriced_tokens: 0 }]);
