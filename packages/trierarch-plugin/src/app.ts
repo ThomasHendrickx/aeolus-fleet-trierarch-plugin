@@ -5,6 +5,7 @@ import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastif
 import { randomIdempotencyKeys } from './adapters/crypto/idempotency-keys.js';
 import { sha256RequestHasher } from './adapters/crypto/request-hasher.js';
 import { createFleetConsoleSessions } from './adapters/fleet/console-sessions.js';
+import { createOperatorFleet } from './adapters/fleet/operator-fleet.js';
 import { createRestFleetDoor } from './adapters/fleet/rest-fleet-door.js';
 import { runningVersion } from './adapters/http/version.js';
 import { checkDatabase, createPrismaClient } from './adapters/prisma/client.js';
@@ -27,6 +28,7 @@ import { createLabelMachines } from './core/machines/label-machines.js';
 import { createCheckCrewSettings } from './core/assignment/check-crew-settings.js';
 import { createTellModelMismatches } from './core/assignment/tell-model-mismatches.js';
 import { createJoinMachine } from './core/machines/join-machine.js';
+import { createNewSetupLine } from './core/machines/new-setup-line.js';
 import { createDeclareNetworkRules, type Declarations } from './core/network/declare-network-rules.js';
 import { createDeclareScopes } from './core/scopes/declare-scopes.js';
 import { createResendTrustedRepositories } from './core/repositories/resend-trusted-repositories.js';
@@ -125,6 +127,7 @@ export function createTrierarchPluginApp(options: {
   const deleteFleet = createDeleteFleet({ forgetter: createPrismaFleetForgetter(prisma), requests, hasher: sha256RequestHasher, clock, withdraw });
   const connect = createConnect({ door, store: connections, clock });
   const joinMachine = createJoinMachine({ door, connections, keys: randomIdempotencyKeys, fleetUrl: options.fleetUrl });
+  const newSetupLine = createNewSetupLine({ door, connections, operatorFleet: createOperatorFleet(options.fleetUrl), fleetUrl: options.fleetUrl });
   const silentAfterMs = options.silentAfterMs ?? DEFAULT_SILENT_AFTER_MS;
   const listMachines = createListMachines({ door, connections, clock, silentAfterMs });
   const models = createPrismaEnabledModels(prisma);
@@ -287,6 +290,7 @@ export function createTrierarchPluginApp(options: {
       },
       createContext: ({ req }) => ({
         cookie: req.headers.cookie,
+        origin: req.headers.origin,
         authenticateOperator: createAuthenticateOperator({ sessions: createFleetConsoleSessions(options.fleetUrl) }),
         isConnected: async (fleetId: FleetId) => (await connections.find(fleetId)) !== undefined,
         isServed,
@@ -299,6 +303,7 @@ export function createTrierarchPluginApp(options: {
         readConnection,
         connect,
         joinMachine,
+        newSetupLine,
         listMachines,
         checkCrewSettings,
         listEnabledModels,
