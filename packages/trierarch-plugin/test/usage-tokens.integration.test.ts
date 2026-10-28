@@ -27,7 +27,12 @@ const READ_AT = new Date('2026-10-28T12:00:40.000Z');
 const NO_TOKENS = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
 function anHour(overrides: Partial<UsageHour> = {}): UsageHour {
-  return { hour: NINE, shipId: SHIP, folderMadeAt: FOLDER_MADE_AT, model: OPUS, harness: 'claude-code', login: null, tokens: { input: 10, output: 0, cacheRead: 0, cacheWrite: 0 }, estimatedCostUsd: 1, ...overrides };
+  return { hour: NINE, shipId: SHIP, folderMadeAt: FOLDER_MADE_AT, model: OPUS, harness: 'claude-code', login: null, tokens: { input: 10, output: 0, cacheRead: 0, cacheWrite: 0 }, estimatedCostUsd: costOf(1), ...overrides };
+}
+
+/** A cost all on input tokens, as most tests need one number of it. */
+function costOf(usd: number): { input: number; output: number; cacheRead: number; cacheWrite: number } {
+  return { input: usd, output: 0, cacheRead: 0, cacheWrite: 0 };
 }
 
 function input(count: number): UsageHour['tokens'] {
@@ -62,10 +67,10 @@ async function record(hours: UsageHour[], { machineShipId = MAC, fleetId = FLEET
 describe("reading the fleet's token usage from Postgres", () => {
   it('adds each hour up per series, the hours oldest first and the series largest first', async () => {
     await record([
-      anHour({ hour: NINE, model: OPUS, tokens: { input: 10, output: 2, cacheRead: 100, cacheWrite: 5 }, estimatedCostUsd: 1.5 }),
-      anHour({ hour: NINE, model: SONNET, tokens: input(300), estimatedCostUsd: 0.25 }),
-      anHour({ hour: TEN, model: OPUS, shipId: nthShip(2), tokens: input(4), estimatedCostUsd: 0.5 }),
-      anHour({ hour: TEN, model: OPUS, tokens: input(6), estimatedCostUsd: 0.25 }),
+      anHour({ hour: NINE, model: OPUS, tokens: { input: 10, output: 2, cacheRead: 100, cacheWrite: 5 }, estimatedCostUsd: costOf(1.5) }),
+      anHour({ hour: NINE, model: SONNET, tokens: input(300), estimatedCostUsd: costOf(0.25) }),
+      anHour({ hour: TEN, model: OPUS, shipId: nthShip(2), tokens: input(4), estimatedCostUsd: costOf(0.5) }),
+      anHour({ hour: TEN, model: OPUS, tokens: input(6), estimatedCostUsd: costOf(0.25) }),
     ]);
 
     await expect(history.readTokens(FLEET, aQuery())).resolves.toEqual({
@@ -77,18 +82,41 @@ describe("reading the fleet's token usage from Postgres", () => {
         {
           at: NINE,
           amounts: [
-            { series: 0, tokens: input(300), estimatedCostUsd: 0.25, unpricedTokens: 0 },
-            { series: 1, tokens: { input: 10, output: 2, cacheRead: 100, cacheWrite: 5 }, estimatedCostUsd: 1.5, unpricedTokens: 0 },
+            { series: 0, tokens: input(300), estimatedCostUsd: costOf(0.25), unpricedTokens: NO_TOKENS },
+            { series: 1, tokens: { input: 10, output: 2, cacheRead: 100, cacheWrite: 5 }, estimatedCostUsd: costOf(1.5), unpricedTokens: NO_TOKENS },
           ],
         },
-        { at: TEN, amounts: [{ series: 1, tokens: input(10), estimatedCostUsd: 0.75, unpricedTokens: 0 }] },
+        { at: TEN, amounts: [{ series: 1, tokens: input(10), estimatedCostUsd: costOf(0.75), unpricedTokens: NO_TOKENS }] },
       ],
       unpricedModels: [],
     });
   });
 
+  it('adds up the estimated cost and the tokens not priced of each token kind apart', async () => {
+    await record([
+      anHour({ model: OPUS, tokens: { input: 10, output: 2, cacheRead: 100, cacheWrite: 5 }, estimatedCostUsd: { input: 0.05, output: 0.04, cacheRead: 0.03, cacheWrite: 0.02 } }),
+      anHour({ model: 'gpt-6-sol', tokens: { input: 40, output: 2, cacheRead: 7, cacheWrite: 1 }, estimatedCostUsd: null }),
+    ]);
+
+    const usage = await history.readTokens(FLEET, aQuery({ splitBy: null }));
+
+    expect(usage.buckets).toEqual([
+      {
+        at: NINE,
+        amounts: [
+          {
+            series: 0,
+            tokens: { input: 50, output: 4, cacheRead: 107, cacheWrite: 6 },
+            estimatedCostUsd: { input: 0.05, output: 0.04, cacheRead: 0.03, cacheWrite: 0.02 },
+            unpricedTokens: { input: 40, output: 2, cacheRead: 7, cacheWrite: 1 },
+          },
+        ],
+      },
+    ]);
+  });
+
   it('ranks the series by estimated cost when that is the measure', async () => {
-    await record([anHour({ model: OPUS, tokens: input(10), estimatedCostUsd: 5 }), anHour({ model: SONNET, tokens: input(300), estimatedCostUsd: 0.25 })]);
+    await record([anHour({ model: OPUS, tokens: input(10), estimatedCostUsd: costOf(5) }), anHour({ model: SONNET, tokens: input(300), estimatedCostUsd: costOf(0.25) })]);
 
     const usage = await history.readTokens(FLEET, aQuery({ measure: 'cost' }));
 
@@ -99,16 +127,16 @@ describe("reading the fleet's token usage from Postgres", () => {
   });
 
   it('keeps the 7 largest series and adds the rest up as other once there are 8', async () => {
-    await record([1, 2, 3, 4, 5, 6, 7, 8].map((n) => anHour({ shipId: nthShip(n), tokens: input(n * 10), estimatedCostUsd: n })));
+    await record([1, 2, 3, 4, 5, 6, 7, 8].map((n) => anHour({ shipId: nthShip(n), tokens: input(n * 10), estimatedCostUsd: costOf(n) })));
 
     const usage = await history.readTokens(FLEET, aQuery({ splitBy: 'ship' }));
 
     expect(usage.series).toEqual([...[8, 7, 6, 5, 4, 3, 2].map((n) => ({ kind: 'value', value: nthShip(n) })), { kind: 'other' }]);
-    expect(usage.buckets[0]?.amounts.at(-1)).toEqual({ series: 7, tokens: input(10), estimatedCostUsd: 1, unpricedTokens: 0 });
+    expect(usage.buckets[0]?.amounts.at(-1)).toEqual({ series: 7, tokens: input(10), estimatedCostUsd: costOf(1), unpricedTokens: NO_TOKENS });
   });
 
   it('shows 7 series as they are, with no other', async () => {
-    await record([1, 2, 3, 4, 5, 6, 7].map((n) => anHour({ shipId: nthShip(n), tokens: input(n * 10), estimatedCostUsd: n })));
+    await record([1, 2, 3, 4, 5, 6, 7].map((n) => anHour({ shipId: nthShip(n), tokens: input(n * 10), estimatedCostUsd: costOf(n) })));
 
     const usage = await history.readTokens(FLEET, aQuery({ splitBy: 'ship' }));
 
@@ -117,11 +145,11 @@ describe("reading the fleet's token usage from Postgres", () => {
   });
 
   it('answers one series for all of it when split by nothing', async () => {
-    await record([anHour({ model: OPUS, tokens: input(10), estimatedCostUsd: 1 }), anHour({ model: SONNET, tokens: input(5), estimatedCostUsd: 0.5 })]);
+    await record([anHour({ model: OPUS, tokens: input(10), estimatedCostUsd: costOf(1) }), anHour({ model: SONNET, tokens: input(5), estimatedCostUsd: costOf(0.5) })]);
 
     await expect(history.readTokens(FLEET, aQuery({ splitBy: null }))).resolves.toEqual({
       series: [{ kind: 'all' }],
-      buckets: [{ at: NINE, amounts: [{ series: 0, tokens: input(15), estimatedCostUsd: 1.5, unpricedTokens: 0 }] }],
+      buckets: [{ at: NINE, amounts: [{ series: 0, tokens: input(15), estimatedCostUsd: costOf(1.5), unpricedTokens: NO_TOKENS }] }],
       unpricedModels: [],
     });
   });
@@ -155,7 +183,7 @@ describe("reading the fleet's token usage from Postgres", () => {
 
     const usage = await history.readTokens(FLEET, aQuery({ splitBy: null, filters: { machineShipIds: [MAC] } }));
 
-    expect(usage.buckets).toEqual([{ at: NINE, amounts: [{ series: 0, tokens: input(10), estimatedCostUsd: 1, unpricedTokens: 0 }] }]);
+    expect(usage.buckets).toEqual([{ at: NINE, amounts: [{ series: 0, tokens: input(10), estimatedCostUsd: costOf(1), unpricedTokens: NO_TOKENS }] }]);
   });
 
   it('narrows to the login not reported when the filter names it', async () => {
@@ -163,7 +191,7 @@ describe("reading the fleet's token usage from Postgres", () => {
 
     const usage = await history.readTokens(FLEET, aQuery({ splitBy: null, filters: { logins: [null] } }));
 
-    expect(usage.buckets).toEqual([{ at: NINE, amounts: [{ series: 0, tokens: input(10), estimatedCostUsd: 1, unpricedTokens: 0 }] }]);
+    expect(usage.buckets).toEqual([{ at: NINE, amounts: [{ series: 0, tokens: input(10), estimatedCostUsd: costOf(1), unpricedTokens: NO_TOKENS }] }]);
   });
 
   it('reads the range from its first hour up to, not including, its end', async () => {
@@ -171,7 +199,7 @@ describe("reading the fleet's token usage from Postgres", () => {
 
     const usage = await history.readTokens(FLEET, aQuery({ splitBy: null, from: TEN, to: ELEVEN }));
 
-    expect(usage.buckets).toEqual([{ at: TEN, amounts: [{ series: 0, tokens: input(2), estimatedCostUsd: 1, unpricedTokens: 0 }] }]);
+    expect(usage.buckets).toEqual([{ at: TEN, amounts: [{ series: 0, tokens: input(2), estimatedCostUsd: costOf(1), unpricedTokens: NO_TOKENS }] }]);
   });
 
   it('reads UTC days from their rollup, each day one bucket at its midnight', async () => {
@@ -180,17 +208,17 @@ describe("reading the fleet's token usage from Postgres", () => {
     const usage = await history.readTokens(FLEET, aQuery({ splitBy: null, grain: 'day', from: new Date('2026-10-01T00:00:00.000Z'), to: new Date('2026-10-30T00:00:00.000Z') }));
 
     expect(usage.buckets).toEqual([
-      { at: new Date('2026-10-28T00:00:00.000Z'), amounts: [{ series: 0, tokens: input(3), estimatedCostUsd: 2, unpricedTokens: 0 }] },
-      { at: new Date('2026-10-29T00:00:00.000Z'), amounts: [{ series: 0, tokens: input(4), estimatedCostUsd: 1, unpricedTokens: 0 }] },
+      { at: new Date('2026-10-28T00:00:00.000Z'), amounts: [{ series: 0, tokens: input(3), estimatedCostUsd: costOf(2), unpricedTokens: NO_TOKENS }] },
+      { at: new Date('2026-10-29T00:00:00.000Z'), amounts: [{ series: 0, tokens: input(4), estimatedCostUsd: costOf(1), unpricedTokens: NO_TOKENS }] },
     ]);
   });
 
   it('counts the tokens of a model the trierarch does not price apart, and names that model', async () => {
-    await record([anHour({ model: OPUS, tokens: input(10), estimatedCostUsd: 1 }), anHour({ model: 'gpt-6-sol', tokens: { ...NO_TOKENS, input: 40, output: 2 }, estimatedCostUsd: null })]);
+    await record([anHour({ model: OPUS, tokens: input(10), estimatedCostUsd: costOf(1) }), anHour({ model: 'gpt-6-sol', tokens: { ...NO_TOKENS, input: 40, output: 2 }, estimatedCostUsd: null })]);
 
     const usage = await history.readTokens(FLEET, aQuery({ splitBy: null }));
 
-    expect(usage.buckets).toEqual([{ at: NINE, amounts: [{ series: 0, tokens: { ...NO_TOKENS, input: 50, output: 2 }, estimatedCostUsd: 1, unpricedTokens: 42 }] }]);
+    expect(usage.buckets).toEqual([{ at: NINE, amounts: [{ series: 0, tokens: { ...NO_TOKENS, input: 50, output: 2 }, estimatedCostUsd: costOf(1), unpricedTokens: { ...NO_TOKENS, input: 40, output: 2 } }] }]);
     expect(usage.unpricedModels).toEqual(['gpt-6-sol']);
   });
 
