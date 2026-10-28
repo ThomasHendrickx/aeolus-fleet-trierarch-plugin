@@ -29,7 +29,9 @@ import type { ListEnabledModels } from '../../core/models/list-enabled-models.js
 import type { SetModelEnabled } from '../../core/models/set-model-enabled.js';
 import type { AuthenticateOperator } from '../../core/operator/authenticate-operator.js';
 import { TOKEN_KINDS, type ReadTokenUsage, type SeriesAmounts } from '../../core/usage/read-token-usage.js';
+import type { ReadUsageValues } from '../../core/usage/read-usage-values.js';
 import { USAGE_BREAKDOWNS, USAGE_MEASURES } from '../../core/usage/token-usage.js';
+import type { UsageValue } from '../../core/usage/usage-values.js';
 
 export interface Context {
   /** The Cookie header the console's server forwarded. */
@@ -57,6 +59,7 @@ export interface Context {
   listEnabledModels: ListEnabledModels;
   setModelEnabled: SetModelEnabled;
   readTokenUsage: ReadTokenUsage;
+  readUsageValues: ReadUsageValues;
 }
 
 /** What a caller reads of a failure: nothing of it, so no crew token, secret or query ever leaves; the log holds it whole. */
@@ -207,6 +210,9 @@ export const machineOutputSchema = z.object({
   details: trierarchReportDetailsSchema.nullable(),
 });
 
+/** The longest cursor a page of values answers: a token count and a value. */
+const USAGE_CURSOR_MAX_LENGTH = 1024;
+
 /** The most values one filter narrows to: more than a filter menu offers. */
 const USAGE_FILTER_MAX_VALUES = 100;
 
@@ -243,6 +249,24 @@ export const tokenUsageOutputSchema = z.object({
   totals: z.object({ tokens: tokenCountsSchema, estimatedCostUsd: z.number(), unpricedTokens: z.number() }),
   unpricedModels: z.array(z.string()),
 });
+
+/** Where a page of usage values left off, as the caller passes it back: the last value and its tokens. */
+const usageValueCursorSchema = z.strictObject({ tokens: z.number().nonnegative(), value: z.string().nullable() });
+
+function encodeCursor(after: UsageValue): string {
+  return Buffer.from(JSON.stringify(after)).toString('base64url');
+}
+
+/** The cursor a page answered, or undefined for any other text. */
+function decodeCursor(cursor: string): UsageValue | undefined {
+  try {
+    const parsed = usageValueCursorSchema.safeParse(JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    // Not JSON: not a cursor this API gave.
+    return undefined;
+  }
+}
 
 /** A bucket's amounts as the API answers them. */
 function amountsOutput(amount: SeriesAmounts & { series: number }) {
@@ -380,6 +404,25 @@ export const trierarchPluginRouter = t.router({
           totals: usage.value.totals,
           unpricedModels: [...usage.value.unpricedModels],
         };
+      }),
+    /**
+     * The values of one breakdown in a range with their tokens, for the Usage
+     * page's filter menus: 20 a page, largest first, the next page after the
+     * cursor a page answered. Every signed-in session's, viewer included.
+     */
+    values: connectedProcedure
+      .input(z.strictObject({ from: z.iso.datetime(), to: z.iso.datetime(), breakdown: z.enum(USAGE_BREAKDOWNS), cursor: z.string().max(USAGE_CURSOR_MAX_LENGTH).nullable() }))
+      .output(z.object({ values: z.array(z.object({ value: z.string().nullable(), name: z.string().nullable(), tokens: z.number() })), nextCursor: z.string().nullable() }))
+      .query(async ({ ctx, input }) => {
+        const after = input.cursor === null ? null : decodeCursor(input.cursor);
+        if (after === undefined) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'The cursor is not one a page of values answered' });
+        }
+        const page = await ctx.readUsageValues({ fleetId: ctx.fleetId, from: new Date(input.from), to: new Date(input.to), breakdown: input.breakdown, after });
+        if (!page.isOk) {
+          throw new TRPCError({ code: USAGE_CODES[page.error.kind], message: page.error.message });
+        }
+        return { values: page.value.values.map((value) => ({ ...value })), nextCursor: page.value.next && encodeCursor(page.value.next) };
       }),
   }),
   installation: t.router({

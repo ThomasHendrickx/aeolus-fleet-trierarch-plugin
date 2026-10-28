@@ -17,6 +17,7 @@ import type { FleetId } from '@aeolus-fleet/common';
 import type { UsageHistory } from '../../core/usage/ports.js';
 import type { TokenUsage, TokenUsageQuery, UsageBreakdown, UsageFilters, UsageSeriesKey } from '../../core/usage/token-usage.js';
 import type { UsageHour, UsageReading } from '../../core/usage/usage-reading.js';
+import type { UsageValue, UsageValuesQuery } from '../../core/usage/usage-values.js';
 import type { Db, PrismaClient } from './client.js';
 import { Prisma } from './generated/client.js';
 
@@ -67,6 +68,7 @@ export function createPrismaUsageHistory(db: PrismaClient): UsageHistory {
       const [rows, unpriced] = await Promise.all([db.$queryRaw<BucketRow[]>(bucketsQuery(source, query)), db.$queryRaw<{ model: string }[]>(unpricedModelsQuery(source))]);
       return toTokenUsage(rows, { splitBy: query.splitBy, unpricedModels: unpriced.map((row) => row.model) });
     },
+    readValues: (fleetId, query) => db.$queryRaw<UsageValue[]>(valuesQuery(fleetId, query)),
   };
 }
 
@@ -253,6 +255,24 @@ function bucketsQuery(source: Source, query: TokenUsageQuery): Prisma.Sql {
     SELECT at, rank::int AS rank, key, input::float8 AS input, output::float8 AS output, cache_read::float8 AS cache_read, cache_write::float8 AS cache_write,
       cost::float8 AS cost, unpriced::float8 AS unpriced
     FROM grouped ORDER BY at, rank`;
+}
+
+/** One page of a breakdown's values by their tokens, largest first, then by value with a login not reported last: after the cursor, up to the limit. */
+function valuesQuery(fleetId: FleetId, query: UsageValuesQuery): Prisma.Sql {
+  const source = sourceOf(fleetId, { from: query.from, to: query.to, grain: query.grain, splitBy: query.breakdown, measure: 'tokens', filters: {} });
+  const { after } = query;
+  let afterCursor = Prisma.sql`TRUE`;
+  if (after?.value === null) {
+    afterCursor = Prisma.sql`tokens < ${after.tokens}::numeric`;
+  } else if (after) {
+    afterCursor = Prisma.sql`(tokens < ${after.tokens}::numeric OR (tokens = ${after.tokens}::numeric AND (value > ${after.value} OR value IS NULL)))`;
+  }
+  return Prisma.sql`
+    WITH totals AS (SELECT key AS value, sum(input + output + cache_read + cache_write) AS tokens FROM (${source.rows}) AS picked GROUP BY key)
+    SELECT value, tokens::float8 AS tokens FROM totals
+    WHERE ${afterCursor}
+    ORDER BY tokens DESC, value ASC NULLS LAST
+    LIMIT ${query.limit}`;
 }
 
 function unpricedModelsQuery(source: Source): Prisma.Sql {
