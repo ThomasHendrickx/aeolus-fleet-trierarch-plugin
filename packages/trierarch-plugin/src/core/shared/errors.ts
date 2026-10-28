@@ -11,7 +11,9 @@ export type DomainErrorKind =
   | 'NOT_CONNECTED'
   | 'NAME_TAKEN'
   | 'NEEDS_SCOPE'
-  | 'FLEET_UNAVAILABLE';
+  | 'FLEET_UNAVAILABLE'
+  | 'NOT_A_MACHINE'
+  | 'FLEET_REFUSED';
 
 /** Why the core refused a request. Adapters map the kind to their own error shape; the message is safe to show. */
 export interface DomainError<K extends DomainErrorKind = DomainErrorKind> {

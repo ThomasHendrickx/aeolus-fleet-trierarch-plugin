@@ -23,6 +23,7 @@ import type { IsServed } from '../../core/installation/served.js';
 import type { SetFleetEnabled } from '../../core/installation/set-fleet-enabled.js';
 import type { CheckCrewSettings } from '../../core/assignment/check-crew-settings.js';
 import type { JoinMachine } from '../../core/machines/join-machine.js';
+import type { MakeNewSetupLine } from '../../core/machines/new-setup-line.js';
 import type { ListMachines } from '../../core/machines/list-machines.js';
 import type { ListEnabledModels } from '../../core/models/list-enabled-models.js';
 import type { SetModelEnabled } from '../../core/models/set-model-enabled.js';
@@ -31,6 +32,8 @@ import type { AuthenticateOperator } from '../../core/operator/authenticate-oper
 export interface Context {
   /** The Cookie header the console's server forwarded. */
   cookie: string | undefined;
+  /** The Origin header the console's server forwarded: the browser's, which the fleet checks on a change made with the cookie. */
+  origin: string | undefined;
   authenticateOperator: AuthenticateOperator;
   /** Whether the trierarch plugin is connected to the fleet. */
   isConnected: (fleetId: FleetId) => Promise<boolean>;
@@ -46,6 +49,7 @@ export interface Context {
   readConnection: ReadConnection;
   connect: Connect;
   joinMachine: JoinMachine;
+  newSetupLine: MakeNewSetupLine;
   listMachines: ListMachines;
   checkCrewSettings: CheckCrewSettings;
   listEnabledModels: ListEnabledModels;
@@ -136,6 +140,14 @@ const JOIN_CODES = {
   FLEET_UNAVAILABLE: 'BAD_GATEWAY',
 } as const satisfies Record<string, TRPCError['code']>;
 
+/** The refusals of a new setup line, as the API states them: the fleet's refusal of the operator is theirs to read. */
+const NEW_SETUP_LINE_CODES = {
+  NOT_CONNECTED: 'PRECONDITION_FAILED',
+  NOT_A_MACHINE: 'NOT_FOUND',
+  FLEET_REFUSED: 'FORBIDDEN',
+  FLEET_UNAVAILABLE: 'BAD_GATEWAY',
+} as const satisfies Record<string, TRPCError['code']>;
+
 /** The refusals of reading the fleet (listing the machines, checking settings), as the API states them. */
 const LIST_CODES = {
   NOT_CONNECTED: 'PRECONDITION_FAILED',
@@ -223,6 +235,25 @@ export const trierarchPluginRouter = t.router({
           throw new TRPCError({ code: JOIN_CODES[joined.error.kind], message: joined.error.message });
         }
         return joined.value;
+      }),
+    /**
+     * A machine's new setup line, once (aeolus-fleet#1239): a crewed machine's
+     * ship is released, then gets a new starting prompt, both as the operator
+     * with the forwarded session and Origin, so the operator's own rights
+     * decide. The old line stops working.
+     */
+    newSetupLine: connectedProcedure
+      .input(z.strictObject({ shipId: idSchema('ship') }))
+      .output(z.object({ shipId: idSchema('ship'), setupLine: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        if (ctx.cookie === undefined) {
+          throw new TRPCError({ code: 'UNAUTHORIZED', message: 'No signed-in console session' });
+        }
+        const line = await ctx.newSetupLine({ fleetId: ctx.fleetId, shipId: input.shipId, session: { cookie: ctx.cookie, origin: ctx.origin } });
+        if (!line.isOk) {
+          throw new TRPCError({ code: NEW_SETUP_LINE_CODES[line.error.kind], message: line.error.message });
+        }
+        return line.value;
       }),
     /** The fleet's machines, each with its trierarch's last report and details, read from the fleet. */
     list: connectedProcedure.output(z.array(machineOutputSchema)).query(async ({ ctx }) => {

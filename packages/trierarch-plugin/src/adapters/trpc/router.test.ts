@@ -32,6 +32,7 @@ beforeEach(() => {
 function caller(session: { kind?: 'operator' | 'viewer'; scopes: readonly ScopeName[]; isServed?: boolean; isConnected?: boolean }) {
   const context: Context = {
     cookie: 'aeolus_session=a-session',
+    origin: undefined,
     authenticateOperator: () => Promise.resolve(ok({ fleetId: FLEET_ID, kind: session.kind ?? 'operator', scopes: session.scopes })),
     isConnected: (fleetId: FleetId) => Promise.resolve(fleetId === FLEET_ID && (session.isConnected ?? true)),
     isServed: (fleetId: FleetId) => Promise.resolve(fleetId === FLEET_ID && (session.isServed ?? true)),
@@ -44,6 +45,7 @@ function caller(session: { kind?: 'operator' | 'viewer'; scopes: readonly ScopeN
     readConnection: notReached,
     connect: notReached,
     joinMachine: notReached,
+    newSetupLine: notReached,
     listMachines: notReached,
     checkCrewSettings: notReached,
     listEnabledModels: createListEnabledModels({ models }),

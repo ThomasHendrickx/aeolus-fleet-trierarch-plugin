@@ -12,11 +12,11 @@ export async function signIn(fleetUrl: string, ticket: string): Promise<string> 
   return z.string().parse(set).split(';')[0] ?? '';
 }
 
-/** Calls one of the trierarch plugin's mutations with the operator's cookie, as the console's server does. */
-export function mutate(address: string, request: { procedure: string; cookie: string; body: unknown }): Promise<Response> {
+/** Calls one of the trierarch plugin's mutations with the operator's cookie, and the Origin the browser sent when given, as the console's server does. */
+export function mutate(address: string, request: { procedure: string; cookie: string; body: unknown; origin?: string }): Promise<Response> {
   return fetch(`${address}/trpc/${request.procedure}`, {
     method: 'POST',
-    headers: { cookie: request.cookie, 'content-type': 'application/json' },
+    headers: { cookie: request.cookie, 'content-type': 'application/json', ...(request.origin === undefined ? {} : { origin: request.origin }) },
     body: JSON.stringify(request.body),
   });
 }
