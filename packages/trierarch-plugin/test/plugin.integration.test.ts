@@ -166,6 +166,54 @@ describe('a machine joining', () => {
   });
 });
 
+const newSetupLineSchema = z.object({ result: z.object({ data: z.object({ shipId: z.string(), setupLine: z.string() }) }) });
+
+/** The console's origin in these tests: the fleet's own, as when no other one is configured. */
+const CONSOLE_ORIGIN = new URL(FLEET_URL).origin;
+
+/** The secret a setup line carries, its last flag. */
+function secretInLine(setupLine: string): string {
+  return z.string().parse(setupLine.split('--secret ')[1]);
+}
+
+describe('a new setup line for a machine (aeolus-fleet#1239)', () => {
+  it("releases a crewed machine as the operator and answers a line with a new secret, which crews it while the old secret no longer does", async () => {
+    const address = await connected();
+    const joined = joinedSchema.parse(await (await mutate(address, { procedure: 'machines.join', cookie, body: { name: 'mac-studio' } })).json()).result.data;
+    const machineId = z.templateLiteral(['shp_', z.string()]).parse(joined.shipId);
+    await crewAsTrierarch(fleetUrl, { shipId: machineId, secret: joined.secret });
+
+    const answer = await mutate(address, { procedure: 'machines.newSetupLine', cookie, origin: CONSOLE_ORIGIN, body: { shipId: machineId } });
+
+    expect(answer.status, await answer.clone().text()).toBe(200);
+    const { setupLine } = newSetupLineSchema.parse(await answer.json()).result.data;
+    const newSecret = secretInLine(setupLine);
+    expect(setupLine).toBe(`npx @aeolus-fleet/trierarch init --fleet-url ${fleetUrl} --ship-id ${machineId} --plugin-ship-id ${shipId} --secret ${newSecret}`);
+    await expect(crewAsTrierarch(fleetUrl, { shipId: machineId, secret: joined.secret })).rejects.toThrow();
+    await expect(crewAsTrierarch(fleetUrl, { shipId: machineId, secret: newSecret })).resolves.toBeDefined();
+  });
+
+  it("is refused without the console's Origin, and the machine keeps its crew", async () => {
+    const address = await connected();
+    const joined = joinedSchema.parse(await (await mutate(address, { procedure: 'machines.join', cookie, body: { name: 'mac-studio' } })).json()).result.data;
+    const machineId = z.templateLiteral(['shp_', z.string()]).parse(joined.shipId);
+    await crewAsTrierarch(fleetUrl, { shipId: machineId, secret: joined.secret });
+
+    const answer = await mutate(address, { procedure: 'machines.newSetupLine', cookie, origin: 'https://elsewhere.example.com', body: { shipId: machineId } });
+
+    expect(answer.status).toBe(403);
+    expect((await fleetDatabase.lease.findMany({ where: { shipId: machineId, endedAt: null } })).length).toBe(1);
+  });
+
+  it('is refused for a ship that is not a machine', async () => {
+    const address = await connected();
+
+    const answer = await mutate(address, { procedure: 'machines.newSetupLine', cookie, origin: CONSOLE_ORIGIN, body: { shipId } });
+
+    expect(answer.status).toBe(404);
+  });
+});
+
 describe('a joined machine reporting', () => {
   it("reaches the trierarch plugin: the machines list shows its trierarch's report and details", async () => {
     const address = await connected();
