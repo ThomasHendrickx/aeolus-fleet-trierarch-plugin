@@ -131,9 +131,9 @@ describe("the fleet's usage history in Postgres", () => {
 
     await history.record(FLEET, aReading([anHour({ model: OPUS, tokens: tokens(100), estimatedCostUsd: 1 }), anHour({ model: 'gpt-6', tokens: { input: 40, output: 2, cacheRead: 0, cacheWrite: 0 }, estimatedCostUsd: null })]));
 
-    await expect(db.$queryRaw`SELECT model, estimated_cost_usd FROM usage_hours ORDER BY model`).resolves.toEqual([
-      { model: OPUS, estimated_cost_usd: expect.anything() },
-      { model: 'gpt-6', estimated_cost_usd: null },
+    await expect(db.$queryRaw`SELECT model, estimated_cost_usd IS NULL AS is_unpriced FROM usage_hours ORDER BY model`).resolves.toEqual([
+      { model: OPUS, is_unpriced: false },
+      { model: 'gpt-6', is_unpriced: true },
     ]);
     await expect(db.$queryRaw`SELECT model, estimated_cost_usd::float8, unpriced_tokens::int FROM usage_days ORDER BY model`).resolves.toEqual([
       { model: OPUS, estimated_cost_usd: 1, unpriced_tokens: 0 },
