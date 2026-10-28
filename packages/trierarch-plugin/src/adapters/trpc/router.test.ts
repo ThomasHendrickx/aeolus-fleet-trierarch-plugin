@@ -8,6 +8,7 @@ import { cannedUsageHistory } from '../../../test/support/memory-usage.js';
 import { createListEnabledModels } from '../../core/models/list-enabled-models.js';
 import { createSetModelEnabled } from '../../core/models/set-model-enabled.js';
 import { createReadTokenUsage } from '../../core/usage/read-token-usage.js';
+import { createReadUsageValues } from '../../core/usage/read-usage-values.js';
 import type { TokenUsage } from '../../core/usage/token-usage.js';
 import { ok } from '../../core/shared/result.js';
 import { trierarchPluginRouter, type Context } from './router.js';
@@ -34,6 +35,9 @@ const OPUS_HOUR: TokenUsage = {
   buckets: [{ at: NINE, amounts: [{ series: 0, tokens: { input: 10, output: 2, cacheRead: 100, cacheWrite: 5 }, estimatedCostUsd: 1.5, unpricedTokens: 0 }] }],
   unpricedModels: ['gpt-6-sol'],
 };
+
+/** 21 models with usage, model-01 with the most tokens: one more than a page. */
+const MODELS = Array.from({ length: 21 }, (_, index) => ({ value: `model-${String(index + 1).padStart(2, '0')}`, tokens: 1000 - index }));
 
 let models: ReturnType<typeof memoryEnabledModels>;
 
@@ -64,6 +68,7 @@ function caller(session: { kind?: 'operator' | 'viewer'; scopes: readonly ScopeN
     listEnabledModels: createListEnabledModels({ models }),
     setModelEnabled: createSetModelEnabled({ models }),
     readTokenUsage: createReadTokenUsage({ usage: cannedUsageHistory(OPUS_HOUR), door: fakePluginFleet().door, connections: memoryConnectionStore() }),
+    readUsageValues: createReadUsageValues({ usage: cannedUsageHistory(OPUS_HOUR, MODELS), door: fakePluginFleet().door, connections: memoryConnectionStore() }),
   };
   return trierarchPluginRouter.createCaller(context);
 }
@@ -161,5 +166,26 @@ describe("the fleet's token usage over the API (the usage design)", () => {
     const usage = caller({ scopes: OPERATOR, isServed: false }).usage.tokens({ ...range, splitBy: null, measure: 'tokens', filters: {} });
 
     await expect(refusalOf(usage)).resolves.toBe('FORBIDDEN');
+  });
+});
+
+describe("the values of one breakdown of the fleet's usage over the API (the usage design)", () => {
+  const range = { from: '2026-10-28T09:00:00.000Z', to: '2026-10-29T09:00:00.000Z' };
+
+  it('answers a viewer a page of values, and the next page for its cursor', async () => {
+    const viewer = caller({ kind: 'viewer', scopes: VIEWER });
+
+    const first = await viewer.usage.values({ ...range, breakdown: 'model', cursor: null });
+    const next = await viewer.usage.values({ ...range, breakdown: 'model', cursor: first.nextCursor });
+
+    expect(first.values).toHaveLength(20);
+    expect(first.values[0]).toEqual({ value: 'model-01', name: 'model-01', tokens: 1000 });
+    expect(next).toEqual({ values: [{ value: 'model-21', name: 'model-21', tokens: 980 }], nextCursor: null });
+  });
+
+  it('refuses a cursor it did not give: BAD_REQUEST', async () => {
+    const values = caller({ scopes: OPERATOR }).usage.values({ ...range, breakdown: 'model', cursor: 'not-a-cursor' });
+
+    await expect(refusalOf(values)).resolves.toBe('BAD_REQUEST');
   });
 });
