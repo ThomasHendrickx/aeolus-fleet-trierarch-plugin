@@ -24,13 +24,13 @@ function at(time: string): Date {
   return new Date(`2026-10-28T${time}:00.000Z`);
 }
 
-function aReading(harness: string, readAt: Date, percents: { fiveHours: number; week: number }): SubscriptionReading {
+function aReading({ harness, readAt, fiveHours, week }: { harness: string; readAt: Date; fiveHours: number; week: number }): SubscriptionReading {
   return {
     harness,
     readAt,
     windows: [
-      { windowMinutes: 300, usedPercent: percents.fiveHours, resetsAt: RESETS },
-      { windowMinutes: 10_080, usedPercent: percents.week, resetsAt: WEEK_RESETS },
+      { windowMinutes: 300, usedPercent: fiveHours, resetsAt: RESETS },
+      { windowMinutes: 10_080, usedPercent: week, resetsAt: WEEK_RESETS },
     ],
   };
 }
@@ -57,7 +57,7 @@ async function record(subscriptions: SubscriptionReading[], { machineShipId = MA
 
 describe("the subscription windows of the fleet's machines, from Postgres", () => {
   it("answers each window's readings in the range oldest first, per machine and harness", async () => {
-    await record([aReading('claude-code', at('10:00'), { fiveHours: 20, week: 40 }), aReading('claude-code', at('09:30'), { fiveHours: 10, week: 39.5 })]);
+    await record([aReading({ harness: 'claude-code', readAt: at('10:00'), fiveHours: 20, week: 40 }), aReading({ harness: 'claude-code', readAt: at('09:30'), fiveHours: 10, week: 39.5 })]);
 
     await expect(history.readWindows(FLEET, aQuery())).resolves.toEqual([
       {
@@ -84,7 +84,7 @@ describe("the subscription windows of the fleet's machines, from Postgres", () =
   });
 
   it('reads the range from its start up to, not including, its end', async () => {
-    await record([aReading('claude-code', at('08:59'), { fiveHours: 1, week: 1 }), aReading('claude-code', NINE, { fiveHours: 2, week: 2 }), aReading('claude-code', NOON, { fiveHours: 3, week: 3 })]);
+    await record([aReading({ harness: 'claude-code', readAt: at('08:59'), fiveHours: 1, week: 1 }), aReading({ harness: 'claude-code', readAt: NINE, fiveHours: 2, week: 2 }), aReading({ harness: 'claude-code', readAt: NOON, fiveHours: 3, week: 3 })]);
 
     const charts = await history.readWindows(FLEET, aQuery());
 
@@ -92,8 +92,8 @@ describe("the subscription windows of the fleet's machines, from Postgres", () =
   });
 
   it('answers each machine and harness as a chart of its own, a page at a time after the last of the page before', async () => {
-    await record([aReading('claude-code', at('10:00'), { fiveHours: 1, week: 1 }), aReading('codex', at('10:00'), { fiveHours: 2, week: 2 })], { machineShipId: MAC });
-    await record([aReading('claude-code', at('10:00'), { fiveHours: 3, week: 3 })], { machineShipId: LINUX });
+    await record([aReading({ harness: 'claude-code', readAt: at('10:00'), fiveHours: 1, week: 1 }), aReading({ harness: 'codex', readAt: at('10:00'), fiveHours: 2, week: 2 })], { machineShipId: MAC });
+    await record([aReading({ harness: 'claude-code', readAt: at('10:00'), fiveHours: 3, week: 3 })], { machineShipId: LINUX });
 
     const first = await history.readWindows(FLEET, aQuery({ limit: 2 }));
     const next = await history.readWindows(FLEET, aQuery({ limit: 2, after: { machineShipId: MAC, harness: 'codex' } }));
@@ -106,8 +106,8 @@ describe("the subscription windows of the fleet's machines, from Postgres", () =
   });
 
   it('narrows to the filtered machines and harnesses', async () => {
-    await record([aReading('claude-code', at('10:00'), { fiveHours: 1, week: 1 }), aReading('codex', at('10:00'), { fiveHours: 2, week: 2 })], { machineShipId: MAC });
-    await record([aReading('claude-code', at('10:00'), { fiveHours: 3, week: 3 })], { machineShipId: LINUX });
+    await record([aReading({ harness: 'claude-code', readAt: at('10:00'), fiveHours: 1, week: 1 }), aReading({ harness: 'codex', readAt: at('10:00'), fiveHours: 2, week: 2 })], { machineShipId: MAC });
+    await record([aReading({ harness: 'claude-code', readAt: at('10:00'), fiveHours: 3, week: 3 })], { machineShipId: LINUX });
 
     const charts = await history.readWindows(FLEET, aQuery({ filters: { machineShipIds: [MAC], harnesses: ['codex'] } }));
 
@@ -115,7 +115,7 @@ describe("the subscription windows of the fleet's machines, from Postgres", () =
   });
 
   it("never reads another fleet's windows", async () => {
-    await record([aReading('claude-code', at('10:00'), { fiveHours: 1, week: 1 })], { fleetId: OTHER_FLEET });
+    await record([aReading({ harness: 'claude-code', readAt: at('10:00'), fiveHours: 1, week: 1 })], { fleetId: OTHER_FLEET });
 
     await expect(history.readWindows(FLEET, aQuery())).resolves.toEqual([]);
   });

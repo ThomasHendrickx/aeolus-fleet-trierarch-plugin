@@ -18,6 +18,7 @@ import type { UsageHistory } from '../../core/usage/ports.js';
 import type { TokenUsage, TokenUsageQuery, UsageBreakdown, UsageFilters, UsageSeriesKey } from '../../core/usage/token-usage.js';
 import type { UsageHour, UsageReading } from '../../core/usage/usage-reading.js';
 import type { UsageValue, UsageValuesQuery } from '../../core/usage/usage-values.js';
+import type { SubscriptionWindows, WindowsQuery } from '../../core/usage/subscription-windows.js';
 import type { Db, PrismaClient } from './client.js';
 import { Prisma } from './generated/client.js';
 
@@ -69,6 +70,7 @@ export function createPrismaUsageHistory(db: PrismaClient): UsageHistory {
       return toTokenUsage(rows, { splitBy: query.splitBy, unpricedModels: unpriced.map((row) => row.model) });
     },
     readValues: (fleetId, query) => db.$queryRaw<UsageValue[]>(valuesQuery(fleetId, query)),
+    readWindows: async (fleetId, query) => toWindows(await db.$queryRaw<WindowRow[]>(windowsQuery(fleetId, query))),
   };
 }
 
@@ -273,6 +275,58 @@ function valuesQuery(fleetId: FleetId, query: UsageValuesQuery): Prisma.Sql {
     WHERE ${afterCursor}
     ORDER BY tokens DESC, value ASC NULLS LAST
     LIMIT ${query.limit}`;
+}
+
+/** One reading of one window, as the windows query answers it. */
+interface WindowRow {
+  readonly machine_ship_id: SubscriptionWindows['machineShipId'];
+  readonly harness: string;
+  readonly window_minutes: number;
+  readonly read_at: Date;
+  readonly used_percent: number;
+  readonly resets_at: Date;
+}
+
+/** Every reading in the range of a page of machine and harness pairs, after the cursor, ordered by machine, harness, window and time; the pairs carry the filters. */
+function windowsQuery(fleetId: FleetId, query: WindowsQuery): Prisma.Sql {
+  const conditions = [Prisma.sql`fleet_id = ${fleetId}`, Prisma.sql`read_at >= ${query.from}`, Prisma.sql`read_at < ${query.to}`];
+  if (query.filters.machineShipIds !== undefined) {
+    conditions.push(Prisma.sql`machine_ship_id = ANY(${[...query.filters.machineShipIds]}::text[])`);
+  }
+  if (query.filters.harnesses !== undefined) {
+    conditions.push(Prisma.sql`harness = ANY(${[...query.filters.harnesses]}::text[])`);
+  }
+  const where = Prisma.join(conditions, ' AND ');
+  const after = query.after === null ? Prisma.sql`TRUE` : Prisma.sql`(machine_ship_id, harness) > (${query.after.machineShipId}, ${query.after.harness})`;
+  return Prisma.sql`
+    WITH pairs AS (
+      SELECT DISTINCT machine_ship_id, harness FROM subscription_readings
+      WHERE ${where} AND ${after}
+      ORDER BY machine_ship_id, harness LIMIT ${query.limit}
+    )
+    SELECT r.machine_ship_id, r.harness, r.window_minutes, r.read_at, r.used_percent::float8 AS used_percent, r.resets_at
+    FROM subscription_readings r JOIN pairs p ON p.machine_ship_id = r.machine_ship_id AND p.harness = r.harness
+    WHERE r.fleet_id = ${fleetId} AND r.read_at >= ${query.from} AND r.read_at < ${query.to}
+    ORDER BY r.machine_ship_id, r.harness, r.window_minutes, r.read_at`;
+}
+
+/** The readings as charts: one per machine and harness, one window each per window length. */
+function toWindows(rows: readonly WindowRow[]): SubscriptionWindows[] {
+  const charts: { machineShipId: SubscriptionWindows['machineShipId']; harness: string; windows: { windowMinutes: number; readings: SubscriptionWindows['windows'][number]['readings'][number][] }[] }[] = [];
+  for (const row of rows) {
+    let chart = charts.at(-1);
+    if (chart?.machineShipId !== row.machine_ship_id || chart.harness !== row.harness) {
+      chart = { machineShipId: row.machine_ship_id, harness: row.harness, windows: [] };
+      charts.push(chart);
+    }
+    let window = chart.windows.at(-1);
+    if (window?.windowMinutes !== row.window_minutes) {
+      window = { windowMinutes: row.window_minutes, readings: [] };
+      chart.windows.push(window);
+    }
+    window.readings.push({ readAt: row.read_at, usedPercent: row.used_percent, resetsAt: row.resets_at });
+  }
+  return charts;
 }
 
 function unpricedModelsQuery(source: Source): Prisma.Sql {

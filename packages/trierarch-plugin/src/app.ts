@@ -40,6 +40,7 @@ import { createListMachines } from './core/machines/list-machines.js';
 import { createListEnabledModels } from './core/models/list-enabled-models.js';
 import { createSetModelEnabled } from './core/models/set-model-enabled.js';
 import { createReadTokenUsage } from './core/usage/read-token-usage.js';
+import { createReadSubscriptionWindows } from './core/usage/read-subscription-windows.js';
 import { createReadUsageValues } from './core/usage/read-usage-values.js';
 import { DEFAULT_SILENT_AFTER_MS } from './core/machines/silent.js';
 import { createAuthenticateOperator } from './core/operator/authenticate-operator.js';
@@ -231,6 +232,7 @@ export function createTrierarchPluginApp(options: {
   const usage = createPrismaUsageHistory(prisma);
   const readTokenUsage = createReadTokenUsage({ usage, door, connections });
   const readUsageValues = createReadUsageValues({ usage, door, connections });
+  const readSubscriptionWindows = createReadSubscriptionWindows({ usage, door, connections });
   const assignOnce = async (): Promise<{ fleetId: FleetId; outcome: AssignOutcome }[]> => {
     const done: { fleetId: FleetId; outcome: AssignOutcome }[] = [];
     for (const crew of await connections.connected()) {
@@ -316,6 +318,7 @@ export function createTrierarchPluginApp(options: {
         setModelEnabled,
         readTokenUsage,
         readUsageValues,
+        readSubscriptionWindows,
       }),
     },
   };
