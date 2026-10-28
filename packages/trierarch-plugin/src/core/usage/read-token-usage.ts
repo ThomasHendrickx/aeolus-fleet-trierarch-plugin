@@ -14,15 +14,11 @@ import { ok, type Result } from '../shared/result.js';
 import type { UsageHistory } from './ports.js';
 import type { TokenUsage, UsageAmounts, UsageBreakdown, UsageFilters, UsageGrain, UsageMeasure, UsageSeriesKey } from './token-usage.js';
 import type { TokenCounts } from './usage-reading.js';
+import { usageGrain } from './usage-range.js';
 
 /** The four kinds of tokens, in the order the page shows them. */
 export const TOKEN_KINDS = ['input', 'output', 'cacheRead', 'cacheWrite'] as const satisfies readonly (keyof TokenCounts)[];
 export type TokenKind = (typeof TOKEN_KINDS)[number];
-
-/** The longest range read in hours; anything longer is read in UTC days. */
-const HOURS_UP_TO_MS = 7 * 24 * 60 * 60 * 1000;
-const HOUR_MS = 60 * 60 * 1000;
-const DAY_MS = 24 * HOUR_MS;
 
 export interface TokenUsageRequest {
   readonly fleetId: FleetId;
@@ -59,15 +55,11 @@ const NO_TOKENS: TokenCounts = { input: 0, output: 0, cacheRead: 0, cacheWrite: 
 
 export function createReadTokenUsage(deps: { usage: UsageHistory; door: FleetDoor; connections: ConnectionStore }): ReadTokenUsage {
   return async (request) => {
-    const length = request.to.getTime() - request.from.getTime();
-    if (length <= 0) {
-      return refuse('INVALID_RANGE', 'A range ends after it starts');
+    const grained = usageGrain(request);
+    if (!grained.isOk) {
+      return grained;
     }
-    const grain: UsageGrain = length <= HOURS_UP_TO_MS ? 'hour' : 'day';
-    const unit = grain === 'hour' ? HOUR_MS : DAY_MS;
-    if (request.from.getTime() % unit !== 0 || request.to.getTime() % unit !== 0) {
-      return refuse('INVALID_RANGE', grain === 'hour' ? 'A range of hours starts and ends on a whole hour' : 'A range of days starts and ends at a UTC midnight');
-    }
+    const grain = grained.value;
 
     const isByKind = request.splitBy === 'kind';
     const usage = await deps.usage.readTokens(request.fleetId, {
