@@ -179,6 +179,21 @@ describe("the fleet's usage history in Postgres", () => {
     ]);
   });
 
+  it('stores nothing of a reading whose last step fails, leaving the stored hours, days and subscription readings as they were', async () => {
+    const history = createPrismaUsageHistory(db);
+    await history.record(FLEET, aReading([anHour({ tokens: tokens(100), estimatedCostUsd: 1 })]));
+    const hoursBefore = await storedHours();
+    const daysBefore = await storedDays();
+    // A used percent numeric(5,2) cannot hold fails the subscription insert, the step after hours and days.
+    const failingSubscriptions: UsageReading['subscriptions'] = [{ harness: 'claude-code', readAt: LATER, windows: [{ windowMinutes: 300, usedPercent: 1000, resetsAt: new Date('2026-10-28T15:00:00.000Z') }] }];
+
+    await expect(history.record(FLEET, aReading([anHour({ tokens: tokens(150), estimatedCostUsd: 1.5 }), anHour({ hour: TEN, tokens: tokens(7), estimatedCostUsd: 0.07 })], { readAt: LATER, subscriptions: failingSubscriptions }))).rejects.toThrow();
+
+    await expect(storedHours()).resolves.toEqual(hoursBefore);
+    await expect(storedDays()).resolves.toEqual(daysBefore);
+    await expect(db.$queryRaw`SELECT fleet_id FROM subscription_readings`).resolves.toEqual([]);
+  });
+
   it("keeps each fleet's usage apart", async () => {
     const history = createPrismaUsageHistory(db);
     await history.record(FLEET, aReading([anHour({ tokens: tokens(100), estimatedCostUsd: 1 })]));
