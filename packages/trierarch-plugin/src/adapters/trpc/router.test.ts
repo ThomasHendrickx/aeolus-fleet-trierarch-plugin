@@ -2,17 +2,21 @@ import type { FleetId, ScopeName } from '@aeolus-fleet/common';
 import { TRPCError } from '@trpc/server';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { FLEET_ID } from '../../../test/support/connection-fakes.js';
+import { FLEET_ID, fakePluginFleet, memoryConnectionStore } from '../../../test/support/connection-fakes.js';
 import { memoryEnabledModels } from '../../../test/support/memory-models.js';
+import { cannedUsageHistory } from '../../../test/support/memory-usage.js';
 import { createListEnabledModels } from '../../core/models/list-enabled-models.js';
 import { createSetModelEnabled } from '../../core/models/set-model-enabled.js';
+import { createReadTokenUsage } from '../../core/usage/read-token-usage.js';
+import type { TokenUsage } from '../../core/usage/token-usage.js';
 import { ok } from '../../core/shared/result.js';
 import { trierarchPluginRouter, type Context } from './router.js';
 
 // The models procedures (model governance, M6): reading the fleet's enabled
 // models is every signed-in session's, viewer included; enabling and disabling
 // take fleet:manage. Each needs the trierarch plugin to serve the fleet and be
-// connected to it.
+// connected to it. Reading usage (the usage design) is every signed-in
+// session's too.
 
 const OPUS = 'claude-opus-5-5';
 const SONNET = 'claude-sonnet-5-5';
@@ -21,6 +25,15 @@ const VIEWER: readonly ScopeName[] = ['fleet:read'];
 
 /** Procedures these tests never reach. */
 const notReached = () => Promise.reject(new Error('not reached by the models procedures'));
+
+const NINE = new Date('2026-10-28T09:00:00.000Z');
+
+/** One hour of Opus usage, as the history answers it. */
+const OPUS_HOUR: TokenUsage = {
+  series: [{ kind: 'value', value: OPUS }],
+  buckets: [{ at: NINE, amounts: [{ series: 0, tokens: { input: 10, output: 2, cacheRead: 100, cacheWrite: 5 }, estimatedCostUsd: 1.5, unpricedTokens: 0 }] }],
+  unpricedModels: ['gpt-6-sol'],
+};
 
 let models: ReturnType<typeof memoryEnabledModels>;
 
@@ -50,6 +63,7 @@ function caller(session: { kind?: 'operator' | 'viewer'; scopes: readonly ScopeN
     checkCrewSettings: notReached,
     listEnabledModels: createListEnabledModels({ models }),
     setModelEnabled: createSetModelEnabled({ models }),
+    readTokenUsage: createReadTokenUsage({ usage: cannedUsageHistory(OPUS_HOUR), door: fakePluginFleet().door, connections: memoryConnectionStore() }),
   };
   return trierarchPluginRouter.createCaller(context);
 }
@@ -112,5 +126,40 @@ describe("the fleet's enabled models over the API (model governance, M6)", () =>
     await expect(refusalOf(notConnected.models.enable({ model: OPUS }))).resolves.toBe('PRECONDITION_FAILED');
     await expect(refusalOf(notConnected.models.disable({ model: OPUS }))).resolves.toBe('PRECONDITION_FAILED');
     expect(models.held.get(FLEET_ID)).toBeUndefined();
+  });
+});
+
+describe("the fleet's token usage over the API (the usage design)", () => {
+  const range = { from: '2026-10-28T09:00:00.000Z', to: '2026-10-29T09:00:00.000Z' };
+
+  it('answers a viewer the usage in the range, times in ISO 8601 UTC', async () => {
+    const usage = caller({ kind: 'viewer', scopes: VIEWER }).usage.tokens({ ...range, splitBy: 'model', measure: 'tokens', filters: {} });
+
+    await expect(usage).resolves.toEqual({
+      grain: 'hour',
+      series: [{ key: { kind: 'value', value: OPUS }, name: OPUS, amounts: { tokens: { input: 10, output: 2, cacheRead: 100, cacheWrite: 5 }, estimatedCostUsd: 1.5, unpricedTokens: 0 } }],
+      buckets: [{ at: '2026-10-28T09:00:00.000Z', amounts: [{ series: 0, tokens: { input: 10, output: 2, cacheRead: 100, cacheWrite: 5 }, estimatedCostUsd: 1.5, unpricedTokens: 0 }] }],
+      totals: { tokens: { input: 10, output: 2, cacheRead: 100, cacheWrite: 5 }, estimatedCostUsd: 1.5, unpricedTokens: 0 },
+      unpricedModels: ['gpt-6-sol'],
+    });
+  });
+
+  it('refuses a range that does not start on a whole hour: BAD_REQUEST', async () => {
+    const usage = caller({ scopes: OPERATOR }).usage.tokens({ from: '2026-10-28T09:30:00.000Z', to: range.to, splitBy: null, measure: 'tokens', filters: {} });
+
+    await expect(refusalOf(usage)).resolves.toBe('BAD_REQUEST');
+  });
+
+  it('refuses a split it does not know: BAD_REQUEST', async () => {
+    // @ts-expect-error: a split the input does not take, as a caller outside TypeScript may send it
+    const usage = caller({ scopes: OPERATOR }).usage.tokens({ ...range, splitBy: 'colour', measure: 'tokens', filters: {} });
+
+    await expect(refusalOf(usage)).resolves.toBe('BAD_REQUEST');
+  });
+
+  it('refuses reading usage while the trierarch plugin is off for the fleet: FORBIDDEN', async () => {
+    const usage = caller({ scopes: OPERATOR, isServed: false }).usage.tokens({ ...range, splitBy: null, measure: 'tokens', filters: {} });
+
+    await expect(refusalOf(usage)).resolves.toBe('FORBIDDEN');
   });
 });
