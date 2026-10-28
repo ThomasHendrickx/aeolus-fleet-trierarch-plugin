@@ -40,6 +40,7 @@ import { createListMachines } from './core/machines/list-machines.js';
 import { createListEnabledModels } from './core/models/list-enabled-models.js';
 import { createSetModelEnabled } from './core/models/set-model-enabled.js';
 import { createReadTokenUsage } from './core/usage/read-token-usage.js';
+import { createReadUsageValues } from './core/usage/read-usage-values.js';
 import { DEFAULT_SILENT_AFTER_MS } from './core/machines/silent.js';
 import { createAuthenticateOperator } from './core/operator/authenticate-operator.js';
 import type { Clock } from './core/shared/clock.js';
@@ -227,7 +228,9 @@ export function createTrierarchPluginApp(options: {
   const checkCrewSettings = createCheckCrewSettings({ door, connections, models, clock, silentAfterMs });
   const listEnabledModels = createListEnabledModels({ models });
   const setModelEnabled = createSetModelEnabled({ models });
-  const readTokenUsage = createReadTokenUsage({ usage: createPrismaUsageHistory(prisma), door, connections });
+  const usage = createPrismaUsageHistory(prisma);
+  const readTokenUsage = createReadTokenUsage({ usage, door, connections });
+  const readUsageValues = createReadUsageValues({ usage, door, connections });
   const assignOnce = async (): Promise<{ fleetId: FleetId; outcome: AssignOutcome }[]> => {
     const done: { fleetId: FleetId; outcome: AssignOutcome }[] = [];
     for (const crew of await connections.connected()) {
@@ -312,6 +315,7 @@ export function createTrierarchPluginApp(options: {
         listEnabledModels,
         setModelEnabled,
         readTokenUsage,
+        readUsageValues,
       }),
     },
   };

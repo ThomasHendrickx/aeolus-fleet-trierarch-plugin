@@ -6,14 +6,15 @@
  * are named from one read of the fleet's ships, retired ones included, and the
  * fleet is read only when the split needs those names.
  */
-import type { FleetId, ShipId } from '@aeolus-fleet/common';
+import type { FleetId } from '@aeolus-fleet/common';
 
 import type { ConnectionStore, FleetDoor } from '../connection/ports.js';
-import { refuse, type DomainError } from '../shared/errors.js';
+import type { DomainError } from '../shared/errors.js';
 import { ok, type Result } from '../shared/result.js';
 import type { UsageHistory } from './ports.js';
 import type { TokenUsage, UsageAmounts, UsageBreakdown, UsageFilters, UsageGrain, UsageMeasure, UsageSeriesKey } from './token-usage.js';
 import type { TokenCounts } from './usage-reading.js';
+import { nameOfValue, readShipNames } from './ship-names.js';
 import { usageGrain } from './usage-range.js';
 
 /** The four kinds of tokens, in the order the page shows them. */
@@ -71,7 +72,7 @@ export function createReadTokenUsage(deps: { usage: UsageHistory; door: FleetDoo
       filters: request.filters,
     });
 
-    const names = await namesFor(deps, request);
+    const names = await readShipNames(deps, { fleetId: request.fleetId, breakdown: request.splitBy });
     if (!names.isOk) {
       return names;
     }
@@ -86,31 +87,9 @@ export function createReadTokenUsage(deps: { usage: UsageHistory; door: FleetDoo
   };
 }
 
-/** The names of the fleet's ships by id, read only when the split is by machine or ship; otherwise none needed. */
-async function namesFor(
-  deps: { door: FleetDoor; connections: ConnectionStore },
-  request: TokenUsageRequest,
-): Promise<Result<ReadonlyMap<string, string> | undefined, DomainError<'NOT_CONNECTED' | 'FLEET_UNAVAILABLE'>>> {
-  if (request.splitBy !== 'machine' && request.splitBy !== 'ship') {
-    return ok(undefined);
-  }
-  const crew = await deps.connections.find(request.fleetId);
-  if (!crew) {
-    return refuse('NOT_CONNECTED', 'The trierarch plugin is not connected to this fleet: connect it in the console');
-  }
-  const listed = await deps.door.listShips(crew.crewToken);
-  if (!listed.isOk) {
-    return refuse('FLEET_UNAVAILABLE', `The fleet did not answer its ships: ${listed.error.message}`);
-  }
-  return ok(new Map(listed.value.map((ship): [ShipId, string] => [ship.shipId, ship.name])));
-}
-
-/** A machine or ship by its name in the fleet; any other value is its own name; a login not reported, other and all have none. */
+/** A series' name: its value's; other, all and a token kind have none. */
 function nameOf(key: TokenUsageSeriesKey, shipNames: ReadonlyMap<string, string> | undefined): string | null {
-  if (key.kind !== 'value' || key.value === null) {
-    return null;
-  }
-  return shipNames ? (shipNames.get(key.value) ?? null) : key.value;
+  return key.kind === 'value' ? nameOfValue(key.value, shipNames) : null;
 }
 
 /** The one unsplit series as four, one per token kind, each holding only its kind's tokens. */
