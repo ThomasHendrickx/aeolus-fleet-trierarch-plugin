@@ -230,8 +230,8 @@ const usageFiltersSchema = z.strictObject({
 
 const tokenCountsSchema = z.object({ input: z.number(), output: z.number(), cacheRead: z.number(), cacheWrite: z.number() });
 
-/** A series' amounts; split by token kind, cost and tokens not priced are null. */
-const seriesAmountsSchema = z.object({ tokens: tokenCountsSchema, estimatedCostUsd: z.number().nullable(), unpricedTokens: z.number().nullable() });
+/** A series' tokens per kind, with its estimated cost and its tokens not priced added up over the kinds it holds. */
+const seriesAmountsSchema = z.object({ tokens: tokenCountsSchema, estimatedCostUsd: z.number(), unpricedTokens: z.number() });
 
 /** Token usage as the Usage page reads it (ISO 8601 in UTC): its series named and largest first, each bucket holding usage, and the range's totals. */
 export const tokenUsageOutputSchema = z.object({
@@ -249,7 +249,7 @@ export const tokenUsageOutputSchema = z.object({
     }),
   ),
   buckets: z.array(z.object({ at: z.iso.datetime(), amounts: z.array(seriesAmountsSchema.extend({ series: z.int().nonnegative() })) })),
-  totals: z.object({ tokens: tokenCountsSchema, estimatedCostUsd: z.number(), unpricedTokens: z.number() }),
+  totals: seriesAmountsSchema,
   unpricedModels: z.array(z.string()),
 });
 
