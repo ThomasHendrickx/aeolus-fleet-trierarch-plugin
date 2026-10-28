@@ -13,7 +13,6 @@ import type { UsageValue } from './usage-values.js';
 const AT = new Date('2026-10-28T08:00:00.000Z');
 const NINE = new Date('2026-10-28T09:00:00.000Z');
 const MAC: ShipId = 'shp_01m3tbfspe96yf1rnr4ank9h3c';
-const NO_USAGE = { series: [], buckets: [], unpricedModels: [] };
 
 let fleet: ReturnType<typeof fakePluginFleet>;
 let connections: ReturnType<typeof memoryConnectionStore>;
@@ -36,7 +35,7 @@ function models(count: number): UsageValue[] {
 }
 
 function read(values: readonly UsageValue[], request: UsageValuesRequest = aRequest()) {
-  return createReadUsageValues({ usage: cannedUsageHistory(NO_USAGE, values), door: fleet.door, connections })(request);
+  return createReadUsageValues({ usage: cannedUsageHistory({ values }), door: fleet.door, connections })(request);
 }
 
 describe("reading the values of one breakdown of the fleet's usage", () => {
