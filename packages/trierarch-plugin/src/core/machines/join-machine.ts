@@ -5,15 +5,13 @@ import { refuse, type DomainError } from '../shared/errors.js';
 import { ok, type Result } from '../shared/result.js';
 import { JOIN_SCOPE } from '../scopes/plugin-scopes.js';
 import type { IdempotencyKeys } from './ports.js';
+import { setupLineOf } from './setup-line.js';
 
 /** The type of every machine's ship: its trierarch's. */
 export const TRIERARCH_TYPE = 'trierarch';
 
 /** What a trierarch may do beyond sending and receiving: crew the ships assigned to it (decision 0030). */
 const TRIERARCH_SCOPES = ['crew:run'];
-
-/** The package a machine sets up its trierarch with. */
-const TRIERARCH_PACKAGE = '@aeolus-fleet/trierarch';
 
 export type JoinRefusal = DomainError<'NEEDS_SCOPE' | 'NOT_CONNECTED' | 'NAME_TAKEN' | 'FLEET_UNAVAILABLE'>;
 
@@ -68,8 +66,7 @@ export function createJoinMachine(deps: { door: FleetDoor; connections: Connecti
         : refuse('FLEET_UNAVAILABLE', `The fleet did not commission the machine's ship: ${commissioned.error.message}`);
     }
     const { shipId, prompt, crewLines, secret } = commissioned.value;
-    // The trierarch takes the trusted repositories only from this ship (aeolus-fleet#384): a ship's type proves nothing.
-    const setupLine = `npx ${TRIERARCH_PACKAGE} init --fleet-url ${deps.fleetUrl} --ship-id ${shipId} --plugin-ship-id ${crew.shipId} --secret ${secret}`;
+    const setupLine = setupLineOf({ fleetUrl: deps.fleetUrl, shipId, pluginShipId: crew.shipId, secret });
     return ok({ shipId, name, prompt, crewLines, secret, setupLine });
   };
 }

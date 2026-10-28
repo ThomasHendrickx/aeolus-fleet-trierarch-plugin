@@ -13,13 +13,18 @@ import { FLEET_URL } from './connection-fakes.js';
  * every call as the fleet would refuse an operator without the right.
  */
 export function fakeOperatorFleet() {
-  const state = {
+  const state: {
+    crewed: Set<ShipId>;
+    calls: { call: 'release' | 'getStartingPrompt'; shipId: ShipId; session: OperatorSession }[];
+    secrets: string[];
+    refusal: FleetRefusal | undefined;
+  } = {
     crewed: new Set<ShipId>(),
     /** The calls the fleet took, in order, each with the session it came with. */
     calls: new Array<{ call: 'release' | 'getStartingPrompt'; shipId: ShipId; session: OperatorSession }>(),
     /** Each secret issued, in order. */
     secrets: new Array<string>(),
-    refusal: undefined as FleetRefusal | undefined,
+    refusal: undefined,
   };
   const fleet: OperatorFleet = {
     release: (session, { shipId }) => {

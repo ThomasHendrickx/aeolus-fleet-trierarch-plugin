@@ -102,12 +102,13 @@ export function fakePluginFleet() {
         return Promise.resolve(err({ code: 'FORBIDDEN', message: 'Needs fleet:read' }));
       }
       if (shipId === SHIP_ID) {
-        return Promise.resolve(ok({ status: 'crewed', scopes: [...state.scopes], commissionedAt: EPOCH, report: null, crewSettings: null }));
+        return Promise.resolve(ok({ type: 'trierarch-plugin', status: 'crewed', scopes: [...state.scopes], commissionedAt: EPOCH, report: null, crewSettings: null }));
       }
       const ship = state.ships.find((each) => each.shipId === shipId);
       return Promise.resolve(
         ship
           ? ok({
+              type: ship.type,
               status: ship.status,
               scopes: ['messages:send', 'messages:receive'],
               commissionedAt: state.commissionedAt.get(shipId) ?? EPOCH,

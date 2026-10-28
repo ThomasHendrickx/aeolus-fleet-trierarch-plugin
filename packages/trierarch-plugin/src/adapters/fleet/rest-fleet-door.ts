@@ -121,8 +121,9 @@ export function createRestFleetDoor(fleetUrl: string, options: { busyWaitsMs?: r
       if (!read.isOk) {
         return read;
       }
-      const { status, scopes, commissionedAt, report, crewRequest } = read.value;
+      const { type, status, scopes, commissionedAt, report, crewRequest } = read.value;
       return ok({
+        type,
         status,
         scopes,
         commissionedAt: new Date(commissionedAt),

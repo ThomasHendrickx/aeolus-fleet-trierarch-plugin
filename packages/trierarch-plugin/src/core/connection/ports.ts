@@ -48,6 +48,7 @@ export interface ListedShip {
 
 /** A ship as `fleet.ship` shows it: what the trierarch plugin reads of it. */
 export interface FleetShip {
+  type: string;
   status: 'awaitingCrew' | 'crewed' | 'retired';
   scopes: string[];
   commissionedAt: Date;
