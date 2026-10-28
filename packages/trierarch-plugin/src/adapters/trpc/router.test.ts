@@ -1,13 +1,14 @@
-import type { FleetId, ScopeName } from '@aeolus-fleet/common';
+import type { FleetId, ScopeName, ShipId } from '@aeolus-fleet/common';
 import { TRPCError } from '@trpc/server';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { FLEET_ID, fakePluginFleet, memoryConnectionStore } from '../../../test/support/connection-fakes.js';
+import { FLEET_ID, SHIP_ID, fakePluginFleet, memoryConnectionStore } from '../../../test/support/connection-fakes.js';
 import { memoryEnabledModels } from '../../../test/support/memory-models.js';
 import { cannedUsageHistory } from '../../../test/support/memory-usage.js';
 import { createListEnabledModels } from '../../core/models/list-enabled-models.js';
 import { createSetModelEnabled } from '../../core/models/set-model-enabled.js';
 import { createReadTokenUsage } from '../../core/usage/read-token-usage.js';
+import { createReadSubscriptionWindows } from '../../core/usage/read-subscription-windows.js';
 import { createReadUsageValues } from '../../core/usage/read-usage-values.js';
 import type { TokenUsage } from '../../core/usage/token-usage.js';
 import { ok } from '../../core/shared/result.js';
@@ -39,10 +40,26 @@ const OPUS_HOUR: TokenUsage = {
 /** 21 models with usage, model-01 with the most tokens: one more than a page. */
 const MODELS = Array.from({ length: 21 }, (_, index) => ({ value: `model-${String(index + 1).padStart(2, '0')}`, tokens: 1000 - index }));
 
-let models: ReturnType<typeof memoryEnabledModels>;
+const MAC: ShipId = 'shp_01m3tbfspe96yf1rnr4ank9h3c';
 
-beforeEach(() => {
+/** The five hour window of Claude Code on one machine, read once. */
+const MAC_WINDOWS = {
+  machineShipId: MAC,
+  harness: 'claude-code',
+  windows: [{ windowMinutes: 300, readings: [{ readAt: NINE, usedPercent: 42, resetsAt: new Date('2026-10-28T12:00:00.000Z') }] }],
+};
+
+let models: ReturnType<typeof memoryEnabledModels>;
+let windowsFleet: ReturnType<typeof fakePluginFleet>;
+let windowsConnections: ReturnType<typeof memoryConnectionStore>;
+
+beforeEach(async () => {
   models = memoryEnabledModels();
+  windowsFleet = fakePluginFleet();
+  windowsConnections = memoryConnectionStore();
+  windowsFleet.state.liveTokens.add('aeolus_ct_v1_plugin');
+  await windowsConnections.save({ fleetId: FLEET_ID, shipId: SHIP_ID, name: 'trierarch-plugin', crewToken: 'aeolus_ct_v1_plugin', crewedAt: NINE });
+  windowsFleet.state.ships.push({ shipId: MAC, name: 'trierarch-mac', type: 'trierarch', status: 'crewed', lastSeenAt: NINE, model: null, crewRequest: null, labels: [] });
 });
 
 /** The router as the console's server calls it, for a session of the given scopes, on a fleet served and connected unless it says otherwise. */
@@ -67,8 +84,9 @@ function caller(session: { kind?: 'operator' | 'viewer'; scopes: readonly ScopeN
     checkCrewSettings: notReached,
     listEnabledModels: createListEnabledModels({ models }),
     setModelEnabled: createSetModelEnabled({ models }),
-    readTokenUsage: createReadTokenUsage({ usage: cannedUsageHistory(OPUS_HOUR), door: fakePluginFleet().door, connections: memoryConnectionStore() }),
-    readUsageValues: createReadUsageValues({ usage: cannedUsageHistory(OPUS_HOUR, MODELS), door: fakePluginFleet().door, connections: memoryConnectionStore() }),
+    readTokenUsage: createReadTokenUsage({ usage: cannedUsageHistory({ usage: OPUS_HOUR }), door: fakePluginFleet().door, connections: memoryConnectionStore() }),
+    readUsageValues: createReadUsageValues({ usage: cannedUsageHistory({ values: MODELS }), door: fakePluginFleet().door, connections: memoryConnectionStore() }),
+    readSubscriptionWindows: createReadSubscriptionWindows({ usage: cannedUsageHistory({ windows: [MAC_WINDOWS] }), door: windowsFleet.door, connections: windowsConnections }),
   };
   return trierarchPluginRouter.createCaller(context);
 }
@@ -187,5 +205,31 @@ describe("the values of one breakdown of the fleet's usage over the API (the usa
     const values = caller({ scopes: OPERATOR }).usage.values({ ...range, breakdown: 'model', cursor: 'not-a-cursor' });
 
     await expect(refusalOf(values)).resolves.toBe('BAD_REQUEST');
+  });
+});
+
+describe("the subscription windows of the fleet's machines over the API (the usage design)", () => {
+  const range = { from: '2026-10-28T09:00:00.000Z', to: '2026-10-29T09:00:00.000Z' };
+
+  it('answers a viewer each machine and harness with its windows, the machine named, times in ISO 8601 UTC', async () => {
+    const windows = caller({ kind: 'viewer', scopes: VIEWER }).usage.windows({ ...range, filters: {}, cursor: null });
+
+    await expect(windows).resolves.toEqual({
+      charts: [
+        {
+          machineShipId: MAC,
+          machineName: 'trierarch-mac',
+          harness: 'claude-code',
+          windows: [{ windowMinutes: 300, readings: [{ readAt: '2026-10-28T09:00:00.000Z', usedPercent: 42, resetsAt: '2026-10-28T12:00:00.000Z' }] }],
+        },
+      ],
+      nextCursor: null,
+    });
+  });
+
+  it('refuses a cursor it did not give: BAD_REQUEST', async () => {
+    const windows = caller({ scopes: OPERATOR }).usage.windows({ ...range, filters: {}, cursor: 'not-a-cursor' });
+
+    await expect(refusalOf(windows)).resolves.toBe('BAD_REQUEST');
   });
 });

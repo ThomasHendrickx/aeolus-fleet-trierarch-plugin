@@ -55,7 +55,7 @@ function twoSeries(series: TokenUsage['series']): TokenUsage {
 }
 
 function read(history: TokenUsage, request: TokenUsageRequest = aRequest()) {
-  return createReadTokenUsage({ usage: cannedUsageHistory(history), door: fleet.door, connections })(request);
+  return createReadTokenUsage({ usage: cannedUsageHistory({ usage: history }), door: fleet.door, connections })(request);
 }
 
 describe("reading the fleet's token usage", () => {

@@ -29,7 +29,9 @@ import type { ListEnabledModels } from '../../core/models/list-enabled-models.js
 import type { SetModelEnabled } from '../../core/models/set-model-enabled.js';
 import type { AuthenticateOperator } from '../../core/operator/authenticate-operator.js';
 import { TOKEN_KINDS, type ReadTokenUsage, type SeriesAmounts } from '../../core/usage/read-token-usage.js';
+import type { ReadSubscriptionWindows } from '../../core/usage/read-subscription-windows.js';
 import type { ReadUsageValues } from '../../core/usage/read-usage-values.js';
+import type { WindowsChartKey } from '../../core/usage/subscription-windows.js';
 import { USAGE_BREAKDOWNS, USAGE_MEASURES } from '../../core/usage/token-usage.js';
 import type { UsageValue } from '../../core/usage/usage-values.js';
 
@@ -60,6 +62,7 @@ export interface Context {
   setModelEnabled: SetModelEnabled;
   readTokenUsage: ReadTokenUsage;
   readUsageValues: ReadUsageValues;
+  readSubscriptionWindows: ReadSubscriptionWindows;
 }
 
 /** What a caller reads of a failure: nothing of it, so no crew token, secret or query ever leaves; the log holds it whole. */
@@ -253,20 +256,32 @@ export const tokenUsageOutputSchema = z.object({
 /** Where a page of usage values left off, as the caller passes it back: the last value and its tokens. */
 const usageValueCursorSchema = z.strictObject({ tokens: z.number().nonnegative(), value: z.string().nullable() });
 
-function encodeCursor(after: UsageValue): string {
+/** Where a page of subscription windows left off: its last machine and harness. */
+const windowsCursorSchema = z.strictObject({ machineShipId: idSchema('ship'), harness: z.string().min(1) });
+
+/** A page's cursor as the caller passes it back: the place it left off, opaque. */
+function encodeCursor(after: UsageValue | WindowsChartKey): string {
   return Buffer.from(JSON.stringify(after)).toString('base64url');
 }
 
-/** The cursor a page answered, or undefined for any other text. */
-function decodeCursor(cursor: string): UsageValue | undefined {
+/** The place a page left off, from its cursor, or undefined for any text no page answered. */
+function decodeCursor<T>(cursor: string, schema: z.ZodType<T>): T | undefined {
   try {
-    const parsed = usageValueCursorSchema.safeParse(JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')));
+    const parsed = schema.safeParse(JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')));
     return parsed.success ? parsed.data : undefined;
   } catch {
     // Not JSON: not a cursor this API gave.
     return undefined;
   }
 }
+
+/** One machine and harness with its windows' readings (ISO 8601 in UTC), the machine named; null for one the fleet does not know. */
+const windowsChartOutputSchema = z.object({
+  machineShipId: idSchema('ship'),
+  machineName: z.string().nullable(),
+  harness: z.string(),
+  windows: z.array(z.object({ windowMinutes: z.int().positive(), readings: z.array(z.object({ readAt: z.iso.datetime(), usedPercent: z.number(), resetsAt: z.iso.datetime() })) })),
+});
 
 /** A bucket's amounts as the API answers them. */
 function amountsOutput(amount: SeriesAmounts & { series: number }) {
@@ -414,7 +429,7 @@ export const trierarchPluginRouter = t.router({
       .input(z.strictObject({ from: z.iso.datetime(), to: z.iso.datetime(), breakdown: z.enum(USAGE_BREAKDOWNS), cursor: z.string().max(USAGE_CURSOR_MAX_LENGTH).nullable() }))
       .output(z.object({ values: z.array(z.object({ value: z.string().nullable(), name: z.string().nullable(), tokens: z.number() })), nextCursor: z.string().nullable() }))
       .query(async ({ ctx, input }) => {
-        const after = input.cursor === null ? null : decodeCursor(input.cursor);
+        const after = input.cursor === null ? null : decodeCursor(input.cursor, usageValueCursorSchema);
         if (after === undefined) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'The cursor is not one a page of values answered' });
         }
@@ -423,6 +438,47 @@ export const trierarchPluginRouter = t.router({
           throw new TRPCError({ code: USAGE_CODES[page.error.kind], message: page.error.message });
         }
         return { values: page.value.values.map((value) => ({ ...value })), nextCursor: page.value.next && encodeCursor(page.value.next) };
+      }),
+    /**
+     * How full each harness's subscription windows were on each machine in a
+     * range: per machine and harness, 20 a page, each window's readings oldest
+     * first, the next page after the cursor a page answered. Every signed-in
+     * session's, viewer included.
+     */
+    windows: connectedProcedure
+      .input(
+        z.strictObject({
+          from: z.iso.datetime(),
+          to: z.iso.datetime(),
+          filters: z.strictObject({
+            machineShipIds: z.array(idSchema('ship')).max(USAGE_FILTER_MAX_VALUES).optional(),
+            harnesses: z.array(harnessSchema).max(USAGE_FILTER_MAX_VALUES).optional(),
+          }),
+          cursor: z.string().max(USAGE_CURSOR_MAX_LENGTH).nullable(),
+        }),
+      )
+      .output(z.object({ charts: z.array(windowsChartOutputSchema), nextCursor: z.string().nullable() }))
+      .query(async ({ ctx, input }) => {
+        const after = input.cursor === null ? null : decodeCursor(input.cursor, windowsCursorSchema);
+        if (after === undefined) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'The cursor is not one a page of windows answered' });
+        }
+        const page = await ctx.readSubscriptionWindows({ fleetId: ctx.fleetId, from: new Date(input.from), to: new Date(input.to), filters: input.filters, after });
+        if (!page.isOk) {
+          throw new TRPCError({ code: USAGE_CODES[page.error.kind], message: page.error.message });
+        }
+        return {
+          charts: page.value.charts.map((chart) => ({
+            machineShipId: chart.machineShipId,
+            machineName: chart.machineName,
+            harness: chart.harness,
+            windows: chart.windows.map((window) => ({
+              windowMinutes: window.windowMinutes,
+              readings: window.readings.map((reading) => ({ readAt: reading.readAt.toISOString(), usedPercent: reading.usedPercent, resetsAt: reading.resetsAt.toISOString() })),
+            })),
+          })),
+          nextCursor: page.value.next && encodeCursor(page.value.next),
+        };
       }),
   }),
   installation: t.router({
