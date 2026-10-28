@@ -55,7 +55,7 @@ afterEach(async () => {
   await db.$disconnect();
 });
 
-async function record(hours: UsageHour[], machineShipId: ShipId = MAC, fleetId: FleetId = FLEET): Promise<void> {
+async function record(hours: UsageHour[], { machineShipId = MAC, fleetId = FLEET }: { machineShipId?: ShipId; fleetId?: FleetId } = {}): Promise<void> {
   await history.record(fleetId, { machineShipId, readAt: READ_AT, hours, subscriptions: [] });
 }
 
@@ -127,8 +127,8 @@ describe("reading the fleet's token usage from Postgres", () => {
   });
 
   it('splits by machine, with each machine its own series', async () => {
-    await record([anHour({ tokens: input(10) })], MAC);
-    await record([anHour({ tokens: input(30) })], LINUX);
+    await record([anHour({ tokens: input(10) })], { machineShipId: MAC });
+    await record([anHour({ tokens: input(30) })], { machineShipId: LINUX });
 
     const usage = await history.readTokens(FLEET, aQuery({ splitBy: 'machine' }));
 
@@ -150,8 +150,8 @@ describe("reading the fleet's token usage from Postgres", () => {
   });
 
   it('narrows to the filtered values of each breakdown, a filter on one machine leaving the other out', async () => {
-    await record([anHour({ tokens: input(10) })], MAC);
-    await record([anHour({ tokens: input(30) })], LINUX);
+    await record([anHour({ tokens: input(10) })], { machineShipId: MAC });
+    await record([anHour({ tokens: input(30) })], { machineShipId: LINUX });
 
     const usage = await history.readTokens(FLEET, aQuery({ splitBy: null, filters: { machineShipIds: [MAC] } }));
 
@@ -195,7 +195,7 @@ describe("reading the fleet's token usage from Postgres", () => {
   });
 
   it("never reads another fleet's usage", async () => {
-    await record([anHour({ tokens: input(10) })], MAC, OTHER_FLEET);
+    await record([anHour({ tokens: input(10) })], { fleetId: OTHER_FLEET });
 
     await expect(history.readTokens(FLEET, aQuery())).resolves.toEqual({ series: [], buckets: [], unpricedModels: [] });
   });

@@ -7,12 +7,18 @@
  *
  * Locks are taken in one order, so two readings at once never deadlock: first
  * every hour row, sorted by its key, then every day row, sorted by its key.
+ *
+ * A read of token usage adds up, ranks and filters in one query: hours from
+ * usage_hours, UTC days from usage_days, each a range scan of its primary key
+ * or unique index, fleet and time first.
  */
 import type { FleetId } from '@aeolus-fleet/common';
 
 import type { UsageHistory } from '../../core/usage/ports.js';
+import type { TokenUsage, TokenUsageQuery, UsageBreakdown, UsageFilters, UsageSeriesKey } from '../../core/usage/token-usage.js';
 import type { UsageHour, UsageReading } from '../../core/usage/usage-reading.js';
 import type { Db, PrismaClient } from './client.js';
+import { Prisma } from './generated/client.js';
 
 /** One hour row's values as Postgres holds them, numbers as text so a difference stays exact. */
 interface StoredValues {
@@ -55,6 +61,11 @@ export function createPrismaUsageHistory(db: PrismaClient): UsageHistory {
         }
         await addSubscriptionReadings(scope);
       });
+    },
+    readTokens: async (fleetId, query) => {
+      const source = sourceOf(fleetId, query);
+      const [rows, unpriced] = await Promise.all([db.$queryRaw<BucketRow[]>(bucketsQuery(source, query)), db.$queryRaw<{ model: string }[]>(unpricedModelsQuery(source))]);
+      return toTokenUsage(rows, { splitBy: query.splitBy, unpricedModels: unpriced.map((row) => row.model) });
     },
   };
 }
@@ -148,4 +159,131 @@ function byDayKey(a: DayChange, b: DayChange): number {
     a.values.harness.localeCompare(b.values.harness) ||
     (a.values.login ?? '').localeCompare(b.values.login ?? '')
   );
+}
+
+/** The series past which the rest are added up as other. */
+const MOST_SERIES = 7;
+
+/** The column each breakdown splits by, in both tables. */
+const SPLIT_COLUMNS: Record<UsageBreakdown, Prisma.Sql> = {
+  machine: Prisma.sql`machine_ship_id`,
+  harness: Prisma.sql`harness`,
+  model: Prisma.sql`model`,
+  ship: Prisma.sql`ship_id`,
+  login: Prisma.sql`login`,
+};
+
+/** One bucket of one series as the query answers it: rank 1 is the largest series, MOST_SERIES + 1 is other. */
+interface BucketRow {
+  readonly at: Date;
+  readonly rank: number;
+  readonly key: string | null;
+  readonly input: number;
+  readonly output: number;
+  readonly cache_read: number;
+  readonly cache_write: number;
+  readonly cost: number;
+  readonly unpriced: number;
+}
+
+/** The rows of a read, one per hour or day row in range and filter: its bucket, its series key, its amounts and its model. */
+interface Source {
+  readonly rows: Prisma.Sql;
+  /** The same rows narrowed to those holding tokens of a model the trierarch does not price. */
+  readonly unpricedRows: Prisma.Sql;
+}
+
+function sourceOf(fleetId: FleetId, query: TokenUsageQuery): Source {
+  const key = query.splitBy === null ? Prisma.sql`NULL::text` : SPLIT_COLUMNS[query.splitBy];
+  const filters = filtersOf(query.filters);
+  if (query.grain === 'hour') {
+    const where = Prisma.sql`fleet_id = ${fleetId} AND hour >= ${query.from} AND hour < ${query.to} AND ${filters}`;
+    return {
+      rows: Prisma.sql`SELECT hour AS at, ${key} AS key, input, output, cache_read, cache_write, coalesce(estimated_cost_usd, 0) AS cost,
+        CASE WHEN estimated_cost_usd IS NULL THEN input + output + cache_read + cache_write ELSE 0 END AS unpriced
+        FROM usage_hours WHERE ${where}`,
+      unpricedRows: Prisma.sql`SELECT model FROM usage_hours WHERE ${where} AND estimated_cost_usd IS NULL`,
+    };
+  }
+  const where = Prisma.sql`fleet_id = ${fleetId} AND day >= (${query.from}::timestamptz AT TIME ZONE 'UTC')::date AND day < (${query.to}::timestamptz AT TIME ZONE 'UTC')::date AND ${filters}`;
+  return {
+    rows: Prisma.sql`SELECT day::timestamp AT TIME ZONE 'UTC' AS at, ${key} AS key, input, output, cache_read, cache_write, estimated_cost_usd AS cost, unpriced_tokens AS unpriced
+      FROM usage_days WHERE ${where}`,
+    unpricedRows: Prisma.sql`SELECT model FROM usage_days WHERE ${where} AND unpriced_tokens > 0`,
+  };
+}
+
+/** Each filtered breakdown as one condition; a null login is "not reported". */
+function filtersOf(filters: UsageFilters): Prisma.Sql {
+  const conditions: Prisma.Sql[] = [];
+  const anyOf = (column: Prisma.Sql, values: readonly string[] | undefined) => {
+    if (values !== undefined) {
+      conditions.push(Prisma.sql`${column} = ANY(${[...values]}::text[])`);
+    }
+  };
+  anyOf(SPLIT_COLUMNS.machine, filters.machineShipIds);
+  anyOf(SPLIT_COLUMNS.harness, filters.harnesses);
+  anyOf(SPLIT_COLUMNS.model, filters.models);
+  anyOf(SPLIT_COLUMNS.ship, filters.shipIds);
+  if (filters.logins !== undefined) {
+    const named = filters.logins.filter((login) => login !== null);
+    const notReported = filters.logins.includes(null) ? Prisma.sql`OR login IS NULL` : Prisma.empty;
+    conditions.push(Prisma.sql`(login = ANY(${named}::text[]) ${notReported})`);
+  }
+  return conditions.length === 0 ? Prisma.sql`TRUE` : Prisma.join(conditions, ' AND ');
+}
+
+/** The series ranked by their total of the measure, largest first (then by key), the ones past MOST_SERIES as other, added up per bucket. */
+function bucketsQuery(source: Source, query: TokenUsageQuery): Prisma.Sql {
+  const measure = query.measure === 'tokens' ? Prisma.sql`input + output + cache_read + cache_write` : Prisma.sql`cost`;
+  return Prisma.sql`
+    WITH picked AS (${source.rows}),
+    ranked AS (
+      SELECT key, row_number() OVER (ORDER BY sum(${measure}) DESC, key ASC NULLS LAST) AS rank, count(*) OVER () AS keys
+      FROM picked GROUP BY key
+    ),
+    grouped AS (
+      SELECT p.at,
+        CASE WHEN r.keys > ${MOST_SERIES} AND r.rank > ${MOST_SERIES} THEN ${MOST_SERIES + 1} ELSE r.rank END AS rank,
+        CASE WHEN r.keys > ${MOST_SERIES} AND r.rank > ${MOST_SERIES} THEN NULL ELSE p.key END AS key,
+        sum(p.input) AS input, sum(p.output) AS output, sum(p.cache_read) AS cache_read, sum(p.cache_write) AS cache_write, sum(p.cost) AS cost, sum(p.unpriced) AS unpriced
+      FROM picked p JOIN ranked r ON r.key IS NOT DISTINCT FROM p.key
+      GROUP BY 1, 2, 3
+    )
+    SELECT at, rank::int AS rank, key, input::float8 AS input, output::float8 AS output, cache_read::float8 AS cache_read, cache_write::float8 AS cache_write,
+      cost::float8 AS cost, unpriced::float8 AS unpriced
+    FROM grouped ORDER BY at, rank`;
+}
+
+function unpricedModelsQuery(source: Source): Prisma.Sql {
+  return Prisma.sql`SELECT DISTINCT model FROM (${source.unpricedRows}) AS unpriced ORDER BY model`;
+}
+
+/** The rows as the port answers them: the series by rank, and per bucket the amounts of each series by its index. */
+function toTokenUsage(rows: readonly BucketRow[], read: { splitBy: UsageBreakdown | null; unpricedModels: readonly string[] }): TokenUsage {
+  const keys = new Map<number, string | null>(rows.map((row) => [row.rank, row.key]));
+  const series = [...keys.keys()]
+    .toSorted((a, b) => a - b)
+    .map((rank): UsageSeriesKey => {
+      if (read.splitBy === null) {
+        return { kind: 'all' };
+      }
+      return rank > MOST_SERIES ? { kind: 'other' } : { kind: 'value', value: keys.get(rank) ?? null };
+    });
+  const buckets: { at: Date; amounts: TokenUsage['buckets'][number]['amounts'][number][] }[] = [];
+  for (const row of rows) {
+    const amount = {
+      series: row.rank - 1,
+      tokens: { input: row.input, output: row.output, cacheRead: row.cache_read, cacheWrite: row.cache_write },
+      estimatedCostUsd: row.cost,
+      unpricedTokens: row.unpriced,
+    };
+    const last = buckets.at(-1);
+    if (last?.at.getTime() === row.at.getTime()) {
+      last.amounts.push(amount);
+    } else {
+      buckets.push({ at: row.at, amounts: [amount] });
+    }
+  }
+  return { series, buckets, unpricedModels: read.unpricedModels };
 }
