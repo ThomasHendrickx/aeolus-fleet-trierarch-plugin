@@ -10,7 +10,7 @@
  */
 import { timingSafeEqual } from 'node:crypto';
 
-import { crewLineSchema, idempotencyKeySchema, idSchema, modelSchema, shipHandleSchema, trierarchReportDetailsSchema, type FleetId } from '@aeolus-fleet/common';
+import { crewLineSchema, harnessSchema, idempotencyKeySchema, idSchema, modelSchema, shipHandleSchema, trierarchReportDetailsSchema, type FleetId } from '@aeolus-fleet/common';
 import { initTRPC, TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -28,6 +28,8 @@ import type { ListMachines } from '../../core/machines/list-machines.js';
 import type { ListEnabledModels } from '../../core/models/list-enabled-models.js';
 import type { SetModelEnabled } from '../../core/models/set-model-enabled.js';
 import type { AuthenticateOperator } from '../../core/operator/authenticate-operator.js';
+import { TOKEN_KINDS, type ReadTokenUsage, type SeriesAmounts } from '../../core/usage/read-token-usage.js';
+import { USAGE_BREAKDOWNS, USAGE_MEASURES } from '../../core/usage/token-usage.js';
 
 export interface Context {
   /** The Cookie header the console's server forwarded. */
@@ -54,6 +56,7 @@ export interface Context {
   checkCrewSettings: CheckCrewSettings;
   listEnabledModels: ListEnabledModels;
   setModelEnabled: SetModelEnabled;
+  readTokenUsage: ReadTokenUsage;
 }
 
 /** What a caller reads of a failure: nothing of it, so no crew token, secret or query ever leaves; the log holds it whole. */
@@ -154,6 +157,13 @@ const LIST_CODES = {
   FLEET_UNAVAILABLE: 'BAD_GATEWAY',
 } as const satisfies Record<string, TRPCError['code']>;
 
+/** The refusals of reading usage, as the API states them. */
+const USAGE_CODES = {
+  INVALID_RANGE: 'BAD_REQUEST',
+  NOT_CONNECTED: 'PRECONDITION_FAILED',
+  FLEET_UNAVAILABLE: 'BAD_GATEWAY',
+} as const satisfies Record<string, TRPCError['code']>;
+
 /** The refusals of deleting a fleet, as the installation API states them. */
 const DELETE_CODES = {
   REQUEST_ID_USED: 'CONFLICT',
@@ -196,6 +206,48 @@ export const machineOutputSchema = z.object({
   report: z.object({ state: z.string(), note: z.string().nullable(), reportedAt: z.iso.datetime() }).nullable(),
   details: trierarchReportDetailsSchema.nullable(),
 });
+
+/** The most values one filter narrows to: more than a filter menu offers. */
+const USAGE_FILTER_MAX_VALUES = 100;
+
+/** The values usage is narrowed to, per breakdown; a null login is "not reported". */
+const usageFiltersSchema = z.strictObject({
+  machineShipIds: z.array(idSchema('ship')).max(USAGE_FILTER_MAX_VALUES).optional(),
+  harnesses: z.array(harnessSchema).max(USAGE_FILTER_MAX_VALUES).optional(),
+  models: z.array(modelSchema).max(USAGE_FILTER_MAX_VALUES).optional(),
+  shipIds: z.array(idSchema('ship')).max(USAGE_FILTER_MAX_VALUES).optional(),
+  logins: z.array(z.string().min(1).nullable()).max(USAGE_FILTER_MAX_VALUES).optional(),
+});
+
+const tokenCountsSchema = z.object({ input: z.number(), output: z.number(), cacheRead: z.number(), cacheWrite: z.number() });
+
+/** A series' amounts; split by token kind, cost and tokens not priced are null. */
+const seriesAmountsSchema = z.object({ tokens: tokenCountsSchema, estimatedCostUsd: z.number().nullable(), unpricedTokens: z.number().nullable() });
+
+/** Token usage as the Usage page reads it (ISO 8601 in UTC): its series named and largest first, each bucket holding usage, and the range's totals. */
+export const tokenUsageOutputSchema = z.object({
+  grain: z.enum(['hour', 'day']),
+  series: z.array(
+    z.object({
+      key: z.discriminatedUnion('kind', [
+        z.object({ kind: z.literal('value'), value: z.string().nullable() }),
+        z.object({ kind: z.literal('other') }),
+        z.object({ kind: z.literal('all') }),
+        z.object({ kind: z.literal('tokenKind'), tokenKind: z.enum(TOKEN_KINDS) }),
+      ]),
+      name: z.string().nullable(),
+      amounts: seriesAmountsSchema,
+    }),
+  ),
+  buckets: z.array(z.object({ at: z.iso.datetime(), amounts: z.array(seriesAmountsSchema.extend({ series: z.int().nonnegative() })) })),
+  totals: z.object({ tokens: tokenCountsSchema, estimatedCostUsd: z.number(), unpricedTokens: z.number() }),
+  unpricedModels: z.array(z.string()),
+});
+
+/** A bucket's amounts as the API answers them. */
+function amountsOutput(amount: SeriesAmounts & { series: number }) {
+  return { series: amount.series, tokens: amount.tokens, estimatedCostUsd: amount.estimatedCostUsd, unpricedTokens: amount.unpricedTokens };
+}
 
 export const trierarchPluginRouter = t.router({
   connection: t.router({
@@ -297,6 +349,38 @@ export const trierarchPluginRouter = t.router({
       .input(z.strictObject({ model: modelSchema }))
       .output(z.array(z.string()))
       .mutation(({ ctx, input }) => ctx.setModelEnabled({ fleetId: ctx.fleetId, model: input.model, isEnabled: false })),
+  }),
+  usage: t.router({
+    /**
+     * The fleet's token usage in a range (the usage design): hours up to 7
+     * days, UTC days past that, split by one breakdown, by token kind or not
+     * at all, the 7 largest series by the measure and other for the rest.
+     * Every signed-in session's, viewer included.
+     */
+    tokens: connectedProcedure
+      .input(
+        z.strictObject({
+          from: z.iso.datetime(),
+          to: z.iso.datetime(),
+          splitBy: z.enum([...USAGE_BREAKDOWNS, 'kind']).nullable(),
+          measure: z.enum(USAGE_MEASURES),
+          filters: usageFiltersSchema,
+        }),
+      )
+      .output(tokenUsageOutputSchema)
+      .query(async ({ ctx, input }) => {
+        const usage = await ctx.readTokenUsage({ fleetId: ctx.fleetId, from: new Date(input.from), to: new Date(input.to), splitBy: input.splitBy, measure: input.measure, filters: input.filters });
+        if (!usage.isOk) {
+          throw new TRPCError({ code: USAGE_CODES[usage.error.kind], message: usage.error.message });
+        }
+        return {
+          grain: usage.value.grain,
+          series: usage.value.series.map((series) => ({ ...series })),
+          buckets: usage.value.buckets.map((bucket) => ({ at: bucket.at.toISOString(), amounts: bucket.amounts.map(amountsOutput) })),
+          totals: usage.value.totals,
+          unpricedModels: [...usage.value.unpricedModels],
+        };
+      }),
   }),
   installation: t.router({
     /** Switches the trierarch plugin on or off for a fleet; off keeps everything of it. A replayed request id answers its first answer. */

@@ -11,6 +11,7 @@ import { runningVersion } from './adapters/http/version.js';
 import { checkDatabase, createPrismaClient } from './adapters/prisma/client.js';
 import { createPrismaConnectionStore } from './adapters/prisma/connection-store.js';
 import { createPrismaEnabledModels } from './adapters/prisma/enabled-models.js';
+import { createPrismaUsageHistory } from './adapters/prisma/usage-history.js';
 import { createPrismaFleetForgetter } from './adapters/prisma/fleet-forgetter.js';
 import { createPrismaFleetSwitches } from './adapters/prisma/fleet-switches.js';
 import { createPrismaInstallationRequests } from './adapters/prisma/installation-requests.js';
@@ -38,6 +39,7 @@ import { createWithdrawNetworkRules } from './core/network/withdraw-network-rule
 import { createListMachines } from './core/machines/list-machines.js';
 import { createListEnabledModels } from './core/models/list-enabled-models.js';
 import { createSetModelEnabled } from './core/models/set-model-enabled.js';
+import { createReadTokenUsage } from './core/usage/read-token-usage.js';
 import { DEFAULT_SILENT_AFTER_MS } from './core/machines/silent.js';
 import { createAuthenticateOperator } from './core/operator/authenticate-operator.js';
 import type { Clock } from './core/shared/clock.js';
@@ -225,6 +227,7 @@ export function createTrierarchPluginApp(options: {
   const checkCrewSettings = createCheckCrewSettings({ door, connections, models, clock, silentAfterMs });
   const listEnabledModels = createListEnabledModels({ models });
   const setModelEnabled = createSetModelEnabled({ models });
+  const readTokenUsage = createReadTokenUsage({ usage: createPrismaUsageHistory(prisma), door, connections });
   const assignOnce = async (): Promise<{ fleetId: FleetId; outcome: AssignOutcome }[]> => {
     const done: { fleetId: FleetId; outcome: AssignOutcome }[] = [];
     for (const crew of await connections.connected()) {
@@ -308,6 +311,7 @@ export function createTrierarchPluginApp(options: {
         checkCrewSettings,
         listEnabledModels,
         setModelEnabled,
+        readTokenUsage,
       }),
     },
   };
