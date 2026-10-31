@@ -244,3 +244,55 @@ describe("the fleet's usage history in Postgres", () => {
     await expect(storedDays(OTHER)).resolves.toHaveLength(1);
   });
 });
+
+describe("pruning a fleet's usage by its retention (the usage design, Scale and retention)", () => {
+  const MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'gpt-6', 'gpt-6-mini'];
+  const window = (readAt: Date) => ({ harness: 'claude-code', readAt, windows: [{ windowMinutes: 300, usedPercent: 42, resetsAt: NEXT_DAY }] });
+
+  async function storedReadingTimes(fleetId: FleetId = FLEET): Promise<unknown[]> {
+    return db.$queryRaw`SELECT read_at FROM subscription_readings WHERE fleet_id = ${fleetId} ORDER BY read_at`;
+  }
+
+  it('prunes the hours and subscription readings wholly before the cutoff, keeping the rest', async () => {
+    const usage = createPrismaUsageHistory(db);
+    await usage.record(FLEET, aReading([anHour({ hour: NINE }), anHour({ hour: TEN })], { subscriptions: [window(new Date('2026-10-28T09:31:02.000Z')), window(READ_AT)] }));
+
+    await usage.prune(FLEET, TEN);
+
+    await expect(storedHours()).resolves.toMatchObject([{ hour: TEN }]);
+    await expect(storedReadingTimes()).resolves.toEqual([{ read_at: READ_AT }]);
+  });
+
+  it('prunes a day only once the whole day is before the cutoff', async () => {
+    const usage = createPrismaUsageHistory(db);
+    await usage.record(FLEET, aReading([anHour({ hour: NINE })]));
+
+    await usage.prune(FLEET, TEN);
+    await expect(storedDays()).resolves.toHaveLength(1);
+
+    await usage.prune(FLEET, NEXT_DAY);
+    await expect(storedDays()).resolves.toEqual([]);
+  });
+
+  it('prunes every old row, a batch at a time', async () => {
+    const usage = createPrismaUsageHistory(db, { pruneBatchSize: 2 });
+    await usage.record(FLEET, aReading(MODELS.map((model) => anHour({ model }))));
+
+    await usage.prune(FLEET, NEXT_DAY);
+
+    await expect(storedHours()).resolves.toEqual([]);
+    await expect(storedDays()).resolves.toEqual([]);
+  });
+
+  it("never prunes another fleet's usage", async () => {
+    const usage = createPrismaUsageHistory(db);
+    await usage.record(FLEET, aReading([anHour()], { subscriptions: [window(NINE)] }));
+    await usage.record(OTHER, aReading([anHour()], { subscriptions: [window(NINE)] }));
+
+    await usage.prune(FLEET, NEXT_DAY);
+
+    await expect(storedHours(OTHER)).resolves.toHaveLength(1);
+    await expect(storedDays(OTHER)).resolves.toHaveLength(1);
+    await expect(storedReadingTimes(OTHER)).resolves.toHaveLength(1);
+  });
+});
