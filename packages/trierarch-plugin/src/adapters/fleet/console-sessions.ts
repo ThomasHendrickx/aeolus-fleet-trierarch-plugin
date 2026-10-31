@@ -10,7 +10,8 @@ import { z } from 'zod';
 import type { ConsoleSessions } from '../../core/operator/ports.js';
 import { err, ok } from '../../core/shared/result.js';
 
-const sessionAnswer = z.object({ result: z.object({ data: consoleSessionOutputSchema }) });
+// Only what the plugin reads: a core older than common's schema answers fewer fields (MINIMUM_CORE_VERSION).
+const sessionAnswer = z.object({ result: z.object({ data: consoleSessionOutputSchema.pick({ fleetId: true, kind: true, scopes: true }) }) });
 
 export function createFleetConsoleSessions(fleetUrl: string): ConsoleSessions {
   return {

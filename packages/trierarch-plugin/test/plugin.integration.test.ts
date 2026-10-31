@@ -359,7 +359,8 @@ describe('telling argo (#365)', () => {
     await expect(door.tellArgo(crewToken, notice)).resolves.toEqual({ isOk: true, value: undefined });
 
     const inbox = await useCases.readInbox(argo, { filter: 'all' });
-    expect(inbox.items.map((entry) => ({ payload: entry.message.payload, sender: entry.message.sender.name }))).toEqual([{ payload: notice.text, sender: 'trierarch-plugin' }]);
+    const items = inbox.isOk ? inbox.value.items : [];
+    expect(items.map((entry) => ({ payload: entry.message.payload, sender: entry.message.sender.name }))).toEqual([{ payload: notice.text, sender: 'trierarch-plugin' }]);
     const listed = await door.listShips(crewToken);
     const self = listed.isOk ? listed.value.find((ship) => ship.shipId === shipId) : undefined;
     expect(self?.model).toBeNull();
