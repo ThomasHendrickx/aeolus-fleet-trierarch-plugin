@@ -1,4 +1,4 @@
-import { isInReadReach } from '@aeolus-fleet/common';
+import { isInReadReach, TRIERARCH_USAGE_CONTENT_TYPE } from '@aeolus-fleet/common';
 import type { ShipId } from '@aeolus-fleet/common';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -593,3 +593,57 @@ async function pingStateOf(ship: ShipId): Promise<string | undefined> {
   const read = z.object({ result: z.object({ data: z.object({ ping: z.object({ state: z.string() }).nullable() }) }) }).safeParse(await answer.json());
   return read.success ? read.data.result.data.ping?.state : undefined;
 }
+
+describe("a trierarch's usage, sent to the trierarch plugin's ship (the usage design)", () => {
+  const HOUR = '2026-10-28T09:00:00.000Z';
+  const RANGE = { from: HOUR, to: '2026-10-28T10:00:00.000Z', splitBy: null, measure: 'tokens', filters: {} };
+  const tokensSchema = z.object({ result: z.object({ data: z.object({ totals: z.object({ tokens: z.object({ input: z.number(), output: z.number(), cacheRead: z.number(), cacheWrite: z.number() }) }) }) }) });
+
+  /** A trierarch's usage of one ship in one hour, as common's message. */
+  function aUsageMessage(ship: ShipId): string {
+    return JSON.stringify({
+      hours: [
+        {
+          hour: HOUR,
+          ships: [{ shipId: ship, harness: 'claude-code', folderMadeAt: '2026-10-27T14:02:11Z', login: null, models: [{ model: 'claude-opus-5-5', tokens: { input: 1200, output: 300, cacheRead: 40_000, cacheWrite: 2000 }, estimatedCostUsd: null }] }],
+        },
+      ],
+      subscriptions: [],
+      readAt: '2026-10-28T10:00:40Z',
+    });
+  }
+
+  async function tokensIn(address: string) {
+    return tokensSchema.parse(await (await query(address, { procedure: 'usage.tokens', cookie, input: RANGE })).json()).result.data.totals.tokens;
+  }
+
+  /** Whether nothing waits for the plugin's ship any more: every delivery to it acked. */
+  async function isInboxEmpty(): Promise<boolean> {
+    return (await fleetDatabase.delivery.count({ where: { recipientShipId: shipId, state: { in: ['pending', 'received', 'handed'] } } })) === 0;
+  }
+
+  it("keeps a machine's usage once, however often the same hour reaches it", async () => {
+    const address = await connected();
+    const joined = joinedSchema.parse(await (await mutate(address, { procedure: 'machines.join', cookie, body: { name: 'mac-studio' } })).json()).result.data;
+    const machineId = z.templateLiteral(['shp_', z.string()]).parse(joined.shipId);
+    const trierarch = await crewAsTrierarch(fleetUrl, { shipId: machineId, secret: joined.secret });
+    const scout = unwrap(await useCases.commissionShip(argo, { idempotencyKey: newKey(), name: 'scout', type: 'agent' }));
+
+    await trierarch.send({ shipId, contentType: TRIERARCH_USAGE_CONTENT_TYPE, payload: aUsageMessage(scout.shipId) });
+    await trierarch.send({ shipId, contentType: TRIERARCH_USAGE_CONTENT_TYPE, payload: aUsageMessage(scout.shipId) });
+
+    await expect.poll(isInboxEmpty, { timeout: 15_000, interval: 500 }).toBe(true);
+    await expect(tokensIn(address)).resolves.toEqual({ input: 1200, output: 300, cacheRead: 40_000, cacheWrite: 2000 });
+  });
+
+  it('acks usage from a ship that is not a trierarch and keeps none of it', async () => {
+    const address = await connected();
+    const scout = unwrap(await useCases.commissionShip(argo, { idempotencyKey: newKey(), name: 'scout', type: 'agent' }));
+    const agent = await crewAsTrierarch(fleetUrl, { shipId: scout.shipId, secret: secretOf(scout.secret) });
+
+    await agent.send({ shipId, contentType: TRIERARCH_USAGE_CONTENT_TYPE, payload: aUsageMessage(scout.shipId) });
+
+    await expect.poll(isInboxEmpty, { timeout: 15_000, interval: 500 }).toBe(true);
+    await expect(tokensIn(address)).resolves.toEqual({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+  });
+});
