@@ -1,6 +1,9 @@
+import type { FleetId } from '@aeolus-fleet/common';
+
 import type { UsageHistory } from '../../src/core/usage/ports.js';
 import type { TokenUsage } from '../../src/core/usage/token-usage.js';
 import type { SubscriptionWindows } from '../../src/core/usage/subscription-windows.js';
+import type { UsageReading } from '../../src/core/usage/usage-reading.js';
 import type { UsageValue } from '../../src/core/usage/usage-values.js';
 
 /** No token usage at all. */
@@ -33,5 +36,20 @@ export function cannedUsageHistory({ usage = NO_USAGE, values = [], windows = []
       const ordered = windows.toSorted((a, b) => key(a).localeCompare(key(b)));
       return Promise.resolve(ordered.filter((chart) => after === null || key(chart).localeCompare(key(after)) > 0).slice(0, query.limit));
     },
+  };
+}
+
+/** A usage history that keeps each reading recorded, in order, per fleet; reads are not its part. */
+export function recordingUsageHistory(): UsageHistory & { recorded: { fleetId: FleetId; reading: UsageReading }[] } {
+  const recorded: { fleetId: FleetId; reading: UsageReading }[] = [];
+  return {
+    recorded,
+    record: (fleetId, reading) => {
+      recorded.push({ fleetId, reading });
+      return Promise.resolve();
+    },
+    readTokens: () => Promise.resolve(NO_USAGE),
+    readValues: () => Promise.resolve([]),
+    readWindows: () => Promise.resolve([]),
   };
 }

@@ -118,6 +118,9 @@ export interface PluginDelivery {
   deliveryId: DeliveryId;
   contentType: string;
   senderShipId: ShipId;
+  /** The sender's type as the fleet read it, never as the sender says. */
+  senderType: string;
+  payload: string;
 }
 
 /** Outbound port: the deliveries to the trierarch plugin's own ship, as its crew takes, acks and pongs them. */

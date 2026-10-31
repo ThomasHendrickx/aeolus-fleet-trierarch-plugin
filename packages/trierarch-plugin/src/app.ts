@@ -39,6 +39,7 @@ import { createWithdrawNetworkRules } from './core/network/withdraw-network-rule
 import { createListMachines } from './core/machines/list-machines.js';
 import { createListEnabledModels } from './core/models/list-enabled-models.js';
 import { createSetModelEnabled } from './core/models/set-model-enabled.js';
+import { createKeepUsage } from './core/usage/keep-usage.js';
 import { createReadTokenUsage } from './core/usage/read-token-usage.js';
 import { createReadSubscriptionWindows } from './core/usage/read-subscription-windows.js';
 import { createReadUsageValues } from './core/usage/read-usage-values.js';
@@ -255,10 +256,23 @@ export function createTrierarchPluginApp(options: {
     return done;
   };
   let assigning: NodeJS.Timeout | undefined;
-  const answerPings = createAnswerPings({ connections, inbox: door.inbox });
-  /** Answers argo's ping and acks what else reaches the plugin's ship in each fleet (aeolus-fleet#1113); logged, never thrown. */
+  const keepUsage = createKeepUsage({ usage });
+  const answerPings = createAnswerPings({
+    connections,
+    inbox: door.inbox,
+    // A store that fails leaves the delivery unacked, handed again; said here, as the round only counts it.
+    keepUsage: (fleetId, delivery) =>
+      keepUsage(fleetId, delivery).catch((error: unknown) => {
+        server.log.error({ err: error, fleet: fleetId, senderShipId: delivery.senderShipId }, "a trierarch's usage could not be kept; the fleet hands it again");
+        throw error;
+      }),
+  });
+  /** Answers argo's ping, keeps the trierarchs' usage and acks what else reaches the plugin's ship in each fleet (aeolus-fleet#1113); logged, never thrown. */
   const answerOnce = async (): Promise<void> => {
-    const { acked, refused } = await answerPings();
+    const { acked, notHandled, refused } = await answerPings();
+    for (const { delivery, reason } of notHandled) {
+      server.log.warn({ contentType: delivery.contentType, senderShipId: delivery.senderShipId, reason }, "the trierarch plugin's ship acked usage it does not handle");
+    }
     for (const delivery of acked) {
       const { contentType, senderShipId } = delivery;
       if (resendTrustedRepositories(delivery)) {

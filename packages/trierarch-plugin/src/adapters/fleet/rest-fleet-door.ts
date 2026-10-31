@@ -232,7 +232,7 @@ export function createRestFleetDoor(fleetUrl: string, options: { busyWaitsMs?: r
     inbox: {
       receive: async (crewToken, max) => {
         const taken = await call({ path: '/ship/receive', method: 'POST', crewToken, body: { max }, answers: receiveOutputSchema });
-        return taken.isOk ? ok(taken.value.deliveries.map(({ deliveryId, contentType, senderShipId }) => ({ deliveryId, contentType, senderShipId }))) : taken;
+        return taken.isOk ? ok(taken.value.deliveries.map(({ deliveryId, contentType, senderShipId, senderType, payload }) => ({ deliveryId, contentType, senderShipId, senderType, payload }))) : taken;
       },
       ack: async (crewToken, deliveryId) => {
         const acked = await call({ path: '/ship/ack', method: 'POST', crewToken, body: { deliveryId }, answers: z.unknown() });
