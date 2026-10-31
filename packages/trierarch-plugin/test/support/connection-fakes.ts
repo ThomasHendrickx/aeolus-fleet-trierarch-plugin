@@ -11,6 +11,9 @@ export const FLEET_URL = 'https://fleet.example.com';
 /** When a ship was commissioned, unless a test says otherwise. */
 const EPOCH = new Date(0);
 
+/** A fleet's retention when none applies: it keeps its finished history for good. */
+const KEPT_FOR_GOOD: number | null = null;
+
 /** The trierarch another assigner claims for when the fake fleet loses a claim. */
 export const OTHER_ASSIGNEE: ShipId = 'shp_01m3tbfspe96yf1rnr4ank9h9z';
 
@@ -69,7 +72,7 @@ export function fakePluginFleet() {
     /** Ships a send to is refused, as when the network rules do not allow it. */
     refusingSends: new Set<ShipId>(),
     /** The days the fleet keeps its finished history, as fleet.limits answers it; null for kept for good (decision 0066). */
-    retentionDays: null as number | null,
+    retentionDays: KEPT_FOR_GOOD,
   };
   let nextLabel = 0;
   const labelId = (): LabelId => `lbl_01m3tbfspe96yf1rnr4ank9${String(nextLabel).padStart(3, '0')}`;

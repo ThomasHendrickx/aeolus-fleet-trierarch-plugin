@@ -11,10 +11,12 @@ import type { UsageValue, UsageValuesQuery } from './usage-values.js';
  * again or arriving late changes nothing; each subscription reading is kept once.
  * Reading token usage adds up, splits, ranks and filters in the store itself,
  * and so does reading a breakdown's values or the subscription windows, a page
- * at a time.
+ * at a time. Pruning removes every hour, day and subscription reading wholly
+ * before the cutoff, a batch at a time.
  */
 export interface UsageHistory {
   record(fleetId: FleetId, reading: UsageReading): Promise<void>;
+  prune(fleetId: FleetId, before: Date): Promise<void>;
   readTokens(fleetId: FleetId, query: TokenUsageQuery): Promise<TokenUsage>;
   readValues(fleetId: FleetId, query: UsageValuesQuery): Promise<UsageValue[]>;
   readWindows(fleetId: FleetId, query: WindowsQuery): Promise<SubscriptionWindows[]>;
