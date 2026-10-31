@@ -101,7 +101,14 @@ export function createPrismaUsageHistory(db: PrismaClient, options: { pruneBatch
     },
     readTokens: async (fleetId, query) => {
       const source = sourceOf(fleetId, query);
-      const [rows, unpriced] = await Promise.all([db.$queryRaw<BucketRow[]>(bucketsQuery(source, query)), db.$queryRaw<{ model: string }[]>(unpricedModelsQuery(source))]);
+      const [rows, unpriced] = await Promise.all([
+        db.$transaction(async (tx) => {
+          // Room to add a range's rows up in memory by hash: at the target a week is some 76,000 rows, which the default spills to disk to sort.
+          await tx.$executeRaw`SET LOCAL work_mem = '64MB'`;
+          return tx.$queryRaw<BucketRow[]>(bucketsQuery(source, query));
+        }),
+        db.$queryRaw<{ model: string }[]>(unpricedModelsQuery(source)),
+      ]);
       return toTokenUsage(rows, { splitBy: query.splitBy, unpricedModels: unpriced.map((row) => row.model) });
     },
     readValues: (fleetId, query) => db.$queryRaw<UsageValue[]>(valuesQuery(fleetId, query)),
@@ -334,20 +341,23 @@ function filtersOf(filters: UsageFilters): Prisma.Sql {
 function bucketsQuery(source: Source, query: TokenUsageQuery): Prisma.Sql {
   const measure = query.measure === 'tokens' ? Prisma.sql`input + output + cache_read + cache_write` : Prisma.sql`cost_input + cost_output + cost_cache_read + cost_cache_write`;
   // Raw only over AMOUNT_COLUMNS, this file's own constants: no input reaches it.
-  const sums = Prisma.raw(AMOUNT_COLUMNS.map((column) => `sum(p.${column}) AS ${column}`).join(', '));
   const amounts = Prisma.raw(AMOUNT_COLUMNS.map((column) => `${column}::float8 AS ${column}`).join(', '));
+  // Summed as float8, as the read answers: numeric sums of every row cost more than the rest of the read.
+  const sums = Prisma.raw(AMOUNT_COLUMNS.map((column) => `sum(p.${column}::float8) AS ${column}`).join(', '));
+  // Only the keys' totals are ranked, a narrow aggregate; the rows take their key's rank by a hash join and are added up once, into
+  // at most 8 series per bucket. The join key stands in '' for the null key (a login not reported): no breakdown's value is ever empty.
   return Prisma.sql`
     WITH picked AS (${source.rows}),
     ranked AS (
-      SELECT key, row_number() OVER (ORDER BY sum(${measure}) DESC, key ASC NULLS LAST) AS rank, count(*) OVER () AS keys
-      FROM picked GROUP BY key
+      SELECT coalesce(key, '') AS join_key, row_number() OVER (ORDER BY total DESC, key ASC NULLS LAST) AS rank, count(*) OVER () AS keys
+      FROM (SELECT key, sum((${measure})::float8) AS total FROM picked GROUP BY key) AS totals
     ),
     grouped AS (
       SELECT p.at,
         CASE WHEN r.keys > ${MOST_SERIES} AND r.rank > ${MOST_SERIES} THEN ${MOST_SERIES + 1} ELSE r.rank END AS rank,
         CASE WHEN r.keys > ${MOST_SERIES} AND r.rank > ${MOST_SERIES} THEN NULL ELSE p.key END AS key,
         ${sums}
-      FROM picked p JOIN ranked r ON r.key IS NOT DISTINCT FROM p.key
+      FROM picked p JOIN ranked r ON r.join_key = coalesce(p.key, '')
       GROUP BY 1, 2, 3
     )
     SELECT at, rank::int AS rank, key, ${amounts}
