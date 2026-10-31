@@ -68,6 +68,8 @@ export function fakePluginFleet() {
     sent: new Array<{ shipId: ShipId; contentType: string; payload: string; idempotencyKey: string }>(),
     /** Ships a send to is refused, as when the network rules do not allow it. */
     refusingSends: new Set<ShipId>(),
+    /** The days the fleet keeps its finished history, as fleet.limits answers it; null for kept for good (decision 0066). */
+    retentionDays: null as number | null,
   };
   let nextLabel = 0;
   const labelId = (): LabelId => `lbl_01m3tbfspe96yf1rnr4ank9${String(nextLabel).padStart(3, '0')}`;
@@ -173,6 +175,15 @@ export function fakePluginFleet() {
       }
       ship.crewRequest = { ...ship.crewRequest, assignedTo: trierarchShipId, reason: null };
       return Promise.resolve(ok(undefined));
+    },
+    limits: (crewToken) => {
+      if (!state.isAnswering) {
+        return Promise.resolve(err({ code: 'UNAVAILABLE', message: 'The fleet did not answer' }));
+      }
+      if (!state.liveTokens.has(crewToken)) {
+        return released();
+      }
+      return Promise.resolve(ok({ retentionDays: state.retentionDays }));
     },
     listLabels: (crewToken) => {
       if (!state.liveTokens.has(crewToken)) {
