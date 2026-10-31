@@ -11,7 +11,7 @@ import { createKeepUsage } from './keep-usage.js';
 // common's schema, kept; anything else not handled.
 
 const MACHINE = 'shp_01m3tbfspe96yf1rnr4ank9mac';
-const SHIP = 'shp_01m3tbfspe96yf1rnr4ank9scu';
+const SHIP = 'shp_01m3tbfspe96yf1rnr4ank9sc0';
 
 const MESSAGE = {
   hours: [

@@ -10,8 +10,8 @@ import type { PluginDelivery, PluginInbox } from './ports.js';
 // ship does (blueprint, "Ping"; aeolus-fleet#1113), and acks what else reaches
 // it: it handles no messages of its own, and the fleet keeps them in its history.
 
-const PING: PluginDelivery = { deliveryId: 'dlv_01m3tbfspe96yf1rnr4ank9png', contentType: 'application/vnd.aeolus.ping', senderShipId: 'shp_01m3tbfspe96yf1rnr4ank9arg' };
-const ANSWER: PluginDelivery = { deliveryId: 'dlv_01m3tbfspe96yf1rnr4ank9ans', contentType: 'application/vnd.aeolus.answer+json', senderShipId: 'shp_01m3tbfspe96yf1rnr4ank9chr' };
+const PING: PluginDelivery = { deliveryId: 'dlv_01m3tbfspe96yf1rnr4ank9png', contentType: 'application/vnd.aeolus.ping', senderShipId: 'shp_01m3tbfspe96yf1rnr4ank9arg', senderType: 'operator', payload: '' };
+const ANSWER: PluginDelivery = { deliveryId: 'dlv_01m3tbfspe96yf1rnr4ank9ans', contentType: 'application/vnd.aeolus.answer+json', senderShipId: 'shp_01m3tbfspe96yf1rnr4ank9chr', senderType: 'agent', payload: '{}' };
 
 function anInbox(waiting: PluginDelivery[] | 'refused'): PluginInbox & { ponged: DeliveryId[]; acked: DeliveryId[] } {
   const ponged: DeliveryId[] = [];

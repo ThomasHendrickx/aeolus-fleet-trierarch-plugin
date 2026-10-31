@@ -12,7 +12,7 @@ describe('a trierarch asking for the trusted repositories again', () => {
   it('has the next pass send them to the trierarch that asks, as to one never sent them', () => {
     const shared = new Set<ShipId>([MAC, STUDIO]);
 
-    expect(createResendTrustedRepositories({ shared })({ deliveryId: DELIVERY, contentType: ASK, senderShipId: MAC })).toBe(true);
+    expect(createResendTrustedRepositories({ shared })({ deliveryId: DELIVERY, contentType: ASK, senderShipId: MAC, senderType: 'trierarch', payload: '{}' })).toBe(true);
 
     expect([...shared]).toEqual([STUDIO]);
   });
@@ -20,7 +20,7 @@ describe('a trierarch asking for the trusted repositories again', () => {
   it('leaves the list as sent for any other message', () => {
     const shared = new Set<ShipId>([MAC]);
 
-    expect(createResendTrustedRepositories({ shared })({ deliveryId: DELIVERY, contentType: 'text/plain', senderShipId: MAC })).toBe(false);
+    expect(createResendTrustedRepositories({ shared })({ deliveryId: DELIVERY, contentType: 'text/plain', senderShipId: MAC, senderType: 'trierarch', payload: '{}' })).toBe(false);
 
     expect([...shared]).toEqual([MAC]);
   });
