@@ -11,6 +11,9 @@ export const FLEET_URL = 'https://fleet.example.com';
 /** When a ship was commissioned, unless a test says otherwise. */
 const EPOCH = new Date(0);
 
+/** A fleet's retention when none applies: it keeps its finished history for good. */
+const KEPT_FOR_GOOD: number | null = null;
+
 /** The trierarch another assigner claims for when the fake fleet loses a claim. */
 export const OTHER_ASSIGNEE: ShipId = 'shp_01m3tbfspe96yf1rnr4ank9h9z';
 
@@ -68,6 +71,8 @@ export function fakePluginFleet() {
     sent: new Array<{ shipId: ShipId; contentType: string; payload: string; idempotencyKey: string }>(),
     /** Ships a send to is refused, as when the network rules do not allow it. */
     refusingSends: new Set<ShipId>(),
+    /** The days the fleet keeps its finished history, as fleet.limits answers it; null for kept for good (decision 0066). */
+    retentionDays: KEPT_FOR_GOOD,
   };
   let nextLabel = 0;
   const labelId = (): LabelId => `lbl_01m3tbfspe96yf1rnr4ank9${String(nextLabel).padStart(3, '0')}`;
@@ -173,6 +178,15 @@ export function fakePluginFleet() {
       }
       ship.crewRequest = { ...ship.crewRequest, assignedTo: trierarchShipId, reason: null };
       return Promise.resolve(ok(undefined));
+    },
+    limits: (crewToken) => {
+      if (!state.isAnswering) {
+        return Promise.resolve(err({ code: 'UNAVAILABLE', message: 'The fleet did not answer' }));
+      }
+      if (!state.liveTokens.has(crewToken)) {
+        return released();
+      }
+      return Promise.resolve(ok({ retentionDays: state.retentionDays }));
     },
     listLabels: (crewToken) => {
       if (!state.liveTokens.has(crewToken)) {

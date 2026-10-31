@@ -8,7 +8,7 @@
  */
 import { setTimeout as wait } from 'node:timers/promises';
 
-import { busyWaitMs, commissionShipOutputSchema, declareNetworkRulesOutputSchema, declareScopesOutputSchema, defineLabelOutputSchema, FLEET_BUSY_WAITS_MS, fleetListOutputSchema, idSchema, isInReadReach, labelsOutputSchema, PAGE_SIZE_MAX, receiveOutputSchema, scopesOutputSchema, shipDetailOutputSchema } from '@aeolus-fleet/common';
+import { busyWaitMs, commissionShipOutputSchema, declareNetworkRulesOutputSchema, declareScopesOutputSchema, defineLabelOutputSchema, FLEET_BUSY_WAITS_MS, fleetLimitsOutputSchema, fleetListOutputSchema, idSchema, isInReadReach, labelsOutputSchema, PAGE_SIZE_MAX, receiveOutputSchema, scopesOutputSchema, shipDetailOutputSchema } from '@aeolus-fleet/common';
 import { z } from 'zod';
 
 import type { FleetDoor, FleetRefusal, PluginInbox } from '../../core/connection/ports.js';
@@ -175,6 +175,10 @@ export function createRestFleetDoor(fleetUrl: string, options: { busyWaitsMs?: r
     assignCrew: async (crewToken, claim) => {
       const claimed = await call({ path: '/fleet/assignCrew', method: 'POST', crewToken, body: claim, answers: z.unknown() });
       return claimed.isOk ? ok(undefined) : claimed;
+    },
+    limits: async (crewToken) => {
+      const read = await call({ path: '/fleet/limits', method: 'GET', crewToken, answers: fleetLimitsOutputSchema });
+      return read.isOk ? ok({ retentionDays: read.value.retention.days }) : read;
     },
     listLabels: async (crewToken) => {
       const listed = await call({ path: '/fleet/labels', method: 'GET', crewToken, answers: labelsOutputSchema });

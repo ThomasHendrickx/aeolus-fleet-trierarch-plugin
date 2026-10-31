@@ -53,8 +53,39 @@ interface DayChange {
   readonly isTakenAway: boolean;
 }
 
-export function createPrismaUsageHistory(db: PrismaClient): UsageHistory {
+/** How many rows of one table a prune deletes per statement, so a large prune never holds one long lock. */
+const PRUNE_BATCH_SIZE = 5000;
+
+const HOUR_MS = 60 * 60_000;
+const DAY_MS = 24 * HOUR_MS;
+
+/** Deletes rows of a fleet a batch at a time until a batch comes back short. */
+async function pruneInBatches(deleteBatch: () => Promise<number>, batchSize: number): Promise<void> {
+  while ((await deleteBatch()) === batchSize) {
+    // A full batch: more may wait.
+  }
+}
+
+export function createPrismaUsageHistory(db: PrismaClient, options: { pruneBatchSize?: number } = {}): UsageHistory {
+  const pruneBatchSize = options.pruneBatchSize ?? PRUNE_BATCH_SIZE;
   return {
+    // A row goes once all it covers is before the cutoff: an hour that ended by then, a UTC day that ended by then, a reading read before it.
+    prune: async (fleetId, before) => {
+      const lastHour = new Date(before.getTime() - HOUR_MS);
+      const lastDayStart = new Date(before.getTime() - DAY_MS);
+      await pruneInBatches(
+        () => db.$executeRaw`DELETE FROM usage_hours WHERE ctid IN (SELECT ctid FROM usage_hours WHERE fleet_id = ${fleetId} AND hour <= ${lastHour} LIMIT ${pruneBatchSize})`,
+        pruneBatchSize,
+      );
+      await pruneInBatches(
+        () => db.$executeRaw`DELETE FROM usage_days WHERE id IN (SELECT id FROM usage_days WHERE fleet_id = ${fleetId} AND day <= (${lastDayStart}::timestamptz AT TIME ZONE 'UTC')::date LIMIT ${pruneBatchSize})`,
+        pruneBatchSize,
+      );
+      await pruneInBatches(
+        () => db.$executeRaw`DELETE FROM subscription_readings WHERE ctid IN (SELECT ctid FROM subscription_readings WHERE fleet_id = ${fleetId} AND read_at < ${before} LIMIT ${pruneBatchSize})`,
+        pruneBatchSize,
+      );
+    },
     record: async (fleetId, reading) => {
       await db.$transaction(async (tx) => {
         const changes: DayChange[] = [];

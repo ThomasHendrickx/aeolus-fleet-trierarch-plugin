@@ -87,6 +87,8 @@ export interface FleetDoor {
     crewToken: string,
     ship: { name: string; type: string; scopes: string[]; idempotencyKey: string },
   ): Promise<Result<{ shipId: ShipId } & IssuedPrompt, FleetRefusal>>;
+  /** The days the fleet keeps its finished history, null for kept for good (fleet:read; decision 0066). */
+  limits(crewToken: string): Promise<Result<{ retentionDays: number | null }, FleetRefusal>>;
   /** Every ship of the fleet, retired ones included (fleet:read). */
   listShips(crewToken: string): Promise<Result<ListedShip[], FleetRefusal>>;
   /** Claims a ship's crew request for a trierarch (crew:assign), only while it is unassigned: a lost claim is CONFLICT. */

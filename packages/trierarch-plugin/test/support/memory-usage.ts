@@ -23,6 +23,7 @@ function byTokensThenValue(a: UsageValue, b: UsageValue): number {
 export function cannedUsageHistory({ usage = NO_USAGE, values = [], windows = [] }: { usage?: TokenUsage; values?: readonly UsageValue[]; windows?: readonly SubscriptionWindows[] }): UsageHistory {
   return {
     record: () => Promise.reject(new Error('not recorded by a read')),
+    prune: () => Promise.reject(new Error('not pruned by a read')),
     readTokens: () => Promise.resolve(usage),
     readValues: (_fleetId, query) => {
       const ordered = values.toSorted(byTokensThenValue);
@@ -40,10 +41,16 @@ export function cannedUsageHistory({ usage = NO_USAGE, values = [], windows = []
 }
 
 /** A usage history that keeps each reading recorded, in order, per fleet; reads are not its part. */
-export function recordingUsageHistory(): UsageHistory & { recorded: { fleetId: FleetId; reading: UsageReading }[] } {
+export function recordingUsageHistory(): UsageHistory & { recorded: { fleetId: FleetId; reading: UsageReading }[]; pruned: { fleetId: FleetId; before: Date }[] } {
   const recorded: { fleetId: FleetId; reading: UsageReading }[] = [];
+  const pruned: { fleetId: FleetId; before: Date }[] = [];
   return {
     recorded,
+    pruned,
+    prune: (fleetId, before) => {
+      pruned.push({ fleetId, before });
+      return Promise.resolve();
+    },
     record: (fleetId, reading) => {
       recorded.push({ fleetId, reading });
       return Promise.resolve();

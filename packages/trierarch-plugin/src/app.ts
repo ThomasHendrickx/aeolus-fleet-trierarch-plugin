@@ -40,6 +40,7 @@ import { createListMachines } from './core/machines/list-machines.js';
 import { createListEnabledModels } from './core/models/list-enabled-models.js';
 import { createSetModelEnabled } from './core/models/set-model-enabled.js';
 import { createKeepUsage } from './core/usage/keep-usage.js';
+import { createPruneUsage } from './core/usage/prune-usage.js';
 import { createReadTokenUsage } from './core/usage/read-token-usage.js';
 import { createReadSubscriptionWindows } from './core/usage/read-subscription-windows.js';
 import { createReadUsageValues } from './core/usage/read-usage-values.js';
@@ -49,6 +50,9 @@ import type { Clock } from './core/shared/clock.js';
 
 /** Between rounds of the plugin's ship taking what waits for it: a ping is answered within about this long. */
 const PING_ROUND_MS = 1000;
+
+/** Between passes pruning each fleet's usage by its retention (the usage design, "Scale and retention"). */
+const PRUNE_USAGE_INTERVAL_MS = 60 * 60_000;
 
 export const systemClock: Clock = { now: () => new Date() };
 
@@ -301,6 +305,30 @@ export function createTrierarchPluginApp(options: {
       });
   }, PING_ROUND_MS);
 
+  const pruneUsage = createPruneUsage({ door, connections, usage, isServed, clock });
+  // One pass at a time; a fleet that refused its limits is pruned on the next pass.
+  let isPruning = false;
+  const pruning = setInterval(() => {
+    if (isPruning) {
+      return;
+    }
+    isPruning = true;
+    pruneUsage()
+      .then((pruned) => {
+        for (const { fleetId, outcome } of pruned) {
+          if (outcome.kind === 'refused') {
+            server.log.warn({ fleet: fleetId, refusal: outcome.refusal }, "reading the fleet's retention refused; its usage is pruned on the next pass");
+          }
+        }
+      })
+      .catch((error: unknown) => {
+        server.log.error({ err: error }, 'pruning usage failed; the next pass tries again');
+      })
+      .finally(() => {
+        isPruning = false;
+      });
+  }, PRUNE_USAGE_INTERVAL_MS);
+
   const trpc: FastifyTRPCPluginOptions<TrierarchPluginRouter> = {
     prefix: '/trpc',
     trpcOptions: {
@@ -341,6 +369,7 @@ export function createTrierarchPluginApp(options: {
   server.addHook('onClose', async () => {
     clearInterval(assigning);
     clearInterval(answering);
+    clearInterval(pruning);
     await prisma.$disconnect();
   });
 

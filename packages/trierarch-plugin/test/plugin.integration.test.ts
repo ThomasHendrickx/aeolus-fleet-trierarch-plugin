@@ -647,3 +647,15 @@ describe("a trierarch's usage, sent to the trierarch plugin's ship (the usage de
     await expect(tokensIn(address)).resolves.toEqual({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
   });
 });
+
+describe("the fleet's retention, read as the trierarch plugin prunes usage by it (the usage design, decision 0066)", () => {
+  it('reads the days the fleet keeps its finished history, and none while it keeps it for good', async () => {
+    const door = createRestFleetDoor(fleetUrl);
+    const registered = await door.register({ shipId, secret });
+    const crewToken = registered.isOk ? registered.value.crewToken : '';
+
+    await expect(door.limits(crewToken)).resolves.toEqual({ isOk: true, value: { retentionDays: null } });
+    await fleetDatabase.fleet.update({ where: { id: argo.fleetId }, data: { retentionSet: true, retentionDays: 30 } });
+    await expect(door.limits(crewToken)).resolves.toEqual({ isOk: true, value: { retentionDays: 30 } });
+  });
+});
