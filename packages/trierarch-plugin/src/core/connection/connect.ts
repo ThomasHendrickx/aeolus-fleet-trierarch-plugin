@@ -3,6 +3,7 @@ import type { FleetId, ShipId } from '@aeolus-fleet/common';
 import type { Clock } from '../shared/clock.js';
 import { refuse, type DomainError } from '../shared/errors.js';
 import { ok, type Result } from '../shared/result.js';
+import type { DeclareScopes } from '../scopes/declare-scopes.js';
 import type { ConnectionStatus, FleetDoor, ConnectionStore } from './ports.js';
 
 export type ConnectRefusal = DomainError<'ALREADY_CONNECTED' | 'SECRET_REFUSED' | 'OTHER_FLEET' | 'MISSING_SCOPES'>;
@@ -24,9 +25,11 @@ const PLUGIN_SCOPES = ['fleet:read', 'fleet:commission', 'crew:assign', 'crew:ru
  * fleet:read, fleet:commission, crew:assign and crew:run, or the trierarch plugin lets it go
  * again and keeps nothing. Each fleet has its own connection: connect works
  * only while the trierarch plugin is not connected to the operator's fleet,
- * whatever other fleets it serves. The secret is never kept or logged.
+ * whatever other fleets it serves. Once connected it declares its namespace
+ * at once, so a person joining a machine right after is not refused; a refusal
+ * does not undo the connection, the periodic pass declares again. The secret is never kept or logged.
  */
-export function createConnect(deps: { door: FleetDoor; store: ConnectionStore; clock: Clock }): Connect {
+export function createConnect(deps: { door: FleetDoor; store: ConnectionStore; clock: Clock; declareScopes: DeclareScopes }): Connect {
   return async ({ operatorFleetId, shipId, secret }) => {
     if (await deps.store.find(operatorFleetId)) {
       return refuse('ALREADY_CONNECTED', 'The trierarch plugin is connected to this fleet already');
@@ -54,6 +57,7 @@ export function createConnect(deps: { door: FleetDoor; store: ConnectionStore; c
     }
 
     await deps.store.save({ fleetId: who.value.fleetId, shipId, name: who.value.name, crewToken, crewedAt: deps.clock.now() });
+    await deps.declareScopes(who.value.fleetId);
     return ok({ state: 'connected', ship: { shipId, name: who.value.name }, lastShipId: shipId });
   };
 }

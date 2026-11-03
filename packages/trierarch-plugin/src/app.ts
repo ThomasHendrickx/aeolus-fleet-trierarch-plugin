@@ -134,7 +134,6 @@ export function createTrierarchPluginApp(options: {
   const setFleetEnabled = createSetFleetEnabled({ switches, requests, hasher: sha256RequestHasher, clock, withdraw });
   const readFleet = createReadFleet({ isServed, connections });
   const deleteFleet = createDeleteFleet({ forgetter: createPrismaFleetForgetter(prisma), requests, hasher: sha256RequestHasher, clock, withdraw });
-  const connect = createConnect({ door, store: connections, clock });
   const joinMachine = createJoinMachine({ door, connections, keys: randomIdempotencyKeys, fleetUrl: options.fleetUrl });
   const newSetupLine = createNewSetupLine({ door, connections, operatorFleet: createOperatorFleet(options.fleetUrl), fleetUrl: options.fleetUrl });
   const silentAfterMs = options.silentAfterMs ?? DEFAULT_SILENT_AFTER_MS;
@@ -175,6 +174,7 @@ export function createTrierarchPluginApp(options: {
     }
   };
   const declareScopes = createDeclareScopes({ door, connections });
+  const connect = createConnect({ door, store: connections, clock, declareScopes });
   /** The fleets whose namespace was last refused, so a ship that cannot declare (no scopes:declare) is logged once, not every pass. */
   const refusedScopes = new Set<FleetId>();
   /** Declares the trierarch plugin's namespace with trierarch:join (decision 0055); a refusal is logged once and the next pass tries again. */
