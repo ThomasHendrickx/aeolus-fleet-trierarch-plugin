@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { FLEET_ID, OTHER_FLEET_ID, SHIP_ID, fakePluginFleet, memoryConnectionStore } from '../../../test/support/connection-fakes.js';
+import { createDeclareScopes } from '../scopes/declare-scopes.js';
 import { createConnect } from './connect.js';
 
 const AT = new Date('2026-10-03T11:00:00.000Z');
@@ -14,7 +15,7 @@ beforeEach(() => {
 });
 
 function connect(input: { secret: string; operatorFleetId?: typeof FLEET_ID }) {
-  return createConnect({ door: fleet.door, store, clock: { now: () => AT } })({ operatorFleetId: input.operatorFleetId ?? FLEET_ID, shipId: SHIP_ID, secret: input.secret });
+  return createConnect({ door: fleet.door, store, clock: { now: () => AT }, declareScopes: createDeclareScopes({ door: fleet.door, connections: store }) })({ operatorFleetId: input.operatorFleetId ?? FLEET_ID, shipId: SHIP_ID, secret: input.secret });
 }
 
 describe('connecting the trierarch plugin', () => {
@@ -75,5 +76,18 @@ describe('connecting the trierarch plugin', () => {
     fleet.state.secret = 'aeolus_sk_v1_new';
 
     await expect(connect({ secret: 'aeolus_sk_v1_new' })).resolves.toMatchObject({ isOk: true, value: { state: 'connected' } });
+  });
+
+  it('declares the plugin namespace before it answers, so joining a machine right after is not refused', async () => {
+    fleet.state.scopes = [...fleet.state.scopes, 'scopes:declare'];
+
+    await expect(connect({ secret: 'aeolus_sk_v1_good' })).resolves.toMatchObject({ isOk: true });
+    expect(fleet.state.namespaces.map((each) => each.namespace)).toEqual(['trierarch']);
+  });
+
+  it('still connects when the fleet refuses the namespace, as the next pass declares it again', async () => {
+    await expect(connect({ secret: 'aeolus_sk_v1_good' })).resolves.toMatchObject({ isOk: true, value: { state: 'connected' } });
+    expect(fleet.state.namespaces).toEqual([]);
+    await expect(store.find(FLEET_ID)).resolves.toMatchObject({ shipId: SHIP_ID });
   });
 });
