@@ -24,6 +24,8 @@ permissions:
   pull-requests: read
   # To read CI's result for the released commit.
   actions: read
+  # To read the release's milestone and close it.
+  issues: write
 
 concurrency:
   group: release
@@ -95,6 +97,29 @@ jobs:
 
       - run: npm run build
 
+      # The milestone "trierarch-plugin <version>" is the release's scope: open issues in it
+      # stop the run before anything is published. A hotfix without one goes on.
+      - name: Check the release's milestone has no open issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          MILESTONE="trierarch-plugin $VERSION"
+          number=$(gh api --paginate "repos/$GITHUB_REPOSITORY/milestones?state=all&per_page=100" \
+            | jq -r --arg title "$MILESTONE" '.[] | select(.title == $title) | .number')
+          if [[ -z "$number" ]]; then
+            echo "No milestone named '$MILESTONE': going on without one." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          open=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues?milestone=$number&state=open&per_page=100" \
+            | jq -r '.[] | "#\(.number) \(.title)"')
+          if [[ -n "$open" ]]; then
+            echo "::error::Milestone '$MILESTONE' has open issues, nothing is published:"
+            echo "$open"
+            exit 1
+          fi
+          echo "Milestone '$MILESTONE' has no open issues." | tee -a "$GITHUB_STEP_SUMMARY"
+
       # Catches a problem in the package before it is published. A dry run
       # refuses a version on npm already too, so it skips it, as the publish
       # step below does.
@@ -147,3 +172,21 @@ jobs:
           gh pr list --state merged --label "$VERSION" --json number,title,url --limit 1000 \
             | node scripts/release-notes.ts "$VERSION" > "$RUNNER_TEMP/release-notes.md"
           gh release create "v$VERSION" --verify-tag --title "v$VERSION" --notes-file "$RUNNER_TEMP/release-notes.md"
+
+      # After the release is out, so a run that failed before it leaves the
+      # milestone open. Closing a closed milestone changes nothing, as when a
+      # release is dispatched again.
+      - name: Close the release's milestone
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          MILESTONE="trierarch-plugin $VERSION"
+          number=$(gh api --paginate "repos/$GITHUB_REPOSITORY/milestones?state=all&per_page=100" \
+            | jq -r --arg title "$MILESTONE" '.[] | select(.title == $title) | .number')
+          if [[ -z "$number" ]]; then
+            echo "No milestone named '$MILESTONE': nothing to close." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/milestones/$number" -f state=closed > /dev/null
+          echo "Closed milestone '$MILESTONE'." | tee -a "$GITHUB_STEP_SUMMARY"
