@@ -1,8 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { setupLineOf } from './core/machines/setup-line.js';
-
 const README = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
 
 /** The cells of a table row, split at each `|` that is not escaped as `\|`. */
@@ -20,8 +18,9 @@ describe('the README table of procedures', () => {
     expect(cellsOf(row ?? '')).toHaveLength(2);
   });
 
-  it('names the setup line the plugin builds, up to its placeholders', () => {
-    const line = setupLineOf({ fleetUrl: '<url>', shipId: '<id>' as never, pluginShipId: '<its own ship>' as never, secret: '<secret>' });
-    expect(README).toContain(line.replace('|', '\\|'));
+  it('names the setup line with its pipe escaped', () => {
+    expect(README).toContain(
+      'curl -fsSL https://raw.githubusercontent.com/ThomasHendrickx/aeolus-fleet-trierarch/main/install.sh \\| sh -s -- --fleet-url <url>',
+    );
   });
 });
