@@ -150,7 +150,7 @@ describe('a machine joining', () => {
     expect({ name: ship.name, type: ship.type, scopes: [...ship.scopes].sort() }).toEqual({ name: 'mac-studio', type: 'trierarch', scopes: ['crew:run', 'messages:receive', 'messages:send'] });
     expect(joined.prompt).toContain(joined.secret);
     expect(joined.crewLines.map((line) => line.harness)).toContain('claude-code');
-    expect(joined.setupLine).toBe(`npx @aeolus-fleet/trierarch init --fleet-url ${fleetUrl} --ship-id ${joined.shipId} --plugin-ship-id ${shipId} --secret ${joined.secret}`);
+    expect(joined.setupLine).toBe(`curl -fsSL https://raw.githubusercontent.com/ThomasHendrickx/aeolus-fleet-trierarch/main/install.sh | sh -s -- --fleet-url ${fleetUrl} --ship-id ${joined.shipId} --plugin-ship-id ${shipId} --secret ${joined.secret}`);
   });
 
   it('is refused for a name an active ship holds', async () => {
@@ -188,7 +188,7 @@ describe('a new setup line for a machine (aeolus-fleet#1239)', () => {
     expect(answer.status, await answer.clone().text()).toBe(200);
     const { setupLine } = newSetupLineSchema.parse(await answer.json()).result.data;
     const newSecret = secretInLine(setupLine);
-    expect(setupLine).toBe(`npx @aeolus-fleet/trierarch init --fleet-url ${fleetUrl} --ship-id ${machineId} --plugin-ship-id ${shipId} --secret ${newSecret}`);
+    expect(setupLine).toBe(`curl -fsSL https://raw.githubusercontent.com/ThomasHendrickx/aeolus-fleet-trierarch/main/install.sh | sh -s -- --fleet-url ${fleetUrl} --ship-id ${machineId} --plugin-ship-id ${shipId} --secret ${newSecret}`);
     await expect(crewAsTrierarch(fleetUrl, { shipId: machineId, secret: joined.secret })).rejects.toThrow();
     await expect(crewAsTrierarch(fleetUrl, { shipId: machineId, secret: newSecret })).resolves.toBeDefined();
   });
