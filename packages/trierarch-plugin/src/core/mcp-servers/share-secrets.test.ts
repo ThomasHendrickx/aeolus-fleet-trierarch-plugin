@@ -167,11 +167,11 @@ describe('sharing the secret store with the trierarchs', () => {
     expect(fleet.state.sent.map((each) => each.shipId)).toEqual([STUDIO, MAC]);
   });
 
-  it('sends nothing to a trierarch whose key the sealer refuses, names it, and goes on to the others', async () => {
+  it('sends nothing to a trierarch whose key the sealer refuses, names it with its key, and goes on to the others', async () => {
     aShip(MAC, { sealingKey: sealedTo(REFUSED_KEY) });
     aShip(STUDIO, { sealingKey: sealedTo(STUDIO_KEY) });
 
-    await expect(share()).resolves.toEqual({ isOk: true, value: { shared: 1, unsealable: [MAC] } });
+    await expect(share()).resolves.toEqual({ isOk: true, value: { shared: 1, unsealable: [{ shipId: MAC, publicKey: REFUSED_KEY }] } });
     expect(fleet.state.sent.map((each) => each.shipId)).toEqual([STUDIO]);
   });
 
@@ -181,7 +181,7 @@ describe('sharing the secret store with the trierarchs', () => {
 
     await shareWith(sealed)(FLEET_ID);
 
-    await expect(shareWith(sealed)(FLEET_ID)).resolves.toEqual({ isOk: true, value: { shared: 0, unsealable: [MAC] } });
+    await expect(shareWith(sealed)(FLEET_ID)).resolves.toEqual({ isOk: true, value: { shared: 0, unsealable: [{ shipId: MAC, publicKey: REFUSED_KEY }] } });
   });
 
   it('refuses while the trierarch plugin is not connected to the fleet', async () => {

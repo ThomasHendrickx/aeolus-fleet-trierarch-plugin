@@ -15,7 +15,7 @@ import { createPluginDatabase } from '../src/testing/database.js';
 import { readMcpServers } from '../src/core/mcp-servers/mcp-servers.js';
 import { readSecrets } from '../src/core/mcp-servers/secrets.js';
 import { readTrustedRepositories } from '../src/core/repositories/trusted-repositories.js';
-import { crewAsTrierarch, receiveAsTrierarch, reportAsTrierarch } from './support/trierarch.js';
+import { crewAsTrierarch, receiveAsTrierarch, reportAsTrierarch, trierarchDetails } from './support/trierarch.js';
 
 // The trierarch plugin against a real fleet: it starts not connected, with no
 // secret anywhere; the operator connects it as its ship (fleet:read,
@@ -592,6 +592,26 @@ describe('the secret store against a real fleet (decision M5)', () => {
 
     await app.assignOnce();
 
+    expect((await trierarch.receive()).map((each) => each.contentType)).not.toContain(SECRETS_TYPE);
+  });
+
+  it('a trierarch whose key is refused is warned about once per key, and assignment goes on', async () => {
+    const { app, machine, logged } = await storeMachine();
+    const trierarch = await crewAsTrierarch(fleetUrl, machine);
+    // The point of order 1: no box can be sealed to it.
+    const refusedKey = `AQ${'A'.repeat(41)}=`;
+    await trierarch.report({ ...trierarchDetails({ caps: { ships: 4, running: 2 }, flags: [], version: '0.19.0' }), sealingKey: { scheme: 'nacl-sealed-box', publicKey: refusedKey } });
+    const scout = unwrap(await useCases.commissionShip(argo, { idempotencyKey: newKey(), name: 'scout', type: 'implementer' }));
+    unwrap(await useCases.requestCrew(argo, { shipId: scout.shipId, settings: { harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: {} } }));
+
+    await app.assignOnce();
+    await app.assignOnce();
+    await app.assignOnce();
+
+    const warnings = logged.filter((line) => line.includes('refuses a sealed box'));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain(refusedKey);
+    await expect(fleetDatabase.crewRequest.findUniqueOrThrow({ where: { shipId: scout.shipId } })).resolves.toMatchObject({ assignedTo: machine.shipId });
     expect((await trierarch.receive()).map((each) => each.contentType)).not.toContain(SECRETS_TYPE);
   });
 
