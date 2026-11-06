@@ -59,6 +59,17 @@ describe('the secret store', () => {
     expect(!read.isOk && read.error.reason).toBe('graph: a value is 1 to 8192 bytes of UTF-8 with no CR, LF or NUL');
   });
 
+  it.each([
+    ['a value in the place of a name', { listed: { 'Bearer leaked value': 'graph-token' }, position: 'entry 1' }],
+    ['a second entry that fails the name rules', { listed: { atlas: VALUE, 'Bearer leaked value': 'graph-token' }, position: 'entry 2' }],
+  ])('says which entry by position when %s, never the name', (_label, { listed, position }) => {
+    const read = readSecrets(listed, NONE);
+
+    expect(!read.isOk && read.error.reason).toMatch(new RegExp(`^${position}: `));
+    expect(!read.isOk && read.error.reason).not.toContain('leaked');
+    expect(!read.isOk && read.error.reason).not.toContain('graph-token');
+  });
+
   it('refuses a server whose credential names a secret the store does not hold', () => {
     const read = readSecrets({ other: VALUE }, GRAPH_WITH_CREDENTIAL);
 

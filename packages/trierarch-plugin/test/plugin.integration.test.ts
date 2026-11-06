@@ -529,7 +529,7 @@ describe('the secret store against a real fleet (decision M5)', () => {
   const VALUE = 'Bearer test-value-only-sealed-7f3c';
   const sealedSchema = z.object({ publicKey: z.string(), secrets: z.array(z.object({ name: z.string(), sealed: z.string() })) });
 
-  async function storeMachine(): Promise<{ app: TrierarchPluginApp; machine: { shipId: ShipId; secret: string }; logged: string[] }> {
+  async function storeMachine(): Promise<{ app: TrierarchPluginApp; machine: { shipId: ShipId; secret: string }; logged: string[]; address: string }> {
     const listed = readMcpServers({ 'company-graph': { url: 'https://graph.example.invalid/mcp', tools: ['read_neo4j_cypher'], credential: { secret: 'graph-token', header: 'Authorization' } } });
     const mcpServers = listed.isOk ? listed.value : { servers: [] };
     const store = readSecrets({ 'graph-token': VALUE }, mcpServers);
@@ -541,7 +541,7 @@ describe('the secret store against a real fleet (decision M5)', () => {
     const address = await app.server.listen({ host: '127.0.0.1', port: 0 });
     expect((await connectPlugin(address, { cookie, shipId, secret })).status).toBe(200);
     const joined = joinedSchema.parse(await (await mutate(address, { procedure: 'machines.join', cookie, body: { name: 'mac-studio' } })).json()).result.data;
-    return { app, machine: { shipId: z.templateLiteral(['shp_', z.string()]).parse(joined.shipId), secret: joined.secret }, logged };
+    return { app, machine: { shipId: z.templateLiteral(['shp_', z.string()]).parse(joined.shipId), secret: joined.secret }, logged, address };
   }
 
   /** A key pair as `aeolus-trierarch init` makes one, and the report details that state its public key. */
@@ -593,6 +593,29 @@ describe('the secret store against a real fleet (decision M5)', () => {
     await app.assignOnce();
 
     expect((await trierarch.receive()).map((each) => each.contentType)).not.toContain(SECRETS_TYPE);
+  });
+
+  it('a trierarch whose key is refused is warned about once per key, and assignment goes on to a trierarch that fits', async () => {
+    const { app, machine, logged, address } = await storeMachine();
+    const refused = await crewAsTrierarch(fleetUrl, machine);
+    // The point of order 1: no box can be sealed to it.
+    const refusedKey = `AQ${'A'.repeat(41)}=`;
+    await refused.report({ sealingKey: { scheme: 'nacl-sealed-box', publicKey: refusedKey } });
+    const other = joinedSchema.parse(await (await mutate(address, { procedure: 'machines.join', cookie, body: { name: 'mac-mini' } })).json()).result.data;
+    const otherShipId = z.templateLiteral(['shp_', z.string()]).parse(other.shipId);
+    await reportAsTrierarch(fleetUrl, { shipId: otherShipId, secret: other.secret, setup: { caps: { ships: 4, running: 2 }, flags: [], version: '0.19.0' } });
+    const scout = unwrap(await useCases.commissionShip(argo, { idempotencyKey: newKey(), name: 'scout', type: 'implementer' }));
+    unwrap(await useCases.requestCrew(argo, { shipId: scout.shipId, settings: { harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: {} } }));
+
+    await app.assignOnce();
+    await app.assignOnce();
+    await app.assignOnce();
+
+    const warnings = logged.filter((line) => line.includes('refuses a sealed box'));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain(refusedKey);
+    await expect(fleetDatabase.crewRequest.findUniqueOrThrow({ where: { shipId: scout.shipId } })).resolves.toMatchObject({ assignedTo: otherShipId });
+    expect((await refused.receive()).map((each) => each.contentType)).not.toContain(SECRETS_TYPE);
   });
 
   it('a trierarch that asks for the store again gets it on the next pass', async () => {

@@ -9,7 +9,7 @@ import type { Sealer } from './ports.js';
 import { readSealingKey } from './sealing-key.js';
 import { SECRETS_CONTENT_TYPE, secretsPayload, type Secrets } from './secrets.js';
 
-export type ShareSecrets = (fleetId: FleetId) => Promise<Result<{ shared: number; unsealable: ShipId[] }, DomainError<'NOT_CONNECTED' | 'FLEET_UNAVAILABLE'>>>;
+export type ShareSecrets = (fleetId: FleetId) => Promise<Result<{ shared: number; unsealable: { shipId: ShipId; publicKey: string }[] }, DomainError<'NOT_CONNECTED' | 'FLEET_UNAVAILABLE'>>>;
 
 /** The refusal that means no answer came: the pass stops, and the next one tries again. */
 const UNAVAILABLE = 'UNAVAILABLE';
@@ -24,7 +24,7 @@ const UNAVAILABLE = 'UNAVAILABLE';
  * which may come with a changed store, sends it to every trierarch again
  * under a new idempotency key. An empty store is sent too, so a trierarch
  * forgets what left it. A trierarch without a key is sent nothing, and so is
- * one whose key the sealer refuses: it is named in `unsealable`, the pass goes
+ * one whose key the sealer refuses: it is named in `unsealable` with the key, the pass goes
  * on to the others, and the next pass tries it again. A send the fleet
  * refuses leaves that trierarch for the next pass.
  */
@@ -47,7 +47,7 @@ export function createShareSecrets(deps: {
       return unavailable(listed.error);
     }
     let shared = 0;
-    const unsealable: ShipId[] = [];
+    const unsealable: { shipId: ShipId; publicKey: string }[] = [];
     for (const ship of listed.value) {
       if (ship.type !== TRIERARCH_TYPE || ship.status === 'retired') {
         continue;
@@ -69,7 +69,7 @@ export function createShareSecrets(deps: {
         secrets.push({ name, sealed: sealed.value });
       }
       if (secrets.length < deps.secrets.secrets.length) {
-        unsealable.push(ship.shipId);
+        unsealable.push({ shipId: ship.shipId, publicKey });
         continue;
       }
       const sent = await deps.door.send(crew.crewToken, { shipId: ship.shipId, contentType: SECRETS_CONTENT_TYPE, payload: secretsPayload({ publicKey, secrets }), idempotencyKey: deps.keys.next() });

@@ -66,7 +66,8 @@ function sealedPayloadBytes(store: Secrets): number {
 
 /**
  * The store from the configuration's object of names to values, or why not,
- * never naming a value: each name a trierarch name, each value fit for a
+ * never naming a value or a name that fails the rules (an entry is told by
+ * its position): each name a trierarch name, each value fit for a
  * header, every secret a server's credential names held, and the whole
  * small enough, once sealed, to reach a trierarch in one message.
  */
@@ -76,10 +77,11 @@ export function readSecrets(listed: unknown, servers: McpServers): Result<Secret
     return err({ reason: 'the secrets are an object of names to values' });
   }
   const secrets: { name: string; value: string }[] = [];
-  for (const [name, value] of Object.entries(object.data)) {
+  for (const [index, [name, value]] of Object.entries(object.data).entries()) {
     const named = trierarchNameSchema.safeParse(name);
     if (!named.success) {
-      return err({ reason: `${name}: ${named.error.issues[0]?.message ?? 'not a name'}` });
+      // A name that fails the rules may be a value swapped into its place, so the entry is told by position.
+      return err({ reason: `entry ${String(index + 1)}: ${named.error.issues[0]?.message ?? 'not a name'}` });
     }
     if (!isValue(value)) {
       return err({ reason: `${name}: ${VALUE_REFUSED}` });
