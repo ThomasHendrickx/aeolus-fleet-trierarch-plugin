@@ -70,7 +70,7 @@ describe('the crew-time MCP servers', () => {
     const read = readMcpServers({ graph: GRAPH });
 
     expect(read.isOk && mcpServersPayload(read.value)).toBe(
-      '{"servers":[{"name":"graph","url":"https://graph.example.invalid/mcp","tools":["read_neo4j_cypher","get_neo4j_schema"]}]}',
+      '{"servers":[{"name":"graph","url":"https://graph.example.invalid/mcp","transport":"streamable-http","tools":["read_neo4j_cypher","get_neo4j_schema"]}]}',
     );
   });
 });

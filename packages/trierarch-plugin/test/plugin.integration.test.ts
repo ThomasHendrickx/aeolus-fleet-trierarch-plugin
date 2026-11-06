@@ -478,7 +478,7 @@ describe('a trierarch asking for the trusted repositories again (aeolus-fleet#38
 });
 
 describe('the crew-time MCP servers against a real fleet (aeolus-fleet-trierarch#120)', () => {
-  const GRAPH_PAYLOAD = '{"servers":[{"name":"company-graph","url":"https://graph.example.invalid/mcp","tools":["read_neo4j_cypher"]}]}';
+  const GRAPH_PAYLOAD = '{"servers":[{"name":"company-graph","url":"https://graph.example.invalid/mcp","transport":"streamable-http","tools":["read_neo4j_cypher"]}]}';
   const SERVERS_TYPE = 'application/vnd.aeolus.trierarch.mcp-servers+json';
 
   async function joinedMachine(): Promise<{ app: TrierarchPluginApp; machine: { shipId: ShipId; secret: string } }> {

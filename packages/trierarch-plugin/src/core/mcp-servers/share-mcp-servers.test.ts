@@ -11,7 +11,7 @@ const MAC: ShipId = 'shp_01m3tbfspe96yf1rnr4ank9h2a';
 const STUDIO: ShipId = 'shp_01m3tbfspe96yf1rnr4ank9h3a';
 const SCOUT: ShipId = 'shp_01m3tbfspe96yf1rnr4ank9h4a';
 const CONTENT_TYPE = 'application/vnd.aeolus.trierarch.mcp-servers+json';
-const GRAPH_PAYLOAD = '{"servers":[{"name":"company-graph","url":"https://graph.example.invalid/mcp","tools":["read_neo4j_cypher"]}]}';
+const GRAPH_PAYLOAD = '{"servers":[{"name":"company-graph","url":"https://graph.example.invalid/mcp","transport":"streamable-http","tools":["read_neo4j_cypher"]}]}';
 
 let fleet: ReturnType<typeof fakePluginFleet>;
 let connections: ReturnType<typeof memoryConnectionStore>;
