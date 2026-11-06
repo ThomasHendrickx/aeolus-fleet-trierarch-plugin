@@ -51,7 +51,7 @@ describe('a machine joining', () => {
         prompt: `You crew the Aeolus ship mac-studio. Register with ship id ${COMMISSIONED_SHIP_ID} and secret ${secret}.`,
         crewLines: [{ harness: 'claude-code', line: `/aeolus:crew ${FLEET_URL} ${COMMISSIONED_SHIP_ID} ${secret}` }],
         secret,
-        setupLine: `npx @aeolus-fleet/trierarch init --fleet-url ${FLEET_URL} --ship-id ${COMMISSIONED_SHIP_ID} --plugin-ship-id ${SHIP_ID} --secret ${secret}`,
+        setupLine: `curl -fsSL https://raw.githubusercontent.com/ThomasHendrickx/aeolus-fleet-trierarch/main/install.sh | sh -s -- --fleet-url ${FLEET_URL} --ship-id ${COMMISSIONED_SHIP_ID} --plugin-ship-id ${SHIP_ID} --secret ${secret}`,
       },
     });
   });
