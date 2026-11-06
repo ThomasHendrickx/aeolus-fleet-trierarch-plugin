@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { ListedShip } from '../connection/ports.js';
 import { FLEET_ID, SHIP_ID, fakePluginFleet, memoryConnectionStore } from '../../../test/support/connection-fakes.js';
 import { readMcpServers } from './mcp-servers.js';
+import { err, ok } from '../shared/result.js';
 import { readSecrets, type Secrets } from './secrets.js';
 import { createShareSecrets } from './share-secrets.js';
 
@@ -46,8 +47,14 @@ function aStore(listed: Record<string, string>): Secrets {
 
 const STORE = aStore({ 'graph-token': 'test-value-one', atlas: 'test-value-two' });
 
-/** A sealer that shows what it sealed to which key, as only a test may. */
-const sealer = { seal: (value: string, publicKey: string) => Promise.resolve(`sealed(${value})to(${publicKey.slice(0, 6)})`) };
+/** A key the sealer refuses, as libsodium refuses a low-order point. */
+const REFUSED_KEY = `${'refused'.padEnd(43, 'A')}=`;
+
+/** A sealer that shows what it sealed to which key, as only a test may, and refuses REFUSED_KEY. */
+const sealer = {
+  seal: (value: string, publicKey: string) =>
+    Promise.resolve(publicKey === REFUSED_KEY ? err({ kind: 'KEY_REFUSED' as const }) : ok(`sealed(${value})to(${publicKey.slice(0, 6)})`)),
+};
 
 const shareWith = (sealed: Map<ShipId, string>, store: Secrets = STORE) =>
   createShareSecrets({ door: fleet.door, connections, keys: { next: () => `key-${String(keys++)}` }, secrets: store, sealer, sealed });
@@ -58,7 +65,7 @@ describe('sharing the secret store with the trierarchs', () => {
     aShip(MAC, { sealingKey: sealedTo(MAC_KEY) });
     aShip(STUDIO, { sealingKey: sealedTo(STUDIO_KEY) });
 
-    await expect(share()).resolves.toEqual({ isOk: true, value: { shared: 2 } });
+    await expect(share()).resolves.toEqual({ isOk: true, value: { shared: 2, unsealable: [] } });
     expect(fleet.state.sent).toEqual([
       {
         shipId: MAC,
@@ -89,10 +96,11 @@ describe('sharing the secret store with the trierarchs', () => {
     ['a scheme it does not know', { scheme: 'rsa-oaep', publicKey: MAC_KEY }],
     ['a key that is not base64', sealedTo(`${'mac!'.padEnd(43, 'A')}=`)],
     ['a key that is not 32 bytes', sealedTo('bWFj')],
+    ['the all-zero key', sealedTo(`${'A'.repeat(43)}=`)],
   ])('sends nothing to a trierarch whose report states %s', async (_label, sealingKey) => {
     aShip(MAC, sealingKey === undefined ? {} : { sealingKey });
 
-    await expect(share()).resolves.toEqual({ isOk: true, value: { shared: 0 } });
+    await expect(share()).resolves.toEqual({ isOk: true, value: { shared: 0, unsealable: [] } });
     expect(fleet.state.sent).toEqual([]);
   });
 
@@ -101,7 +109,7 @@ describe('sharing the secret store with the trierarchs', () => {
     const sealed = new Map<ShipId, string>();
 
     await shareWith(sealed)(FLEET_ID);
-    await expect(shareWith(sealed)(FLEET_ID)).resolves.toEqual({ isOk: true, value: { shared: 0 } });
+    await expect(shareWith(sealed)(FLEET_ID)).resolves.toEqual({ isOk: true, value: { shared: 0, unsealable: [] } });
 
     expect(fleet.state.sent).toHaveLength(1);
   });
@@ -152,11 +160,28 @@ describe('sharing the secret store with the trierarchs', () => {
     fleet.state.refusingSends.add(MAC);
     const sealed = new Map<ShipId, string>();
 
-    await expect(shareWith(sealed)(FLEET_ID)).resolves.toEqual({ isOk: true, value: { shared: 1 } });
+    await expect(shareWith(sealed)(FLEET_ID)).resolves.toEqual({ isOk: true, value: { shared: 1, unsealable: [] } });
     fleet.state.refusingSends.clear();
     await shareWith(sealed)(FLEET_ID);
 
     expect(fleet.state.sent.map((each) => each.shipId)).toEqual([STUDIO, MAC]);
+  });
+
+  it('sends nothing to a trierarch whose key the sealer refuses, names it, and goes on to the others', async () => {
+    aShip(MAC, { sealingKey: sealedTo(REFUSED_KEY) });
+    aShip(STUDIO, { sealingKey: sealedTo(STUDIO_KEY) });
+
+    await expect(share()).resolves.toEqual({ isOk: true, value: { shared: 1, unsealable: [MAC] } });
+    expect(fleet.state.sent.map((each) => each.shipId)).toEqual([STUDIO]);
+  });
+
+  it('tries a trierarch whose key the sealer refused again on the next pass', async () => {
+    aShip(MAC, { sealingKey: sealedTo(REFUSED_KEY) });
+    const sealed = new Map<ShipId, string>();
+
+    await shareWith(sealed)(FLEET_ID);
+
+    await expect(shareWith(sealed)(FLEET_ID)).resolves.toEqual({ isOk: true, value: { shared: 0, unsealable: [MAC] } });
   });
 
   it('refuses while the trierarch plugin is not connected to the fleet', async () => {

@@ -31,7 +31,7 @@ describe('sealing a value to a trierarch key', () => {
 
     const sealed = await sealedBoxSealer.seal('Bearer test-value-é', publicKey);
 
-    expect(opened(sealed, pair)).toBe('Bearer test-value-é');
+    expect(sealed.isOk && opened(sealed.value, pair)).toBe('Bearer test-value-é');
   });
 
   it('gives the sealed box as standard base64 with padding, 48 bytes over the value', async () => {
@@ -39,8 +39,8 @@ describe('sealing a value to a trierarch key', () => {
 
     const sealed = await sealedBoxSealer.seal('x', publicKey);
 
-    expect(sealed).toMatch(STANDARD_BASE64);
-    expect(Buffer.from(sealed, 'base64')).toHaveLength(49);
+    expect(sealed.isOk && sealed.value).toMatch(STANDARD_BASE64);
+    expect(sealed.isOk && Buffer.from(sealed.value, 'base64')).toHaveLength(49);
   });
 
   it('never holds the value readable in what it gives', async () => {
@@ -48,7 +48,7 @@ describe('sealing a value to a trierarch key', () => {
 
     const sealed = await sealedBoxSealer.seal('test-value-readable', publicKey);
 
-    expect(Buffer.from(sealed, 'base64').toString('latin1')).not.toContain('test-value-readable');
+    expect(sealed.isOk && Buffer.from(sealed.value, 'base64').toString('latin1')).not.toContain('test-value-readable');
   });
 
   it('seals to one key only: another key pair does not open it', async () => {
@@ -57,6 +57,10 @@ describe('sealing a value to a trierarch key', () => {
 
     const sealed = await sealedBoxSealer.seal('test-value', publicKey);
 
-    expect(() => opened(sealed, other.pair)).toThrow();
+    expect(() => opened(sealed.isOk ? sealed.value : '', other.pair)).toThrow();
+  });
+
+  it('refuses a low-order key, such as the all-zero one, without throwing', async () => {
+    await expect(sealedBoxSealer.seal('test-value', `${'A'.repeat(43)}=`)).resolves.toEqual({ isOk: false, error: { kind: 'KEY_REFUSED' } });
   });
 });
