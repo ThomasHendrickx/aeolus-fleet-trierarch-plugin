@@ -66,15 +66,15 @@ describe('the secret store', () => {
   });
 
   it('refuses a store too large for one message once sealed', () => {
-    const listed = Object.fromEntries(Array.from({ length: 6 }, (_, index) => [`secret-${String(index)}`, 'x'.repeat(8192)]));
+    const listed = Object.fromEntries(Array.from({ length: 24 }, (_, index) => [`secret-${String(index).padStart(2, '0')}`, 'x'.repeat(8192)]));
 
     const read = readSecrets(listed, NONE);
 
-    expect(!read.isOk && read.error.reason).toBe('the secrets do not fit one message of 64 KB once sealed');
+    expect(!read.isOk && read.error.reason).toBe('the secrets do not fit one message of 256 KB once sealed');
   });
 
   it('reads a store that fits one message once sealed', () => {
-    const listed = Object.fromEntries(Array.from({ length: 5 }, (_, index) => [`secret-${String(index)}`, 'x'.repeat(8192)]));
+    const listed = Object.fromEntries(Array.from({ length: 23 }, (_, index) => [`secret-${String(index).padStart(2, '0')}`, 'x'.repeat(8192)]));
 
     expect(readSecrets(listed, NONE).isOk).toBe(true);
   });

@@ -89,6 +89,23 @@ function workspaceName(workspace: CrewSettings['workspace']): string {
   return workspace.kind === 'worktree' ? `repository ${workspace.repository}` : `folder ${workspace.name}`;
 }
 
+/**
+ * Why no trierarch offering the harness offers every MCP server the request
+ * names (M4), or undefined when one does: the first server none offers, else
+ * the servers no single one offers together.
+ */
+function mcpServersRefusal(offering: readonly { harness: TrierarchReportDetails['harnesses'][number] }[], request: { named: readonly string[]; harnessWords: string }): string | undefined {
+  const { named, harnessWords } = request;
+  const offered = offering.map(({ harness }) => harness.mcpServers ?? []);
+  if (offered.some((servers) => named.every((name) => servers.includes(name)))) {
+    return undefined;
+  }
+  const missing = named.find((name) => offered.every((servers) => !servers.includes(name)));
+  return missing === undefined
+    ? `no trierarch offering ${harnessWords} offers MCP servers ${named.join(', ')} together`
+    : `no trierarch offering ${harnessWords} offers MCP server ${missing}`;
+}
+
 /** A harness options schema that reports a default model (`properties.model.default`). */
 const defaultModelSchema = z.object({ properties: z.object({ model: z.object({ default: z.string() }) }) });
 
@@ -130,7 +147,7 @@ function givenBackReason(givenBack: readonly { reason: string }[]): string {
 /**
  * The trierarch to claim for the settings, or why none fits: a named model
  * the fleet did not enable, first (M3); machine labels, harness (the named
- * one, or each trierarch's default), workspace, options; an enabled default
+ * one, or each trierarch's default), MCP servers (M4), workspace, options; an enabled default
  * model for a request naming none; then the trierarchs that gave the request
  * back (#382), then room.
  */
@@ -158,7 +175,12 @@ function fit(settings: CrewSettings, { trierarchs, enabledModels, givenBack }: P
   if (offering.length === 0) {
     return { reason: named === undefined ? 'no trierarch offers a harness' : `no trierarch offers harness ${named}`, field: 'harness' };
   }
-  const withWorkspace = offering.filter(({ trierarch }) => offersWorkspace(trierarch.details, settings.workspace));
+  const serversRefusal = mcpServersRefusal(offering, { named: settings.mcpServers ?? [], harnessWords });
+  if (serversRefusal !== undefined) {
+    return { reason: serversRefusal.slice(0, CREW_REQUEST_REASON_MAX_LENGTH), field: 'mcpServers' };
+  }
+  const withServers = offering.filter(({ harness }) => (settings.mcpServers ?? []).every((name) => (harness.mcpServers ?? []).includes(name)));
+  const withWorkspace = withServers.filter(({ trierarch }) => offersWorkspace(trierarch.details, settings.workspace));
   if (withWorkspace.length === 0) {
     return { reason: `no trierarch offering ${harnessWords} has ${workspaceName(settings.workspace)}`, field: 'workspace' };
   }

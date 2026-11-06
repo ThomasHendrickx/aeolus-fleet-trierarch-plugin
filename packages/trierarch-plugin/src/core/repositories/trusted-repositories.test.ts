@@ -59,9 +59,9 @@ describe('the trusted repositories', () => {
   });
 
   it('refuses a list that does not fit one message', () => {
-    const listed = Object.fromEntries(Array.from({ length: 700 }, (_, index) => [`repository-${String(index)}`, `https://github.com/ThomasHendrickx/${'x'.repeat(60)}-${String(index)}.git`]));
+    const listed = Object.fromEntries(Array.from({ length: 3000 }, (_, index) => [`repository-${String(index)}`, `https://github.com/ThomasHendrickx/${'x'.repeat(60)}-${String(index)}.git`]));
 
-    expect(readTrustedRepositories(listed)).toEqual({ isOk: false, error: { reason: 'the trusted repositories do not fit one message of 64 KB' } });
+    expect(readTrustedRepositories(listed)).toEqual({ isOk: false, error: { reason: 'the trusted repositories do not fit one message of 256 KB' } });
   });
 
   it('carries the list to a trierarch as JSON', () => {
