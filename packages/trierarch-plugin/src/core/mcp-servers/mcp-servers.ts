@@ -4,15 +4,31 @@
  * remote servers (Streamable HTTP) a session may be crewed with, each by name
  * with its URL and the tools a session may call. It is true across all
  * trierarchs. It holds no credential: a URL has no user, query or fragment.
+ * A server that needs one names it (decision M6): a secret of the store by
+ * name and the HTTP header the trierarch's proxy sets to its value verbatim.
  */
 import { PAYLOAD_MAX_BYTES, payloadBytes, trierarchNameSchema } from '@aeolus-fleet/common';
 import { z } from 'zod';
 
 import { err, ok, type Result } from '../shared/result.js';
 
+/** What the trierarch's proxy adds to what it forwards to a server: the header, set to the named secret's value verbatim. */
+export interface McpCredential {
+  readonly secret: string;
+  readonly header: string;
+}
+
+/** A server on the list, with its credential when it needs one. */
+export interface McpServer {
+  readonly name: string;
+  readonly url: string;
+  readonly tools: readonly string[];
+  readonly credential?: McpCredential;
+}
+
 /** The list as read: by name, each URL one a session may reach and each with the tools it may call. Built only by `readMcpServers`. */
 export interface McpServers {
-  readonly servers: readonly { readonly name: string; readonly url: string; readonly tools: readonly string[] }[];
+  readonly servers: readonly McpServer[];
 }
 
 /** The content type of the message that carries the list to a trierarch. */
@@ -34,8 +50,26 @@ function isCredentialFree(url: string): boolean {
   return (parsed.protocol === 'https:' || parsed.protocol === 'http:') && parsed.hostname !== '' && parsed.username === '' && parsed.password === '' && parsed.search === '' && parsed.hash === '';
 }
 
+/** An HTTP field name: an RFC 9110 token. */
+const HEADER_TOKEN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+
+/** The headers the proxy itself owns, or that frame the request or its session: never a credential's. */
+const HEADERS_REFUSED = new Set(['host', 'content-length', 'transfer-encoding', 'connection', 'upgrade', 'te', 'trailer', 'keep-alive', 'cookie', 'mcp-session-id', 'mcp-protocol-version']);
+
+/** Whether a credential may go in the header: a token the proxy does not own. */
+function isCredentialHeader(header: string): boolean {
+  const lower = header.toLowerCase();
+  return HEADER_TOKEN.test(header) && !HEADERS_REFUSED.has(lower) && !lower.startsWith('proxy-');
+}
+
+const credentialSchema = z.strictObject({
+  secret: trierarchNameSchema,
+  header: z.string().refine(isCredentialHeader, { error: 'a credential header is an HTTP field name the proxy does not set itself' }),
+});
+
 const serverSchema = z.strictObject({
   url: z.string().refine(isCredentialFree, { error: URL_REFUSED }),
+  credential: credentialSchema.optional(),
   tools: z
     .array(z.string().min(1, { error: 'a tool has a name' }))
     .min(1, { error: 'a server lists the tools a session may call' })
@@ -55,7 +89,7 @@ export function readMcpServers(listed: unknown): Result<McpServers, { reason: st
   if (!object.success || Array.isArray(listed)) {
     return err({ reason: 'the MCP servers are an object of names to { url, tools }' });
   }
-  const servers: { name: string; url: string; tools: string[] }[] = [];
+  const servers: McpServer[] = [];
   for (const [name, server] of Object.entries(object.data)) {
     const named = trierarchNameSchema.safeParse(name);
     if (!named.success) {
@@ -65,7 +99,8 @@ export function readMcpServers(listed: unknown): Result<McpServers, { reason: st
     if (!read.success) {
       return err({ reason: `${name}: ${read.error.issues[0]?.message ?? 'not a server'}` });
     }
-    servers.push({ name, url: read.data.url, tools: read.data.tools });
+    const { url, tools, credential } = read.data;
+    servers.push(credential === undefined ? { name, url, tools } : { name, url, tools, credential: { secret: credential.secret, header: credential.header } });
   }
   servers.sort((first, second) => first.name.localeCompare(second.name));
   const list: McpServers = { servers };
@@ -78,7 +113,7 @@ export function readMcpServers(listed: unknown): Result<McpServers, { reason: st
 /** The one transport a server on the list speaks (decision M8), named in each server of the payload. */
 const TRANSPORT = 'streamable-http';
 
-/** The list as a trierarch receives it: `{ "servers": [{ "name", "url", "transport", "tools" }] }`. */
+/** The list as a trierarch receives it: `{ "servers": [{ "name", "url", "transport", "tools", "credential"? }] }`. */
 export function mcpServersPayload(list: McpServers): string {
-  return JSON.stringify({ servers: list.servers.map(({ name, url, tools }) => ({ name, url, transport: TRANSPORT, tools })) });
+  return JSON.stringify({ servers: list.servers.map(({ name, url, tools, credential }) => ({ name, url, transport: TRANSPORT, tools, ...(credential && { credential }) })) });
 }
