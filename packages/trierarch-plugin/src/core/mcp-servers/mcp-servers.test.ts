@@ -46,17 +46,24 @@ describe('the crew-time MCP servers', () => {
     ['a tool listed twice', { graph: { ...GRAPH, tools: ['read', 'read'] } }],
     ['a field it does not know, such as a credential', { graph: { ...GRAPH, token: 'abc' } }],
   ])('refuses %s', (_label, listed) => {
-    expect(readMcpServers(listed)).toMatchObject({ isOk: false, error: { reason: expect.any(String) } });
+    const read = readMcpServers(listed);
+
+    expect(read.isOk).toBe(false);
+    expect(!read.isOk && read.error.reason).not.toBe('');
   });
 
   it('names the server at fault in the reason', () => {
-    expect(readMcpServers({ graph: { ...GRAPH, tools: [] } })).toMatchObject({ error: { reason: expect.stringContaining('graph') } });
+    const read = readMcpServers({ graph: { ...GRAPH, tools: [] } });
+
+    expect(!read.isOk && read.error.reason).toMatch(/^graph: /);
   });
 
   it('refuses a list too large for one message', () => {
     const tools = Array.from({ length: 70 }, (_, index) => `tool_${String(index)}_${'x'.repeat(1000)}`);
 
-    expect(readMcpServers({ graph: { ...GRAPH, tools } })).toMatchObject({ isOk: false, error: { reason: expect.stringContaining('one message') } });
+    const read = readMcpServers({ graph: { ...GRAPH, tools } });
+
+    expect(!read.isOk && read.error.reason).toBe('the MCP servers do not fit one message of 64 KB');
   });
 
   it('puts the list in the payload as a trierarch receives it', () => {
