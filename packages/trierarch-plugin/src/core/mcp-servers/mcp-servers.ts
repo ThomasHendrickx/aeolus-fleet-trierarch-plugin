@@ -54,7 +54,7 @@ function isCredentialFree(url: string): boolean {
 const HEADER_TOKEN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 
 /** The headers the proxy itself owns, or that frame the request or its session: never a credential's. */
-const HEADERS_REFUSED = new Set(['host', 'content-length', 'transfer-encoding', 'connection', 'upgrade', 'te', 'trailer', 'keep-alive', 'cookie', 'mcp-session-id', 'mcp-protocol-version']);
+const HEADERS_REFUSED = new Set(['host', 'content-length', 'transfer-encoding', 'connection', 'upgrade', 'te', 'trailer', 'keep-alive', 'cookie', 'content-type', 'accept', 'accept-encoding', 'last-event-id', 'mcp-session-id', 'mcp-protocol-version']);
 
 /** Whether a credential may go in the header: a token the proxy does not own. */
 function isCredentialHeader(header: string): boolean {
