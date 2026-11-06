@@ -20,6 +20,7 @@ describe('loadConfig', () => {
       passIntervalMs: 10_000,
       trustedRepositories: { repositories: [] },
       mcpServers: { servers: [] },
+      secrets: { secrets: [] },
     });
   });
 
@@ -33,6 +34,30 @@ describe('loadConfig', () => {
     expect(loadConfig({ ...environment, MCP_SERVERS: '{"company-graph":{"url":"https://graph.example.invalid/mcp","tools":["read_neo4j_cypher"]}}' }).mcpServers).toEqual({
       servers: [{ name: 'company-graph', url: 'https://graph.example.invalid/mcp', tools: ['read_neo4j_cypher'] }],
     });
+  });
+
+  it('reads the secret store as JSON of names to values, holding the secret a server names as its credential', () => {
+    const config = loadConfig({
+      ...environment,
+      MCP_SERVERS: '{"graph":{"url":"https://graph.example.invalid/mcp","tools":["read"],"credential":{"secret":"graph-token","header":"Authorization"}}}',
+      MCP_SECRETS: '{"graph-token":"Bearer test-value"}',
+    });
+
+    expect(config.secrets).toEqual({ secrets: [{ name: 'graph-token', value: 'Bearer test-value' }] });
+  });
+
+  it.each([
+    ['not JSON', 'graph-token=test-value-leaked'],
+    ['a value with a line feed', '{"graph":"test-value\\nleaked"}'],
+  ])('refuses a secret store that is %s without naming its value', (_label, secrets) => {
+    expect(() => loadConfig({ ...environment, MCP_SECRETS: secrets })).toThrow(/^MCP_SECRETS: /);
+    expect(() => loadConfig({ ...environment, MCP_SECRETS: secrets })).not.toThrow(/leaked/);
+  });
+
+  it('refuses an MCP server whose credential names a secret the store does not hold', () => {
+    expect(() => loadConfig({ ...environment, MCP_SERVERS: '{"graph":{"url":"https://graph.example.invalid/mcp","tools":["read"],"credential":{"secret":"graph-token","header":"Authorization"}}}' })).toThrow(
+      'MCP_SECRETS: graph: its credential names the secret graph-token, which the store does not hold',
+    );
   });
 
   it('reads the silent threshold and the pass interval in seconds', () => {
