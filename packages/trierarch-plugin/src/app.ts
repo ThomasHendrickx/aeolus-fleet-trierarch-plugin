@@ -262,6 +262,8 @@ export function createTrierarchPluginApp(options: {
     sealed: sealedSecrets,
   });
   const resendSecrets = createResendSecrets({ sealed: sealedSecrets });
+  /** The key last warned about per trierarch, so a key the sealer refuses is logged once, not every pass. */
+  const warnedUnsealable = new Map<ShipId, string>();
   /** Seals the secret store to each trierarch that states a key, once per key; a refusal is logged, never a value, and the pass goes on. */
   const shareSecretsOnce = async (fleetId: FleetId): Promise<void> => {
     const shared = await shareSecrets(fleetId);
@@ -271,8 +273,11 @@ export function createTrierarchPluginApp(options: {
       if (shared.value.shared > 0) {
         server.log.info({ fleet: fleetId, shared: shared.value.shared }, 'secrets sent sealed');
       }
-      for (const shipId of shared.value.unsealable) {
-        server.log.warn({ fleet: fleetId, shipId }, "a trierarch's sealing key refuses a sealed box: it gets no secrets, and the next pass tries again");
+      for (const { shipId, publicKey } of shared.value.unsealable) {
+        if (warnedUnsealable.get(shipId) !== publicKey) {
+          warnedUnsealable.set(shipId, publicKey);
+          server.log.warn({ fleet: fleetId, shipId, publicKey }, "a trierarch's sealing key refuses a sealed box: it gets no secrets until it states another key");
+        }
       }
     }
   };

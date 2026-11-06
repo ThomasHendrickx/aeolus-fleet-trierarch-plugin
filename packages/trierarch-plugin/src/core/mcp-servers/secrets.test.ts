@@ -60,9 +60,9 @@ describe('the secret store', () => {
   });
 
   it.each([
-    ['a value in the place of a name', { 'Bearer leaked value': 'graph-token' }, 'entry 1'],
-    ['a second entry that fails the name rules', { atlas: VALUE, 'Bearer leaked value': 'graph-token' }, 'entry 2'],
-  ])('says which entry by position when %s, never the name', (_label, listed, position) => {
+    ['a value in the place of a name', { listed: { 'Bearer leaked value': 'graph-token' }, position: 'entry 1' }],
+    ['a second entry that fails the name rules', { listed: { atlas: VALUE, 'Bearer leaked value': 'graph-token' }, position: 'entry 2' }],
+  ])('says which entry by position when %s, never the name', (_label, { listed, position }) => {
     const read = readSecrets(listed, NONE);
 
     expect(!read.isOk && read.error.reason).toMatch(new RegExp(`^${position}: `));
