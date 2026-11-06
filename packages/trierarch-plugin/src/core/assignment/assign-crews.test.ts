@@ -153,6 +153,16 @@ describe("a pass of the trierarch plugin's assignment", () => {
     expect(fleet.state.explained).toEqual([{ shipId: SCOUT, reason: 'no trierarch reports yet' }]);
   });
 
+  it('places a request on a trierarch that reports a sealing key', async () => {
+    const sealingKey = { scheme: 'nacl-sealed-box' as const, publicKey: Buffer.alloc(32, 7).toString('base64') };
+    aTrierarch(MAC, { details: { ...DETAILS, sealingKey } });
+    aRequest(SCOUT);
+
+    await pass();
+
+    expect(assignedTo(SCOUT)).toBe(MAC);
+  });
+
   it('serves the oldest request first', async () => {
     aTrierarch(MAC, { details: { ...DETAILS, caps: { ships: 1, running: 1 } } });
     aRequest(LOOKOUT, { requestedAt: new Date(AT.getTime() + 1000) });
