@@ -345,3 +345,60 @@ describe('checking settings before a request (#245)', () => {
     expect(checkPlacement(settings(), { trierarchs: [], enabledModels: [] })).toEqual({ kind: 'noRoom', reason: 'no trierarch reports yet' });
   });
 });
+
+describe('placement and MCP servers (M4)', () => {
+  function withServers(servers: readonly string[], overrides: Partial<PlacementTrierarch> = {}): PlacementTrierarch {
+    const [claude] = details().harnesses;
+    return aTrierarch(MAC, { ...overrides, details: details({ harnesses: claude === undefined ? [] : [{ ...claude, mcpServers: [...servers] }] }) });
+  }
+
+  it('assigns a request naming servers to a trierarch whose harness offers every one', () => {
+    expect(place([aRequest(SCOUT, { settings: { mcpServers: ['company-graph'] } })], { trierarchs: [withServers(['company-graph', 'other'])], enabledModels: [] })).toEqual([
+      { kind: 'assign', shipId: SCOUT, trierarchShipId: MAC },
+    ]);
+  });
+
+  it('leaves out a trierarch whose harness does not offer every named server', () => {
+    const partial = withServers(['company-graph'], { shipId: LINUX });
+    const full = withServers(['company-graph', 'other'], { shipId: MAC, commissionedAt: LATER });
+
+    expect(place([aRequest(SCOUT, { settings: { mcpServers: ['company-graph', 'other'] } })], { trierarchs: [partial, full], enabledModels: [] })).toEqual([
+      { kind: 'assign', shipId: SCOUT, trierarchShipId: MAC },
+    ]);
+  });
+
+  it('keeps a request unassigned when no trierarch offers a named server, the reason naming the server', () => {
+    expect(place([aRequest(SCOUT, { settings: { mcpServers: ['company-graph'] } })], { trierarchs: [aTrierarch(MAC)], enabledModels: [] })).toEqual([
+      { kind: 'explain', shipId: SCOUT, reason: 'no trierarch offering claude-code offers MCP server company-graph' },
+    ]);
+  });
+
+  it('names the server no trierarch offers when others are offered', () => {
+    expect(place([aRequest(SCOUT, { settings: { mcpServers: ['company-graph', 'missing'] } })], { trierarchs: [withServers(['company-graph'])], enabledModels: [] })).toEqual([
+      { kind: 'explain', shipId: SCOUT, reason: 'no trierarch offering claude-code offers MCP server missing' },
+    ]);
+  });
+
+  it('keeps a request unassigned when each server is offered but no trierarch offers them all', () => {
+    const first = withServers(['company-graph'], { shipId: MAC });
+    const second = withServers(['other'], { shipId: LINUX });
+
+    expect(place([aRequest(SCOUT, { settings: { mcpServers: ['company-graph', 'other'] } })], { trierarchs: [first, second], enabledModels: [] })).toEqual([
+      { kind: 'explain', shipId: SCOUT, reason: 'no trierarch offering claude-code offers MCP servers company-graph, other together' },
+    ]);
+  });
+
+  it('checks the servers of the harness the request names, not another harness', () => {
+    const codexOnly = aTrierarch(MAC, { details: details({ harnesses: [...details().harnesses, { harness: 'codex', options: {}, flags: [], mcpServers: ['company-graph'] }] }) });
+
+    expect(checkPlacement({ harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: {}, mcpServers: ['company-graph'] }, { trierarchs: [codexOnly], enabledModels: [] })).toEqual({
+      kind: 'refused',
+      field: 'mcpServers',
+      reason: 'no trierarch offering claude-code offers MCP server company-graph',
+    });
+  });
+
+  it('assigns a request naming no server to a trierarch that offers none', () => {
+    expect(place([aRequest(SCOUT)], { trierarchs: [aTrierarch(MAC)], enabledModels: [] })).toEqual([{ kind: 'assign', shipId: SCOUT, trierarchShipId: MAC }]);
+  });
+});

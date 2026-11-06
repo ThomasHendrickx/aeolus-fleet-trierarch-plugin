@@ -59,11 +59,11 @@ describe('the crew-time MCP servers', () => {
   });
 
   it('refuses a list too large for one message', () => {
-    const tools = Array.from({ length: 70 }, (_, index) => `tool_${String(index)}_${'x'.repeat(1000)}`);
+    const tools = Array.from({ length: 300 }, (_, index) => `tool_${String(index)}_${'x'.repeat(1000)}`);
 
     const read = readMcpServers({ graph: { ...GRAPH, tools } });
 
-    expect(!read.isOk && read.error.reason).toBe('the MCP servers do not fit one message of 64 KB');
+    expect(!read.isOk && read.error.reason).toBe('the MCP servers do not fit one message of 256 KB');
   });
 
   it('puts the list in the payload as a trierarch receives it', () => {
