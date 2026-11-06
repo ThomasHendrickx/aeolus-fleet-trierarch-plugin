@@ -267,8 +267,13 @@ export function createTrierarchPluginApp(options: {
     const shared = await shareSecrets(fleetId);
     if (!shared.isOk) {
       server.log.warn({ fleet: fleetId, refusal: shared.error }, 'sharing the secrets refused; the next pass tries again');
-    } else if (shared.value.shared > 0) {
-      server.log.info({ fleet: fleetId, ...shared.value }, 'secrets sent sealed');
+    } else {
+      if (shared.value.shared > 0) {
+        server.log.info({ fleet: fleetId, shared: shared.value.shared }, 'secrets sent sealed');
+      }
+      for (const shipId of shared.value.unsealable) {
+        server.log.warn({ fleet: fleetId, shipId }, "a trierarch's sealing key refuses a sealed box: it gets no secrets, and the next pass tries again");
+      }
     }
   };
   /** Sends each trierarch the trusted repositories once (aeolus-fleet#384); a refusal is logged and the pass goes on. */
