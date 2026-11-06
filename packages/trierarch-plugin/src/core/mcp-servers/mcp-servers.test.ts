@@ -19,6 +19,20 @@ describe('the crew-time MCP servers', () => {
     });
   });
 
+  it('reads a server with the credential the proxy adds: a secret by name and the header it goes in', () => {
+    const read = readMcpServers({ graph: { ...GRAPH, credential: { secret: 'graph-token', header: 'Authorization' } } });
+
+    expect(read.isOk && read.value.servers).toEqual([{ name: 'graph', url: GRAPH.url, tools: GRAPH.tools, credential: { secret: 'graph-token', header: 'Authorization' } }]);
+  });
+
+  it('reads a secret name of exactly 100 characters and a header of every token character', () => {
+    const header = "X-Key_1!#$%&'*+.^`|~";
+
+    const read = readMcpServers({ graph: { ...GRAPH, credential: { secret: 'a'.repeat(100), header } } });
+
+    expect(read.isOk && read.value.servers[0]?.credential).toEqual({ secret: 'a'.repeat(100), header });
+  });
+
   it('reads none from an empty list', () => {
     expect(readMcpServers({})).toEqual({ isOk: true, value: { servers: [] } });
   });
@@ -44,7 +58,19 @@ describe('the crew-time MCP servers', () => {
     ['a tool that is no text', { graph: { ...GRAPH, tools: [1] } }],
     ['a tool with no name', { graph: { ...GRAPH, tools: [''] } }],
     ['a tool listed twice', { graph: { ...GRAPH, tools: ['read', 'read'] } }],
-    ['a field it does not know, such as a credential', { graph: { ...GRAPH, token: 'abc' } }],
+    ['a field it does not know, such as a token', { graph: { ...GRAPH, token: 'abc' } }],
+    ['a credential that is no object', { graph: { ...GRAPH, credential: 'graph-token' } }],
+    ['a credential without a secret', { graph: { ...GRAPH, credential: { header: 'Authorization' } } }],
+    ['a credential without a header', { graph: { ...GRAPH, credential: { secret: 'graph-token' } } }],
+    ['a credential that holds a value', { graph: { ...GRAPH, credential: { secret: 'graph-token', header: 'Authorization', value: 'abc' } } }],
+    ['a secret name with capitals', { graph: { ...GRAPH, credential: { secret: 'Graph', header: 'Authorization' } } }],
+    ['a secret name over 100 characters', { graph: { ...GRAPH, credential: { secret: 'a'.repeat(101), header: 'Authorization' } } }],
+    ['a header that is no token', { graph: { ...GRAPH, credential: { secret: 'graph-token', header: 'X Api Key' } } }],
+    ['a header with a colon', { graph: { ...GRAPH, credential: { secret: 'graph-token', header: 'Authorization:' } } }],
+    ['an empty header', { graph: { ...GRAPH, credential: { secret: 'graph-token', header: '' } } }],
+    ...['Host', 'content-length', 'Transfer-Encoding', 'Connection', 'Upgrade', 'TE', 'Trailer', 'Keep-Alive', 'Proxy-Authorization', 'proxy-connection', 'Cookie', 'Mcp-Session-Id', 'MCP-Protocol-Version'].map(
+      (header): [string, unknown] => [`the header ${header}`, { graph: { ...GRAPH, credential: { secret: 'graph-token', header } } }],
+    ),
   ])('refuses %s', (_label, listed) => {
     const read = readMcpServers(listed);
 
@@ -71,6 +97,14 @@ describe('the crew-time MCP servers', () => {
 
     expect(read.isOk && mcpServersPayload(read.value)).toBe(
       '{"servers":[{"name":"graph","url":"https://graph.example.invalid/mcp","transport":"streamable-http","tools":["read_neo4j_cypher","get_neo4j_schema"]}]}',
+    );
+  });
+
+  it('puts a server\'s credential in the payload by secret name and header, never a value', () => {
+    const read = readMcpServers({ graph: { ...GRAPH, credential: { secret: 'graph-token', header: 'Authorization' } } });
+
+    expect(read.isOk && mcpServersPayload(read.value)).toBe(
+      '{"servers":[{"name":"graph","url":"https://graph.example.invalid/mcp","transport":"streamable-http","tools":["read_neo4j_cypher","get_neo4j_schema"],"credential":{"secret":"graph-token","header":"Authorization"}}]}',
     );
   });
 });
