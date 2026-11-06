@@ -75,7 +75,10 @@ export function readMcpServers(listed: unknown): Result<McpServers, { reason: st
   return ok(list);
 }
 
-/** The list as a trierarch receives it: `{ "servers": [{ "name", "url", "tools" }] }`. */
+/** The one transport a server on the list speaks (decision M8), named in each server of the payload. */
+const TRANSPORT = 'streamable-http';
+
+/** The list as a trierarch receives it: `{ "servers": [{ "name", "url", "transport", "tools" }] }`. */
 export function mcpServersPayload(list: McpServers): string {
-  return JSON.stringify({ servers: list.servers });
+  return JSON.stringify({ servers: list.servers.map(({ name, url, tools }) => ({ name, url, transport: TRANSPORT, tools })) });
 }
