@@ -4,6 +4,7 @@ import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastif
 
 import { randomIdempotencyKeys } from './adapters/crypto/idempotency-keys.js';
 import { sha256RequestHasher } from './adapters/crypto/request-hasher.js';
+import { sealedBoxSealer } from './adapters/crypto/sealed-box-sealer.js';
 import { createFleetConsoleSessions } from './adapters/fleet/console-sessions.js';
 import { createOperatorFleet } from './adapters/fleet/operator-fleet.js';
 import { createRestFleetDoor } from './adapters/fleet/rest-fleet-door.js';
@@ -33,6 +34,9 @@ import { createNewSetupLine } from './core/machines/new-setup-line.js';
 import { createDeclareNetworkRules, type Declarations } from './core/network/declare-network-rules.js';
 import { createDeclareScopes } from './core/scopes/declare-scopes.js';
 import { createResendMcpServers } from './core/mcp-servers/resend-mcp-servers.js';
+import { createResendSecrets } from './core/mcp-servers/resend-secrets.js';
+import type { Secrets } from './core/mcp-servers/secrets.js';
+import { createShareSecrets } from './core/mcp-servers/share-secrets.js';
 import { createShareMcpServers } from './core/mcp-servers/share-mcp-servers.js';
 import type { McpServers } from './core/mcp-servers/mcp-servers.js';
 import { createResendTrustedRepositories } from './core/repositories/resend-trusted-repositories.js';
@@ -98,6 +102,8 @@ export function createTrierarchPluginApp(options: {
   trustedRepositories?: TrustedRepositories;
   /** The crew-time MCP servers every trierarch offers sessions (aeolus-fleet-trierarch#120); none unless given. */
   mcpServers?: McpServers;
+  /** The secret store the MCP servers' credentials come from (decision M5), sent to each trierarch only sealed; none unless given. */
+  secrets?: Secrets;
 }): TrierarchPluginApp {
   const prisma = createPrismaClient(options.databaseUrl);
   const server = Fastify({ logger: options.logger ?? true });
@@ -245,6 +251,31 @@ export function createTrierarchPluginApp(options: {
       server.log.info({ fleet: fleetId, ...shared.value }, 'MCP servers sent');
     }
   };
+  // The key this process last sealed the store to, per trierarch; a restart seals it to every trierarch again, and so does a trierarch asking.
+  const sealedSecrets = new Map<ShipId, string>();
+  const shareSecrets = createShareSecrets({
+    door,
+    connections,
+    keys: randomIdempotencyKeys,
+    secrets: options.secrets ?? { secrets: [] },
+    sealer: sealedBoxSealer,
+    sealed: sealedSecrets,
+  });
+  const resendSecrets = createResendSecrets({ sealed: sealedSecrets });
+  /** Seals the secret store to each trierarch that states a key, once per key; a refusal is logged, never a value, and the pass goes on. */
+  const shareSecretsOnce = async (fleetId: FleetId): Promise<void> => {
+    const shared = await shareSecrets(fleetId);
+    if (!shared.isOk) {
+      server.log.warn({ fleet: fleetId, refusal: shared.error }, 'sharing the secrets refused; the next pass tries again');
+    } else {
+      if (shared.value.shared > 0) {
+        server.log.info({ fleet: fleetId, shared: shared.value.shared }, 'secrets sent sealed');
+      }
+      for (const shipId of shared.value.unsealable) {
+        server.log.warn({ fleet: fleetId, shipId }, "a trierarch's sealing key refuses a sealed box: it gets no secrets, and the next pass tries again");
+      }
+    }
+  };
   /** Sends each trierarch the trusted repositories once (aeolus-fleet#384); a refusal is logged and the pass goes on. */
   const shareOnce = async (fleetId: FleetId): Promise<void> => {
     const shared = await shareTrustedRepositories(fleetId);
@@ -273,6 +304,7 @@ export function createTrierarchPluginApp(options: {
       await declareScopesOnce(crew.fleetId);
       await shareOnce(crew.fleetId);
       await shareMcpServersOnce(crew.fleetId);
+      await shareSecretsOnce(crew.fleetId);
       const assigned = await assignCrews(crew.fleetId);
       await tellOnce(crew.fleetId);
       if (assigned.isOk) {
@@ -307,6 +339,8 @@ export function createTrierarchPluginApp(options: {
         server.log.info({ senderShipId }, 'a trierarch asked for the trusted repositories: the next pass sends them');
       } else if (resendMcpServers(delivery)) {
         server.log.info({ senderShipId }, 'a trierarch asked for the MCP servers: the next pass sends them');
+      } else if (resendSecrets(delivery)) {
+        server.log.info({ senderShipId }, 'a trierarch asked for the secrets: the next pass seals them to it');
       } else {
         server.log.info({ contentType, senderShipId }, "the trierarch plugin's ship acked a message it does not handle");
       }

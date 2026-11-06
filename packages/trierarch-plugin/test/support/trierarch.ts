@@ -92,6 +92,10 @@ export async function crewAsTrierarch(fleetUrl: string, machine: { shipId: ShipI
       }
       return deliveries.map(({ contentType, payload }) => ({ contentType, payload }));
     },
+    /** Reports idle with these details, as its own ship. */
+    report: async (details: unknown): Promise<void> => {
+      await shipCall(fleetUrl, { path: '/ship/report', crewToken, body: { state: 'idle', note: 'idle', details } });
+    },
     send: async (message: { shipId: ShipId; contentType: string; payload: string }): Promise<void> => {
       await shipCall(fleetUrl, {
         path: '/ship/send',

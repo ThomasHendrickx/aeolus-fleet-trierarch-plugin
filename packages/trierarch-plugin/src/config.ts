@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { DEFAULT_SILENT_AFTER_MS } from './core/machines/silent.js';
 import { readMcpServers, type McpServers } from './core/mcp-servers/mcp-servers.js';
+import { readSecrets, type Secrets } from './core/mcp-servers/secrets.js';
 import { readTrustedRepositories, type TrustedRepositories } from './core/repositories/trusted-repositories.js';
 
 /** The shortest installation token the trierarch plugin takes, as the fleet core does (decision 0020). */
@@ -23,6 +24,7 @@ const environmentSchema = z.object({
   TRIERARCH_PASS_INTERVAL_SECONDS: z.coerce.number().int().positive().default(DEFAULT_PASS_INTERVAL_SECONDS),
   TRUSTED_REPOSITORIES: z.string().default('{}'),
   MCP_SERVERS: z.string().default('{}'),
+  MCP_SECRETS: z.string().default('{}'),
 });
 
 /** What `aeolus-trierarch-plugin migrate` reads: the database alone. */
@@ -56,6 +58,12 @@ export interface Config {
   trustedRepositories: TrustedRepositories;
   /** The crew-time MCP servers every trierarch offers sessions, by name (aeolus-fleet-trierarch#120); none by default. */
   mcpServers: McpServers;
+  /**
+   * The secret store the crew-time MCP servers' credentials come from, by
+   * name (decision M5): each value leaves only sealed to a trierarch's key.
+   * Never logged; none by default.
+   */
+  secrets: Secrets;
 }
 
 export class ConfigError extends Error {
@@ -100,9 +108,25 @@ function mcpServers(text: string): McpServers {
   return read.value;
 }
 
+/** MCP_SECRETS as JSON of names to values, holding every secret a server's credential names; throws a ConfigError that never holds a value. */
+function secrets(text: string, servers: McpServers): Secrets {
+  let listed: unknown;
+  try {
+    listed = JSON.parse(text);
+  } catch {
+    throw new ConfigError('MCP_SECRETS: must be JSON of names to values');
+  }
+  const read = readSecrets(listed, servers);
+  if (!read.isOk) {
+    throw new ConfigError(`MCP_SECRETS: ${read.error.reason}`);
+  }
+  return read.value;
+}
+
 /** The configuration from the environment; throws a ConfigError naming every variable that is wrong. */
 export function loadConfig(environment: Record<string, string | undefined>): Config {
   const variables = parsed(environmentSchema, environment);
+  const servers = mcpServers(variables.MCP_SERVERS);
   return {
     databaseUrl: variables.DATABASE_URL,
     fleetUrl: variables.FLEET_URL.replace(/\/$/, ''),
@@ -113,7 +137,8 @@ export function loadConfig(environment: Record<string, string | undefined>): Con
     silentAfterMs: variables.TRIERARCH_SILENT_AFTER_SECONDS * MS_PER_SECOND,
     passIntervalMs: variables.TRIERARCH_PASS_INTERVAL_SECONDS * MS_PER_SECOND,
     trustedRepositories: trustedRepositories(variables.TRUSTED_REPOSITORIES),
-    mcpServers: mcpServers(variables.MCP_SERVERS),
+    mcpServers: servers,
+    secrets: secrets(variables.MCP_SECRETS, servers),
   };
 }
 
