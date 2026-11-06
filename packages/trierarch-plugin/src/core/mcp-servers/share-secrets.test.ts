@@ -114,7 +114,7 @@ describe('sharing the secret store with the trierarchs', () => {
 
     await shareWith(sealed)(FLEET_ID);
 
-    expect(fleet.state.sent.map((each) => JSON.parse(each.payload) as unknown)).toMatchObject([{ publicKey: MAC_KEY }, { publicKey: NEW_MAC_KEY }]);
+    expect(fleet.state.sent.map((each) => each.payload.slice(0, '{"publicKey":"'.length + MAC_KEY.length + 1))).toEqual([`{"publicKey":"${MAC_KEY}"`, `{"publicKey":"${NEW_MAC_KEY}"`]);
   });
 
   it('sends a trierarch that states its key later the store on the next pass', async () => {
