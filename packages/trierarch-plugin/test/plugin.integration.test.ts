@@ -1,6 +1,7 @@
 import { isInReadReach, TRIERARCH_USAGE_CONTENT_TYPE } from '@aeolus-fleet/common';
 import type { ShipId } from '@aeolus-fleet/common';
 import type { FastifyInstance } from 'fastify';
+import sodium from 'libsodium-wrappers';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
@@ -12,6 +13,7 @@ import { createTrierarchPluginApp, type TrierarchPluginApp } from '../src/app.js
 import { connectPlugin, mutate, query, signIn } from './support/connection.js';
 import { createPluginDatabase } from '../src/testing/database.js';
 import { readMcpServers } from '../src/core/mcp-servers/mcp-servers.js';
+import { readSecrets } from '../src/core/mcp-servers/secrets.js';
 import { readTrustedRepositories } from '../src/core/repositories/trusted-repositories.js';
 import { crewAsTrierarch, receiveAsTrierarch, reportAsTrierarch } from './support/trierarch.js';
 
@@ -518,6 +520,98 @@ describe('the crew-time MCP servers against a real fleet (aeolus-fleet-trierarch
         { timeout: 15_000, interval: 500 },
       )
       .toEqual([SERVERS_TYPE]);
+  });
+});
+
+describe('the secret store against a real fleet (decision M5)', () => {
+  const SECRETS_TYPE = 'application/vnd.aeolus.trierarch.secrets+json';
+  /** A value no real credential looks like, searched for wherever the fleet and the log keep anything. */
+  const VALUE = 'Bearer test-value-only-sealed-7f3c';
+  const sealedSchema = z.object({ publicKey: z.string(), secrets: z.array(z.object({ name: z.string(), sealed: z.string() })) });
+
+  async function storeMachine(): Promise<{ app: TrierarchPluginApp; machine: { shipId: ShipId; secret: string }; logged: string[] }> {
+    const listed = readMcpServers({ 'company-graph': { url: 'https://graph.example.invalid/mcp', tools: ['read_neo4j_cypher'], credential: { secret: 'graph-token', header: 'Authorization' } } });
+    const mcpServers = listed.isOk ? listed.value : { servers: [] };
+    const store = readSecrets({ 'graph-token': VALUE }, mcpServers);
+    const secrets = store.isOk ? store.value : { secrets: [] };
+    const logged: string[] = [];
+    const stream = { write: (line: string) => logged.push(line) };
+    const app = createTrierarchPluginApp({ databaseUrl: pluginDatabaseUrl, fleetUrl, logger: { level: 'trace', stream }, mcpServers, secrets });
+    apps.push(app);
+    const address = await app.server.listen({ host: '127.0.0.1', port: 0 });
+    expect((await connectPlugin(address, { cookie, shipId, secret })).status).toBe(200);
+    const joined = joinedSchema.parse(await (await mutate(address, { procedure: 'machines.join', cookie, body: { name: 'mac-studio' } })).json()).result.data;
+    return { app, machine: { shipId: z.templateLiteral(['shp_', z.string()]).parse(joined.shipId), secret: joined.secret }, logged };
+  }
+
+  /** A key pair as `aeolus-trierarch init` makes one, and the report details that state its public key. */
+  async function aSealingKey() {
+    await sodium.ready;
+    const pair = sodium.crypto_box_keypair();
+    const publicKey = sodium.to_base64(pair.publicKey, sodium.base64_variants.ORIGINAL);
+    const open = (sealed: string) => sodium.to_string(sodium.crypto_box_seal_open(sodium.from_base64(sealed, sodium.base64_variants.ORIGINAL), pair.publicKey, pair.privateKey));
+    return { publicKey, open, details: { sealingKey: { scheme: 'nacl-sealed-box', publicKey } } };
+  }
+
+  /** Every row of every table of the fleet's database, as text. */
+  async function everythingTheFleetStores(): Promise<string> {
+    const tables = await fleetDatabase.$queryRawUnsafe<{ table_name: string }[]>("SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_type = 'BASE TABLE'");
+    const rows = await Promise.all(tables.map(({ table_name }) => fleetDatabase.$queryRawUnsafe<{ row: string }[]>(`SELECT row_to_json(t)::text AS row FROM "${table_name}" t`)));
+    return rows.flat().map((each) => each.row).join('\n');
+  }
+
+  it('a trierarch that states a key is sent the store sealed to it, which it opens', async () => {
+    const { app, machine } = await storeMachine();
+    const trierarch = await crewAsTrierarch(fleetUrl, machine);
+    const key = await aSealingKey();
+    await trierarch.report(key.details);
+
+    await app.assignOnce();
+
+    const sent = (await trierarch.receive()).filter((each) => each.contentType === SECRETS_TYPE).map((each) => sealedSchema.parse(JSON.parse(each.payload)));
+    expect(sent.map((each) => ({ publicKey: each.publicKey, secrets: each.secrets.map(({ name, sealed }) => ({ name, value: key.open(sealed) })) }))).toEqual([
+      { publicKey: key.publicKey, secrets: [{ name: 'graph-token', value: VALUE }] },
+    ]);
+  });
+
+  it('the fleet stores the store only sealed, and the log never holds a value', async () => {
+    const { app, machine, logged } = await storeMachine();
+    const trierarch = await crewAsTrierarch(fleetUrl, machine);
+    await trierarch.report((await aSealingKey()).details);
+
+    await app.assignOnce();
+
+    expect((await trierarch.receive()).map((each) => each.contentType)).toContain(SECRETS_TYPE);
+    expect(await everythingTheFleetStores()).not.toContain('test-value-only-sealed');
+    expect(logged.join('')).not.toContain('test-value-only-sealed');
+  });
+
+  it('a trierarch without a key is sent no secret', async () => {
+    const { app, machine } = await storeMachine();
+    const trierarch = await crewAsTrierarch(fleetUrl, machine);
+
+    await app.assignOnce();
+
+    expect((await trierarch.receive()).map((each) => each.contentType)).not.toContain(SECRETS_TYPE);
+  });
+
+  it('a trierarch that asks for the store again gets it on the next pass', async () => {
+    const { app, machine } = await storeMachine();
+    const trierarch = await crewAsTrierarch(fleetUrl, machine);
+    await trierarch.report((await aSealingKey()).details);
+    await app.assignOnce();
+    await trierarch.receive();
+
+    await trierarch.send({ shipId, contentType: 'application/vnd.aeolus.trierarch.secrets-request+json', payload: '{}' });
+    await expect
+      .poll(
+        async () => {
+          await app.assignOnce();
+          return (await trierarch.receive()).map((delivery) => delivery.contentType);
+        },
+        { timeout: 15_000, interval: 500 },
+      )
+      .toEqual([SECRETS_TYPE]);
   });
 });
 
