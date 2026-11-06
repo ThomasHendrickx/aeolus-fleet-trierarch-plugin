@@ -68,7 +68,7 @@ describe('the crew-time MCP servers', () => {
     ['a header that is no token', { graph: { ...GRAPH, credential: { secret: 'graph-token', header: 'X Api Key' } } }],
     ['a header with a colon', { graph: { ...GRAPH, credential: { secret: 'graph-token', header: 'Authorization:' } } }],
     ['an empty header', { graph: { ...GRAPH, credential: { secret: 'graph-token', header: '' } } }],
-    ...['Host', 'content-length', 'Transfer-Encoding', 'Connection', 'Upgrade', 'TE', 'Trailer', 'Keep-Alive', 'Proxy-Authorization', 'proxy-connection', 'Cookie', 'Mcp-Session-Id', 'MCP-Protocol-Version'].map(
+    ...['Host', 'content-length', 'Transfer-Encoding', 'Connection', 'Upgrade', 'TE', 'Trailer', 'Keep-Alive', 'Proxy-Authorization', 'proxy-connection', 'Cookie', 'Content-Type', 'accept', 'Accept-Encoding', 'Last-Event-ID', 'Mcp-Session-Id', 'MCP-Protocol-Version'].map(
       (header): [string, unknown] => [`the header ${header}`, { graph: { ...GRAPH, credential: { secret: 'graph-token', header } } }],
     ),
   ])('refuses %s', (_label, listed) => {
