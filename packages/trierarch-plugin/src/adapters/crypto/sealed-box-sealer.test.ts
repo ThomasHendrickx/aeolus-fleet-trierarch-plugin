@@ -3,6 +3,12 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import { sealedBoxSealer } from './sealed-box-sealer.js';
 
+/** A key pair as libsodium gives it. */
+interface KeyPair {
+  publicKey: Uint8Array;
+  privateKey: Uint8Array;
+}
+
 const STANDARD_BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 
 beforeAll(async () => {
@@ -10,12 +16,12 @@ beforeAll(async () => {
 });
 
 /** A trierarch's key pair, made here as `aeolus-trierarch init` makes one. */
-function aKeyPair() {
+function aKeyPair(): { publicKey: string; pair: KeyPair } {
   const pair = sodium.crypto_box_keypair();
   return { publicKey: sodium.to_base64(pair.publicKey, sodium.base64_variants.ORIGINAL), pair };
 }
 
-function opened(sealed: string, pair: ReturnType<typeof sodium.crypto_box_keypair>): string {
+function opened(sealed: string, pair: KeyPair): string {
   return sodium.to_string(sodium.crypto_box_seal_open(sodium.from_base64(sealed, sodium.base64_variants.ORIGINAL), pair.publicKey, pair.privateKey));
 }
 
