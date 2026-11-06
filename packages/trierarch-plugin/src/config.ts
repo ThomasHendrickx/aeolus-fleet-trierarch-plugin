@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { DEFAULT_SILENT_AFTER_MS } from './core/machines/silent.js';
+import { readMcpServers, type McpServers } from './core/mcp-servers/mcp-servers.js';
 import { readTrustedRepositories, type TrustedRepositories } from './core/repositories/trusted-repositories.js';
 
 /** The shortest installation token the trierarch plugin takes, as the fleet core does (decision 0020). */
@@ -21,6 +22,7 @@ const environmentSchema = z.object({
   TRIERARCH_SILENT_AFTER_SECONDS: z.coerce.number().int().positive().default(DEFAULT_SILENT_AFTER_MS / MS_PER_SECOND),
   TRIERARCH_PASS_INTERVAL_SECONDS: z.coerce.number().int().positive().default(DEFAULT_PASS_INTERVAL_SECONDS),
   TRUSTED_REPOSITORIES: z.string().default('{}'),
+  MCP_SERVERS: z.string().default('{}'),
 });
 
 /** What `aeolus-trierarch-plugin migrate` reads: the database alone. */
@@ -52,6 +54,8 @@ export interface Config {
   passIntervalMs: number;
   /** The repositories every trierarch may clone on demand, by name (aeolus-fleet#384); none by default. */
   trustedRepositories: TrustedRepositories;
+  /** The crew-time MCP servers every trierarch offers sessions, by name (aeolus-fleet-trierarch#120); none by default. */
+  mcpServers: McpServers;
 }
 
 export class ConfigError extends Error {
@@ -81,6 +85,21 @@ function trustedRepositories(text: string): TrustedRepositories {
   return read.value;
 }
 
+/** MCP_SERVERS as JSON of names to `{ url, tools }`; throws a ConfigError saying what is wrong. */
+function mcpServers(text: string): McpServers {
+  let listed: unknown;
+  try {
+    listed = JSON.parse(text);
+  } catch {
+    throw new ConfigError('MCP_SERVERS: must be JSON of names to { url, tools }');
+  }
+  const read = readMcpServers(listed);
+  if (!read.isOk) {
+    throw new ConfigError(`MCP_SERVERS: ${read.error.reason}`);
+  }
+  return read.value;
+}
+
 /** The configuration from the environment; throws a ConfigError naming every variable that is wrong. */
 export function loadConfig(environment: Record<string, string | undefined>): Config {
   const variables = parsed(environmentSchema, environment);
@@ -94,6 +113,7 @@ export function loadConfig(environment: Record<string, string | undefined>): Con
     silentAfterMs: variables.TRIERARCH_SILENT_AFTER_SECONDS * MS_PER_SECOND,
     passIntervalMs: variables.TRIERARCH_PASS_INTERVAL_SECONDS * MS_PER_SECOND,
     trustedRepositories: trustedRepositories(variables.TRUSTED_REPOSITORIES),
+    mcpServers: mcpServers(variables.MCP_SERVERS),
   };
 }
 
