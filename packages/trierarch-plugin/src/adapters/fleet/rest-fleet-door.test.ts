@@ -117,6 +117,8 @@ function aListedShip(id: string, name: string): Record<string, unknown> {
     awaitingCrewSince: null,
     retiredAt: null,
     ownerShipId: null,
+    activity: null,
+    openAlertCount: 0,
   };
 }
 
