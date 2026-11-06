@@ -24,6 +24,7 @@ async function start(): Promise<void> {
     logger: { level: config.logLevel },
     silentAfterMs: config.silentAfterMs,
     trustedRepositories: config.trustedRepositories,
+    mcpServers: config.mcpServers,
     ...(config.installationToken === undefined ? {} : { installationToken: config.installationToken }),
   });
   const restored = await app.restoreConnections();

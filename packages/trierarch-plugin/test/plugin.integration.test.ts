@@ -11,6 +11,7 @@ import { machineOutputSchema } from '../src/adapters/trpc/router.js';
 import { createTrierarchPluginApp, type TrierarchPluginApp } from '../src/app.js';
 import { connectPlugin, mutate, query, signIn } from './support/connection.js';
 import { createPluginDatabase } from '../src/testing/database.js';
+import { readMcpServers } from '../src/core/mcp-servers/mcp-servers.js';
 import { readTrustedRepositories } from '../src/core/repositories/trusted-repositories.js';
 import { crewAsTrierarch, receiveAsTrierarch, reportAsTrierarch } from './support/trierarch.js';
 
@@ -439,7 +440,8 @@ describe('the trusted repositories against a real fleet (aeolus-fleet#384)', () 
     await app.assignOnce();
 
     const machine = { shipId: z.templateLiteral(['shp_', z.string()]).parse(joined.shipId), secret: joined.secret };
-    await expect(receiveAsTrierarch(fleetUrl, machine)).resolves.toEqual([
+    const received = await receiveAsTrierarch(fleetUrl, machine);
+    expect(received.filter((each) => each.contentType.includes('trusted-repositories'))).toEqual([
       {
         senderShipId: shipId,
         contentType: 'application/vnd.aeolus.trierarch.trusted-repositories+json',
@@ -460,7 +462,7 @@ describe('a trierarch asking for the trusted repositories again (aeolus-fleet#38
     const joined = joinedSchema.parse(await (await mutate(address, { procedure: 'machines.join', cookie, body: { name: 'mac-studio' } })).json()).result.data;
     const machine = await crewAsTrierarch(fleetUrl, { shipId: z.templateLiteral(['shp_', z.string()]).parse(joined.shipId), secret: joined.secret });
     await app.assignOnce();
-    await expect(machine.receive()).resolves.toHaveLength(1);
+    await expect(machine.receive()).resolves.toHaveLength(2);
 
     await machine.send({ shipId, contentType: 'application/vnd.aeolus.trierarch.trusted-repositories-request+json', payload: '{}' });
     await expect
@@ -472,6 +474,50 @@ describe('a trierarch asking for the trusted repositories again (aeolus-fleet#38
         { timeout: 15_000, interval: 500 },
       )
       .toEqual(['application/vnd.aeolus.trierarch.trusted-repositories+json']);
+  });
+});
+
+describe('the crew-time MCP servers against a real fleet (aeolus-fleet-trierarch#120)', () => {
+  const GRAPH_PAYLOAD = '{"servers":[{"name":"company-graph","url":"https://graph.example.invalid/mcp","transport":"streamable-http","tools":["read_neo4j_cypher"]}]}';
+  const SERVERS_TYPE = 'application/vnd.aeolus.trierarch.mcp-servers+json';
+
+  async function joinedMachine(): Promise<{ app: TrierarchPluginApp; machine: { shipId: ShipId; secret: string } }> {
+    const listed = readMcpServers({ 'company-graph': { url: 'https://graph.example.invalid/mcp', tools: ['read_neo4j_cypher'] } });
+    const mcpServers = listed.isOk ? listed.value : { servers: [] };
+    const app = createTrierarchPluginApp({ databaseUrl: pluginDatabaseUrl, fleetUrl, logger: false, mcpServers });
+    apps.push(app);
+    const address = await app.server.listen({ host: '127.0.0.1', port: 0 });
+    expect((await connectPlugin(address, { cookie, shipId, secret })).status).toBe(200);
+    const joined = joinedSchema.parse(await (await mutate(address, { procedure: 'machines.join', cookie, body: { name: 'mac-studio' } })).json()).result.data;
+    return { app, machine: { shipId: z.templateLiteral(['shp_', z.string()]).parse(joined.shipId), secret: joined.secret } };
+  }
+
+  it('a pass sends a joined trierarch the list once, as the trierarch plugin\'s ship', async () => {
+    const { app, machine } = await joinedMachine();
+
+    await app.assignOnce();
+    await app.assignOnce();
+
+    const received = await receiveAsTrierarch(fleetUrl, machine);
+    expect(received.filter((each) => each.contentType === SERVERS_TYPE)).toEqual([{ senderShipId: shipId, contentType: SERVERS_TYPE, payload: GRAPH_PAYLOAD }]);
+  });
+
+  it('a trierarch that asks for the list again gets it on the next pass', async () => {
+    const { app, machine } = await joinedMachine();
+    const trierarch = await crewAsTrierarch(fleetUrl, machine);
+    await app.assignOnce();
+    await trierarch.receive();
+
+    await trierarch.send({ shipId, contentType: 'application/vnd.aeolus.trierarch.mcp-servers-request+json', payload: '{}' });
+    await expect
+      .poll(
+        async () => {
+          await app.assignOnce();
+          return (await trierarch.receive()).map((delivery) => delivery.contentType);
+        },
+        { timeout: 15_000, interval: 500 },
+      )
+      .toEqual([SERVERS_TYPE]);
   });
 });
 

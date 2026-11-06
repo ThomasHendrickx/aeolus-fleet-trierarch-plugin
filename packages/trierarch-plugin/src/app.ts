@@ -32,6 +32,9 @@ import { createJoinMachine } from './core/machines/join-machine.js';
 import { createNewSetupLine } from './core/machines/new-setup-line.js';
 import { createDeclareNetworkRules, type Declarations } from './core/network/declare-network-rules.js';
 import { createDeclareScopes } from './core/scopes/declare-scopes.js';
+import { createResendMcpServers } from './core/mcp-servers/resend-mcp-servers.js';
+import { createShareMcpServers } from './core/mcp-servers/share-mcp-servers.js';
+import type { McpServers } from './core/mcp-servers/mcp-servers.js';
 import { createResendTrustedRepositories } from './core/repositories/resend-trusted-repositories.js';
 import { createShareTrustedRepositories } from './core/repositories/share-trusted-repositories.js';
 import type { TrustedRepositories } from './core/repositories/trusted-repositories.js';
@@ -93,6 +96,8 @@ export function createTrierarchPluginApp(options: {
   silentAfterMs?: number;
   /** The repositories every trierarch may clone on demand (aeolus-fleet#384); none unless given. */
   trustedRepositories?: TrustedRepositories;
+  /** The crew-time MCP servers every trierarch offers sessions (aeolus-fleet-trierarch#120); none unless given. */
+  mcpServers?: McpServers;
 }): TrierarchPluginApp {
   const prisma = createPrismaClient(options.databaseUrl);
   const server = Fastify({ logger: options.logger ?? true });
@@ -222,6 +227,24 @@ export function createTrierarchPluginApp(options: {
     shared,
   });
   const resendTrustedRepositories = createResendTrustedRepositories({ shared });
+  const sharedMcpServers = new Set<ShipId>();
+  const shareMcpServers = createShareMcpServers({
+    door,
+    connections,
+    keys: randomIdempotencyKeys,
+    mcpServers: options.mcpServers ?? { servers: [] },
+    shared: sharedMcpServers,
+  });
+  const resendMcpServers = createResendMcpServers({ shared: sharedMcpServers });
+  /** Sends each trierarch the crew-time MCP servers once; a refusal is logged and the pass goes on. */
+  const shareMcpServersOnce = async (fleetId: FleetId): Promise<void> => {
+    const shared = await shareMcpServers(fleetId);
+    if (!shared.isOk) {
+      server.log.warn({ fleet: fleetId, refusal: shared.error }, 'sharing the MCP servers refused; the next pass tries again');
+    } else if (shared.value.shared > 0) {
+      server.log.info({ fleet: fleetId, ...shared.value }, 'MCP servers sent');
+    }
+  };
   /** Sends each trierarch the trusted repositories once (aeolus-fleet#384); a refusal is logged and the pass goes on. */
   const shareOnce = async (fleetId: FleetId): Promise<void> => {
     const shared = await shareTrustedRepositories(fleetId);
@@ -249,6 +272,7 @@ export function createTrierarchPluginApp(options: {
       await declareOnce(crew.fleetId);
       await declareScopesOnce(crew.fleetId);
       await shareOnce(crew.fleetId);
+      await shareMcpServersOnce(crew.fleetId);
       const assigned = await assignCrews(crew.fleetId);
       await tellOnce(crew.fleetId);
       if (assigned.isOk) {
@@ -281,6 +305,8 @@ export function createTrierarchPluginApp(options: {
       const { contentType, senderShipId } = delivery;
       if (resendTrustedRepositories(delivery)) {
         server.log.info({ senderShipId }, 'a trierarch asked for the trusted repositories: the next pass sends them');
+      } else if (resendMcpServers(delivery)) {
+        server.log.info({ senderShipId }, 'a trierarch asked for the MCP servers: the next pass sends them');
       } else {
         server.log.info({ contentType, senderShipId }, "the trierarch plugin's ship acked a message it does not handle");
       }

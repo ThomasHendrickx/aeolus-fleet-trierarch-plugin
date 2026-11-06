@@ -19,12 +19,19 @@ describe('loadConfig', () => {
       silentAfterMs: 300_000,
       passIntervalMs: 10_000,
       trustedRepositories: { repositories: [] },
+      mcpServers: { servers: [] },
     });
   });
 
   it('reads the trusted repositories as JSON of names to git URLs', () => {
     expect(loadConfig({ ...environment, TRUSTED_REPOSITORIES: '{"hemma":"git@github.com:ThomasHendrickx/hemma.git"}' }).trustedRepositories).toEqual({
       repositories: [{ name: 'hemma', url: 'git@github.com:ThomasHendrickx/hemma.git' }],
+    });
+  });
+
+  it('reads the MCP servers as JSON of names to a URL and the tools a session may call', () => {
+    expect(loadConfig({ ...environment, MCP_SERVERS: '{"company-graph":{"url":"https://graph.example.invalid/mcp","tools":["read_neo4j_cypher"]}}' }).mcpServers).toEqual({
+      servers: [{ name: 'company-graph', url: 'https://graph.example.invalid/mcp', tools: ['read_neo4j_cypher'] }],
     });
   });
 
@@ -50,6 +57,9 @@ describe('loadConfig', () => {
     ['trusted repositories that are not JSON', { ...environment, TRUSTED_REPOSITORIES: 'hemma=git@github.com:a/b.git' }],
     ['a trusted repository whose ssh user does not decode', { ...environment, TRUSTED_REPOSITORIES: '{"hemma":"ssh://%zz@github.com/a/b.git"}' }],
     ['a trusted repository whose URL holds a credential', { ...environment, TRUSTED_REPOSITORIES: '{"hemma":"https://me:secret@github.com/a/b.git"}' }],
+    ['MCP servers that are not JSON', { ...environment, MCP_SERVERS: 'company-graph=https://graph.example.invalid/mcp' }],
+    ['an MCP server whose URL holds a credential', { ...environment, MCP_SERVERS: '{"graph":{"url":"https://me:secret@graph.example.invalid/mcp","tools":["read"]}}' }],
+    ['an MCP server with no tools', { ...environment, MCP_SERVERS: '{"graph":{"url":"https://graph.example.invalid/mcp","tools":[]}}' }],
   ])('refuses %s', (_label, invalid) => {
     expect(() => loadConfig(invalid)).toThrow(ConfigError);
   });
