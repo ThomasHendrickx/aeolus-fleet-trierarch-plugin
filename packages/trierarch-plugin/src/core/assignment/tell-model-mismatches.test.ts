@@ -1,4 +1,4 @@
-import type { ShipId } from '@aeolus-fleet/common';
+import { ARGO_HEADLINE_MAX_LENGTH, type ShipId } from '@aeolus-fleet/common';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { FLEET_ID, SHIP_ID, fakePluginFleet, memoryConnectionStore } from '../../../test/support/connection-fakes.js';
@@ -46,10 +46,20 @@ describe("the trierarch plugin's model check", () => {
     await expect(tell()).resolves.toEqual({ isOk: true, value: { told: 1 } });
     expect(fleet.state.told).toEqual([
       {
-        text: 'Ship scout runs claude-sonnet-5-5, but its crew request asks for claude-opus-5-5. The trierarch plugin changes nothing.',
+        text: 'Ship scout runs claude-sonnet-5-5, not claude-opus-5-5\n\nShip scout runs claude-sonnet-5-5, but its crew request asks for claude-opus-5-5. The trierarch plugin changes nothing.',
         idempotencyKey: `trierarch-plugin:model-mismatch:${SCOUT}:1:claude-sonnet-5-5`,
       },
     ]);
+  });
+
+  it('opens the notice with a headline of at most 80 characters, then a blank line', async () => {
+    aCrewedShip();
+
+    await tell();
+
+    const [headline, blank] = (fleet.state.told[0]?.text ?? '').split('\n');
+    expect(headline?.length).toBeLessThanOrEqual(ARGO_HEADLINE_MAX_LENGTH);
+    expect(blank).toBe('');
   });
 
   it('tells argo nothing when the stated model is the requested one', async () => {

@@ -1,4 +1,4 @@
-import type { FleetId } from '@aeolus-fleet/common';
+import { argoMessage, type FleetId } from '@aeolus-fleet/common';
 
 import type { ConnectionStore, FleetDoor } from '../connection/ports.js';
 import { refuse, type DomainError } from '../shared/errors.js';
@@ -30,10 +30,12 @@ export function createDeclareScopes(deps: { door: FleetDoor; connections: Pick<C
     }
     if (held) {
       const told = await deps.door.tellArgo(crew.crewToken, {
-        text:
-          `The trierarch plugin cannot declare its scopes: another ship holds ${PLUGIN_NAMESPACE}\n\n` +
-          `- The trierarch plugin's ship: ${crew.name}\n- Held by: ${held.declaredBy ?? 'core'}\n\n` +
-          `Until that ship is retired, no ship holds ${JOIN_SCOPE}, so only argo adds a computer.`,
+        text: argoMessage({
+          headline: `The trierarch plugin cannot declare its scopes: another ship holds ${PLUGIN_NAMESPACE}`,
+          body:
+            `- The trierarch plugin's ship: ${crew.name}\n- Held by: ${held.declaredBy ?? 'core'}\n\n` +
+            `Until that ship is retired, no ship holds ${JOIN_SCOPE}, so only argo adds a computer.`,
+        }),
         idempotencyKey: `namespace-taken-${crew.shipId}`,
       });
       return told.isOk ? ok({ isDeclared: false }) : refuse('FLEET_UNAVAILABLE', `The fleet did not take the notice to argo: ${told.error.message}`);

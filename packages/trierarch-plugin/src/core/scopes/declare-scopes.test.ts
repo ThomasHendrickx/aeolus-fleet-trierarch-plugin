@@ -1,4 +1,4 @@
-import type { ShipId } from '@aeolus-fleet/common';
+import { ARGO_HEADLINE_MAX_LENGTH, type ShipId } from '@aeolus-fleet/common';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { FLEET_ID, SHIP_ID, fakePluginFleet, memoryConnectionStore } from '../../../test/support/connection-fakes.js';
@@ -50,6 +50,16 @@ describe('the trierarch plugin declaring its scopes', () => {
         `- The trierarch plugin's ship: trierarch-plugin\n- Held by: ${OTHER_SHIP}\n\n` +
         'Until that ship is retired, no ship holds trierarch:join, so only argo adds a computer.',
     ]);
+  });
+
+  it('opens the notice with a headline of at most 80 characters, then a blank line', async () => {
+    fleet.state.namespaces.push({ namespace: 'trierarch', declaredBy: OTHER_SHIP, scopes: [] });
+
+    await declare();
+
+    const [headline, blank] = (fleet.state.told[0]?.text ?? '').split('\n');
+    expect(headline?.length).toBeLessThanOrEqual(ARGO_HEADLINE_MAX_LENGTH);
+    expect(blank).toBe('');
   });
 
   it('is refused while its ship cannot declare scopes, as one connected before it needed scopes:declare', async () => {
