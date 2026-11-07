@@ -1,4 +1,4 @@
-import type { FleetId } from '@aeolus-fleet/common';
+import { argoMessage, type FleetId } from '@aeolus-fleet/common';
 import { z } from 'zod';
 
 import type { ConnectionStore, FleetDoor, FleetRefusal, ListedShip } from '../connection/ports.js';
@@ -53,7 +53,10 @@ export function createTellModelMismatches(deps: { door: FleetDoor; connections: 
       }
       const requested = requestedModelSchema.safeParse(read.value.crewSettings);
       if (requested.success && requested.data.options.model !== ship.model.id) {
-        const text = `Ship ${ship.name} runs ${ship.model.id}, but its crew request asks for ${requested.data.options.model}. The trierarch plugin changes nothing.`;
+        const text = argoMessage({
+          headline: `Ship ${ship.name} runs ${ship.model.id}, not ${requested.data.options.model}`,
+          body: `Ship ${ship.name} runs ${ship.model.id}, but its crew request asks for ${requested.data.options.model}. The trierarch plugin changes nothing.`,
+        });
         const sent = await deps.door.tellArgo(crew.crewToken, { text, idempotencyKey: key });
         // CONFLICT: the fleet holds a notice under this key already, sent by an earlier version stating another model.
         if (!sent.isOk && sent.error.code !== HELD_ALREADY) {
