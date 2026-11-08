@@ -109,15 +109,18 @@ function mcpServersRefusal(offering: readonly { harness: TrierarchReportDetails[
 /** A harness options schema that reports a default model (`properties.model.default`). */
 const defaultModelSchema = z.object({ properties: z.object({ model: z.object({ default: z.string() }) }) });
 
+/** A harness options schema that lists the models it reports (`properties.model.enum`). */
+const modelEnumSchema = z.object({ properties: z.object({ model: z.object({ enum: z.array(z.unknown()) }) }) });
+
 /** Whether the harness reports a default model and the fleet enabled it: a harness with no default or no model option does not. */
 function isDefaultEnabled(schema: TrierarchReportDetails['harnesses'][number]['options'], enabledModels: readonly string[]): boolean {
   const read = defaultModelSchema.safeParse(schema);
   return read.success && enabledModels.includes(read.data.properties.model.default);
 }
 
-/** Why a request waits on a model the fleet did not enable, within what a reason may hold. */
-function modelDisabledReason(what: string): string {
-  return `model disabled: ${what}`.slice(0, CREW_REQUEST_REASON_MAX_LENGTH);
+/** Why a request waits on a model that is not available, within what a reason may hold. */
+function modelNotAvailableReason(what: string): string {
+  return `model not available: ${what}`.slice(0, CREW_REQUEST_REASON_MAX_LENGTH);
 }
 
 /**
@@ -130,7 +133,13 @@ function namedModelRefusal(settings: CrewSettings, enabledModels: readonly strin
   if (enabledModels.length === 0 || named === undefined || (typeof named === 'string' && enabledModels.includes(named))) {
     return undefined;
   }
-  return { reason: modelDisabledReason(typeof named === 'string' ? named : JSON.stringify(named)), field: 'options' };
+  return { reason: modelNotAvailableReason(typeof named === 'string' ? named : JSON.stringify(named)), field: 'options' };
+}
+
+/** Whether the harness's model option lists the model: a harness that lists none reports every model. */
+function reportsModel(schema: TrierarchReportDetails['harnesses'][number]['options'], model: unknown): boolean {
+  const read = modelEnumSchema.safeParse(schema);
+  return !read.success || read.data.properties.model.enum.includes(model);
 }
 
 /** Room left as a share of its cap: what placement compares. */
@@ -175,6 +184,10 @@ function fit(settings: CrewSettings, { trierarchs, enabledModels, givenBack }: P
   if (offering.length === 0) {
     return { reason: named === undefined ? 'no trierarch offers a harness' : `no trierarch offers harness ${named}`, field: 'harness' };
   }
+  const namedModel = settings.options.model;
+  if (enabledModels.length > 0 && namedModel !== undefined && !offering.some(({ harness }) => reportsModel(harness.options, namedModel))) {
+    return { reason: modelNotAvailableReason(typeof namedModel === 'string' ? namedModel : JSON.stringify(namedModel)), field: 'options' };
+  }
   const serversRefusal = mcpServersRefusal(offering, { named: settings.mcpServers ?? [], harnessWords });
   if (serversRefusal !== undefined) {
     return { reason: serversRefusal.slice(0, CREW_REQUEST_REASON_MAX_LENGTH), field: 'mcpServers' };
@@ -193,7 +206,7 @@ function fit(settings: CrewSettings, { trierarchs, enabledModels, givenBack }: P
   // A request naming no model runs on the harness's default: only an enabled one fits (M3).
   const allowed = enabledModels.length === 0 || settings.options.model !== undefined ? taking : taking.filter(({ harness }) => isDefaultEnabled(harness.options, enabledModels));
   if (allowed.length === 0) {
-    return { reason: modelDisabledReason(`no enabled default model for ${harnessWords}`), field: 'options' };
+    return { reason: modelNotAvailableReason(`no enabled default model for ${harnessWords}`), field: 'options' };
   }
   const left = allowed.map(({ trierarch }) => trierarch).filter((trierarch) => !givenBack.some((back) => back.trierarchShipId === trierarch.shipId));
   if (left.length === 0) {
