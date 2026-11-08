@@ -277,14 +277,44 @@ describe('telling the requester why its crew request waits', () => {
 
   it('tries no more a tell argo refuses, counting it refused', async () => {
     aWaitingRequest({ requestedBy: null });
-    fleet.state.isRefusingArgo = true;
+    fleet.state.argoRefusal = { code: 'VALIDATION_FAILED', message: 'The message cannot be taken' };
     const told = new Set<string>();
 
     await expect(tellWith(told)(FLEET_ID)).resolves.toEqual({ isOk: true, value: { told: 0, untold: 0, refused: 1 } });
-    fleet.state.isRefusingArgo = false;
+    fleet.state.argoRefusal = null;
 
     await expect(tellWith(told)(FLEET_ID)).resolves.toEqual({ isOk: true, value: { told: 0, untold: 0, refused: 0 } });
     expect(fleet.state.told).toEqual([]);
+  });
+
+  it.each([
+    ['a server failure', { code: 'INTERNAL_SERVER_ERROR', message: 'The fleet failed' }],
+    ['the message limit', { code: 'MESSAGE_LIMIT_REACHED', message: 'The fleet holds as many messages as it may' }],
+  ])('tells the requester next pass, and argo nothing, after %s on the send', async (_, refusal) => {
+    aRequester();
+    aWaitingRequest();
+    const told = new Set<string>();
+    fleet.state.sendRefusals.set(ORCHESTRATOR, refusal);
+    await expect(tellWith(told)(FLEET_ID)).resolves.toEqual({ isOk: true, value: { told: 0, untold: 1, refused: 0 } });
+    fleet.state.sendRefusals.clear();
+
+    await expect(tellWith(told)(FLEET_ID)).resolves.toEqual({ isOk: true, value: { told: 1, untold: 0, refused: 0 } });
+    expect(fleet.state.sent.map((message) => message.shipId)).toEqual([ORCHESTRATOR]);
+    expect(fleet.state.told).toEqual([]);
+  });
+
+  it.each([
+    ['a server failure', { code: 'INTERNAL_SERVER_ERROR', message: 'The fleet failed' }],
+    ['the message limit', { code: 'MESSAGE_LIMIT_REACHED', message: 'The fleet holds as many messages as it may' }],
+  ])('tells argo next pass after %s on its tell', async (_, refusal) => {
+    aWaitingRequest({ requestedBy: null });
+    const told = new Set<string>();
+    fleet.state.argoRefusal = refusal;
+    await expect(tellWith(told)(FLEET_ID)).resolves.toEqual({ isOk: true, value: { told: 0, untold: 1, refused: 0 } });
+    fleet.state.argoRefusal = null;
+
+    await expect(tellWith(told)(FLEET_ID)).resolves.toEqual({ isOk: true, value: { told: 1, untold: 0, refused: 0 } });
+    expect(fleet.state.told).toHaveLength(1);
   });
 
   it('goes on with the other requests when one tell is refused', async () => {

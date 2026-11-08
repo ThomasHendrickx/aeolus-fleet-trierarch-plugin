@@ -76,8 +76,10 @@ export function fakePluginFleet() {
     refusingSends: new Set<ShipId>(),
     /** Whether the fleet answers sends and what argo is told, while it answers every other call. */
     isAnsweringSends: true,
-    /** Whether the fleet refuses what argo is told, as it would a message it cannot take. */
-    isRefusingArgo: false,
+    /** Why the fleet refuses what argo is told, as it would a message it cannot take; null while it takes it. */
+    argoRefusal: null as FleetRefusal | null,
+    /** Why the fleet refuses a send to each of these ships, by its code and message. */
+    sendRefusals: new Map<ShipId, FleetRefusal>(),
     /** The days the fleet keeps its finished history, as fleet.limits answers it; null for kept for good (decision 0066). */
     retentionDays: KEPT_FOR_GOOD,
   };
@@ -312,8 +314,8 @@ export function fakePluginFleet() {
       if (!state.liveTokens.has(crewToken)) {
         return released();
       }
-      if (state.isRefusingArgo) {
-        return Promise.resolve(err({ code: 'VALIDATION_FAILED', message: 'The message cannot be taken' }));
+      if (state.argoRefusal !== null) {
+        return Promise.resolve(err({ ...state.argoRefusal }));
       }
       const earlier = state.told.find((each) => each.idempotencyKey === notice.idempotencyKey);
       if (earlier !== undefined && earlier.text !== notice.text) {
@@ -333,6 +335,10 @@ export function fakePluginFleet() {
       }
       if (state.refusingSends.has(message.shipId)) {
         return Promise.resolve(err({ code: 'FORBIDDEN', message: 'No network rule allows this message' }));
+      }
+      const refusal = state.sendRefusals.get(message.shipId);
+      if (refusal !== undefined) {
+        return Promise.resolve(err({ ...refusal }));
       }
       const earlier = state.sent.find((each) => each.idempotencyKey === message.idempotencyKey);
       if (earlier !== undefined && (earlier.shipId !== message.shipId || earlier.payload !== message.payload)) {
