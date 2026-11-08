@@ -1,6 +1,6 @@
 # Enabled models for ships: read, refused by the plugin, told why a request waits
 
-Design for [#57](https://github.com/ThomasHendrickx/aeolus-fleet-trierarch-plugin/issues/57). Docs only. Status: purpose agreed by Thomas (8 Nov); Q1 to Q6 answered; the rules, flows and slices wait for his approval for his answers, and no rule below is decided until he answers.
+Design for [#57](https://github.com/ThomasHendrickx/aeolus-fleet-trierarch-plugin/issues/57). Docs only. Approved by Thomas (8 Nov): "Approved as written". Purpose and lessons as agreed, his answers as the questions' outcomes, then the rules, flows and slices.
 
 ## 1. Purpose (agreed by Thomas, 8 Nov)
 
@@ -37,7 +37,7 @@ Not the purpose: changing what placement picks or the rules of 0063; stopping or
 
 ## 3. Questions
 
-Sent to Thomas on Bridge, each with a pick and a "none of these" option. The rules, flows, repositories and slices follow from his answers.
+Asked on Bridge, each with a pick and a "none of these" option; Thomas's answers below.
 
 - **Q1. Where is a request for a disabled model refused?** Answered (Thomas, 8 Nov): option 2, by the plugin, never in core. The request is accepted; the plugin's next assignment pass (within 10 s) writes the reason and tells the requester (Q3). Why: "Writing models to core would mean the plugin logic leaks into core plus the plugin needs to update core and we get 2 sources of truth. A model can change both due to selection changing and by the updates of the harnesses on the different trierarchs. That would introduce race conditions." So outcome 2 reads: refused by the plugin's next pass, with the reason told to the ship that asked.
 - **Q2. How does a ship read the enabled models?** Answered (Thomas, 8 Nov): a message to the plugin's ship, answered as a reply with the exact set as it is now; a content type in common for each. With network rules applied, the requester needs a rule that lets it reach the plugin's ship; the reply goes back by the answer built-in.
@@ -47,7 +47,7 @@ Sent to Thomas on Bridge, each with a pick and a "none of these" option. The rul
 
 - **Q6. In a fleet with network rules, how does the plugin reach requesters?** (asked after Q3: 0037 lets a plugin declare rules only on labels it owns, so Q3's declared rule cannot be.) Answered (Thomas, 8 Nov): none of the options; "plugins are always reachable": every ship sends to a ship of kind plugin, and a ship of kind plugin sends to every ship. Two built-in rules in core, beside 0034's built-in read of a plugin, so nothing is declared.
 
-## 4. Rules (from the answers; for Thomas to approve)
+## 4. Rules (approved by Thomas, 8 Nov)
 
 | # | Rule |
 | --- | --- |
