@@ -24,11 +24,12 @@ export type TellCrewRequestReasons = (fleetId: FleetId) => Promise<Result<TellOu
 const HELD_ALREADY = 'CONFLICT';
 
 /**
- * The refusals that mean the fleet did not take the call up: no answer, busy
- * after every wait, or the plugin's own crew ended. The same tell may be made
- * again; every other refusal is final for it.
+ * The refusals that pass: no answer, busy after every wait, a server failure,
+ * the plugin's own crew ended, or the fleet's message limit, which lifts. The
+ * fleet stored nothing, so the same tell is made again next pass; every other
+ * refusal is final for it.
  */
-const NOT_ANSWERED = new Set(['UNAVAILABLE', 'SERVICE_UNAVAILABLE', 'LEASE_ENDED']);
+const NOT_ANSWERED = new Set(['UNAVAILABLE', 'SERVICE_UNAVAILABLE', 'INTERNAL_SERVER_ERROR', 'LEASE_ENDED', 'MESSAGE_LIMIT_REACHED']);
 
 /** The kinds of reason a requester is told, each once per settings version (R4). */
 type ReasonKind = 'model' | 'givenBack';
