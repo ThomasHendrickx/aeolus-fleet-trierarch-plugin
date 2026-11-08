@@ -1,7 +1,7 @@
 import { isPingContentType, RECEIVE_MAX_UPPER_BOUND } from '@aeolus-fleet/common';
 
 import type { KeepUsage } from '../usage/keep-usage.js';
-import type { ConnectionStore, PluginDelivery, PluginInbox } from './ports.js';
+import type { ConnectionStore, PluginCrew, PluginDelivery, PluginInbox } from './ports.js';
 
 /**
  * What a round did: pings answered, trierarchs' usage kept, usage not handled
@@ -16,6 +16,11 @@ export interface PingRound {
   refused: number;
 }
 
+/** What became of a delivery that may be an ask: not one; answered; its reply refused by the fleet; or left waiting. */
+export type AnsweredAsk = { readonly kind: 'notAsk' } | { readonly kind: 'answered' } | { readonly kind: 'refused' } | { readonly kind: 'left' };
+
+export type AnswerAsk = (crew: PluginCrew, delivery: PluginDelivery) => Promise<AnsweredAsk>;
+
 export type AnswerPings = () => Promise<PingRound>;
 
 /**
@@ -25,7 +30,7 @@ export type AnswerPings = () => Promise<PingRound>;
  * so usage the store fails on is not acked and the fleet hands it again (the
  * usage design); anything else is acked, and the fleet keeps it in its history.
  */
-export function createAnswerPings(deps: { connections: ConnectionStore; inbox: PluginInbox; keepUsage: KeepUsage }): AnswerPings {
+export function createAnswerPings(deps: { connections: ConnectionStore; inbox: PluginInbox; keepUsage: KeepUsage; answerAsk: AnswerAsk }): AnswerPings {
   return async () => {
     const round: PingRound = { ponged: 0, acked: [], keptUsage: 0, notHandled: [], refused: 0 };
     for (const crew of await deps.connections.connected()) {
@@ -46,14 +51,23 @@ export function createAnswerPings(deps: { connections: ConnectionStore; inbox: P
           round.refused += 1;
           continue;
         }
+        // The reply is stored before the ask is acked: a crash answers again under the same key.
+        const asked = await deps.answerAsk(crew, delivery).catch(() => undefined);
+        if (asked === undefined || asked.kind === 'refused') {
+          round.refused += 1;
+          continue;
+        }
+        if (asked.kind === 'left') {
+          continue;
+        }
         const acked = await deps.inbox.ack(crew.crewToken, delivery.deliveryId);
         if (!acked.isOk) {
           round.refused += 1;
-        } else if (usage.kind === 'kept') {
+        } else if (asked.kind === 'notAsk' && usage.kind === 'kept') {
           round.keptUsage += 1;
         } else if (usage.kind === 'notHandled') {
           round.notHandled.push({ delivery, reason: usage.reason });
-        } else {
+        } else if (asked.kind === 'notAsk') {
           round.acked.push(delivery);
         }
       }

@@ -38,6 +38,7 @@ const MESSAGE = {
 function aUsageDelivery(overrides: Partial<PluginDelivery> = {}): PluginDelivery {
   return {
     deliveryId: 'dlv_01m3tbfspe96yf1rnr4ank9use',
+    messageId: 'msg_01m3tbfspe96yf1rnr4ank9use',
     contentType: TRIERARCH_USAGE_CONTENT_TYPE,
     senderShipId: MACHINE,
     senderType: 'trierarch',

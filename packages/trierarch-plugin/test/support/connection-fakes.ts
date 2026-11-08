@@ -1,4 +1,4 @@
-import type { FleetId, LabelId, LabelValueId, NetworkRule, ShipId } from '@aeolus-fleet/common';
+import type { FleetId, LabelId, LabelValueId, MessageId, NetworkRule, ShipId } from '@aeolus-fleet/common';
 
 import type { ConnectionStore, FleetDoor, FleetRefusal, ListedShip, PluginBinding, PluginCrew } from '../../src/core/connection/ports.js';
 import { err, ok, type Result } from '../../src/core/shared/result.js';
@@ -68,7 +68,7 @@ export function fakePluginFleet() {
     /** What argo was told, once per idempotency key, in order. */
     told: new Array<{ text: string; idempotencyKey: string }>(),
     /** What the trierarch plugin's ship sent other ships, in order. */
-    sent: new Array<{ shipId: ShipId; contentType: string; payload: string; idempotencyKey: string }>(),
+    sent: new Array<{ shipId: ShipId; contentType: string; payload: string; idempotencyKey: string; inReplyTo?: MessageId }>(),
     /** Ships a send to is refused, as when the network rules do not allow it. */
     refusingSends: new Set<ShipId>(),
     /** Whether the fleet answers sends and what argo is told, while it answers every other call. */

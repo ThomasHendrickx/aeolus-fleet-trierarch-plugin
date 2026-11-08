@@ -223,12 +223,12 @@ export function createRestFleetDoor(fleetUrl: string, options: { busyWaitsMs?: r
       });
       return sent.isOk ? ok(undefined) : sent;
     },
-    send: async (crewToken, { shipId, contentType, payload, idempotencyKey }) => {
+    send: async (crewToken, { shipId, contentType, payload, idempotencyKey, inReplyTo }) => {
       const sent = await call({
         path: '/ship/send',
         method: 'POST',
         crewToken,
-        body: { selector: { kind: 'ship', shipId }, payload, contentType, idempotencyKey },
+        body: { selector: { kind: 'ship', shipId }, payload, contentType, idempotencyKey, ...(inReplyTo === undefined ? {} : { inReplyTo }) },
         answers: z.unknown(),
       });
       return sent.isOk ? ok(undefined) : sent;
@@ -237,7 +237,7 @@ export function createRestFleetDoor(fleetUrl: string, options: { busyWaitsMs?: r
     inbox: {
       receive: async (crewToken, max) => {
         const taken = await call({ path: '/ship/receive', method: 'POST', crewToken, body: { max }, answers: receiveOutputSchema });
-        return taken.isOk ? ok(taken.value.deliveries.map(({ deliveryId, contentType, senderShipId, senderType, payload }) => ({ deliveryId, contentType, senderShipId, senderType, payload }))) : taken;
+        return taken.isOk ? ok(taken.value.deliveries.map(({ deliveryId, messageId, contentType, senderShipId, senderType, payload }) => ({ deliveryId, messageId, contentType, senderShipId, senderType, payload }))) : taken;
       },
       ack: async (crewToken, deliveryId) => {
         const acked = await call({ path: '/ship/ack', method: 'POST', crewToken, body: { deliveryId }, answers: z.unknown() });
