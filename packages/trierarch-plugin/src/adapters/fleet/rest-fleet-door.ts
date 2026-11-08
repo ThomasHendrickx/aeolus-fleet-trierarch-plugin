@@ -166,6 +166,7 @@ export function createRestFleetDoor(fleetUrl: string, options: { busyWaitsMs?: r
                 reason: crewRequest.reason,
                 startedAt: dateOf(crewRequest.startedAt),
                 givenBack: crewRequest.givenBack.map((back) => ({ trierarchShipId: back.trierarch.id, reason: back.reason })),
+                requestedBy: crewRequest.requestedBy && { shipId: crewRequest.requestedBy.id, name: crewRequest.requestedBy.name },
               },
               labels: labels.map(({ labelId, valueId }) => ({ labelId, valueId })),
             })),

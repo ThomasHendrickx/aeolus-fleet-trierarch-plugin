@@ -317,7 +317,7 @@ describe('telling the requester why its crew request waits, against a real fleet
     const inbox = await useCases.readInbox(argo, { filter: 'all' });
     const items = inbox.isOk ? inbox.value.items : [];
     const reasons = items.filter((entry) => entry.message.contentType === CREW_REQUEST_REASON_CONTENT_TYPE);
-    expect(reasons.map((entry) => ({ payload: JSON.parse(entry.message.payload) as unknown, sender: entry.message.sender.name }))).toEqual([
+    expect(reasons.map((entry) => ({ payload: z.string().transform((text): unknown => JSON.parse(text)).parse(entry.message.payload), sender: entry.message.sender.name }))).toEqual([
       { payload: { shipId: scout.shipId, shipName: 'scout', settingsVersion: 1, reason: 'model not available: claude-opus-5-5' }, sender: 'trierarch-plugin' },
     ]);
   });

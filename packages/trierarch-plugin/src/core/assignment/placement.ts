@@ -118,9 +118,15 @@ function isDefaultEnabled(schema: TrierarchReportDetails['harnesses'][number]['o
   return read.success && enabledModels.includes(read.data.properties.model.default);
 }
 
+/** How a reason opens when the request waits on a model that is not available (R3): one the requester is told. */
+export const MODEL_NOT_AVAILABLE_OPENING = 'model not available: ';
+
+/** How a reason opens when every trierarch that fits gave the request back: one the requester is told. */
+export const GIVEN_BACK_OPENING = 'given back by every trierarch that fits; last: ';
+
 /** Why a request waits on a model that is not available, within what a reason may hold. */
 function modelNotAvailableReason(what: string): string {
-  return `model not available: ${what}`.slice(0, CREW_REQUEST_REASON_MAX_LENGTH);
+  return `${MODEL_NOT_AVAILABLE_OPENING}${what}`.slice(0, CREW_REQUEST_REASON_MAX_LENGTH);
 }
 
 /**
@@ -150,7 +156,7 @@ function roomShare(trierarch: PlacementTrierarch): number {
 /** Why a request waits when every trierarch that fits gave it back: the last reason, within what a reason may hold. */
 function givenBackReason(givenBack: readonly { reason: string }[]): string {
   const last = givenBack.at(-1)?.reason ?? '';
-  return `given back by every trierarch that fits; last: ${last}`.slice(0, CREW_REQUEST_REASON_MAX_LENGTH);
+  return `${GIVEN_BACK_OPENING}${last}`.slice(0, CREW_REQUEST_REASON_MAX_LENGTH);
 }
 
 /**

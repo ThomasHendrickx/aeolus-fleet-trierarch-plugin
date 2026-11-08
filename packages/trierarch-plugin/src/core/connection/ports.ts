@@ -32,7 +32,9 @@ export interface ListedShip {
   /**
    * Its crew request, without its settings: their version, when the session
    * its trierarch runs now started, or null while none runs, and the
-   * trierarchs that gave it back, oldest first (#382); null when it holds none.
+   * trierarchs that gave it back, oldest first (#382), and the ship that last
+   * made it, null for a request made before the fleet recorded it; null when
+   * it holds none.
    */
   crewRequest: {
     settingsVersion: number;
@@ -41,6 +43,7 @@ export interface ListedShip {
     reason: string | null;
     startedAt: Date | null;
     givenBack: { trierarchShipId: ShipId; reason: string }[];
+    requestedBy: { shipId: ShipId; name: string } | null;
   } | null;
   /** The label values it carries, every owner's, with their labels (#102). */
   labels: { labelId: LabelId; valueId: LabelValueId }[];
