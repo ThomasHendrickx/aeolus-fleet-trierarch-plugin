@@ -14,6 +14,9 @@ const EPOCH = new Date(0);
 /** A fleet's retention when none applies: it keeps its finished history for good. */
 const KEPT_FOR_GOOD: number | null = null;
 
+/** What core's fleet.list answers when no status is asked: the active ships. */
+const ACTIVE_STATUSES: readonly ListedShip['status'][] = ['awaitingCrew', 'crewed'];
+
 /** The trierarch another assigner claims for when the fake fleet loses a claim. */
 export const OTHER_ASSIGNEE: ShipId = 'shp_01m3tbfspe96yf1rnr4ank9h9z';
 
@@ -73,6 +76,8 @@ export function fakePluginFleet() {
     refusingSends: new Set<ShipId>(),
     /** Whether the fleet answers sends and what argo is told, while it answers every other call. */
     isAnsweringSends: true,
+    /** Whether the fleet refuses what argo is told, as it would a message it cannot take. */
+    isRefusingArgo: false,
     /** The days the fleet keeps its finished history, as fleet.limits answers it; null for kept for good (decision 0066). */
     retentionDays: KEPT_FOR_GOOD,
   };
@@ -153,12 +158,13 @@ export function fakePluginFleet() {
         }),
       );
     },
-    listShips: (crewToken) => {
+    // As core's fleet.list: the active ships, retired ones only when the statuses ask for them.
+    listShips: (crewToken, filter = { statuses: ACTIVE_STATUSES }) => {
       if (!state.isAnswering) {
         return unavailable();
       }
       return state.liveTokens.has(crewToken)
-        ? Promise.resolve(ok(state.ships.map((ship) => ({ ...ship, crewRequest: ship.crewRequest && { ...ship.crewRequest }, labels: [...ship.labels] }))))
+        ? Promise.resolve(ok(state.ships.filter((ship) => filter.statuses.includes(ship.status)).map((ship) => ({ ...ship, crewRequest: ship.crewRequest && { ...ship.crewRequest }, labels: [...ship.labels] }))))
         : released();
     },
     assignCrew: (crewToken, { shipId, trierarchShipId }) => {
@@ -305,6 +311,9 @@ export function fakePluginFleet() {
       }
       if (!state.liveTokens.has(crewToken)) {
         return released();
+      }
+      if (state.isRefusingArgo) {
+        return Promise.resolve(err({ code: 'VALIDATION_FAILED', message: 'The message cannot be taken' }));
       }
       const earlier = state.told.find((each) => each.idempotencyKey === notice.idempotencyKey);
       if (earlier !== undefined && earlier.text !== notice.text) {

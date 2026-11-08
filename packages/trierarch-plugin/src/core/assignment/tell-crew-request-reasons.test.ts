@@ -67,7 +67,7 @@ describe('telling the requester why its crew request waits', () => {
     aRequester();
     aWaitingRequest();
 
-    await expect(tell()).resolves.toEqual({ isOk: true, value: { told: 1, untold: 0 } });
+    await expect(tell()).resolves.toEqual({ isOk: true, value: { told: 1, untold: 0, refused: 0 } });
     expect(fleet.state.sent).toEqual([
       {
         shipId: ORCHESTRATOR,
@@ -111,7 +111,7 @@ describe('telling the requester why its crew request waits', () => {
     const told = new Set<string>();
 
     await tellWith(told)(FLEET_ID);
-    await expect(tellWith(told)(FLEET_ID)).resolves.toEqual({ isOk: true, value: { told: 0, untold: 0 } });
+    await expect(tellWith(told)(FLEET_ID)).resolves.toEqual({ isOk: true, value: { told: 0, untold: 0, refused: 0 } });
 
     expect(fleet.state.sent).toHaveLength(1);
   });
@@ -132,7 +132,7 @@ describe('telling the requester why its crew request waits', () => {
     await tell();
     rewritten({ reason: 'given back by every trierarch that fits; last: the workspace is missing' });
 
-    await expect(tell()).resolves.toEqual({ isOk: true, value: { told: 0, untold: 0 } });
+    await expect(tell()).resolves.toEqual({ isOk: true, value: { told: 0, untold: 0, refused: 0 } });
 
     expect(fleet.state.sent).toHaveLength(1);
   });
@@ -156,7 +156,7 @@ describe('telling the requester why its crew request waits', () => {
     aRequester();
     aWaitingRequest({ reason });
 
-    await expect(tell()).resolves.toEqual({ isOk: true, value: { told: 0, untold: 0 } });
+    await expect(tell()).resolves.toEqual({ isOk: true, value: { told: 0, untold: 0, refused: 0 } });
     expect(fleet.state.sent).toEqual([]);
     expect(fleet.state.told).toEqual([]);
   });
@@ -183,7 +183,7 @@ describe('telling the requester why its crew request waits', () => {
     aRequester({ status: 'retired' });
     aWaitingRequest();
 
-    await expect(tell()).resolves.toEqual({ isOk: true, value: { told: 1, untold: 0 } });
+    await expect(tell()).resolves.toEqual({ isOk: true, value: { told: 1, untold: 0, refused: 0 } });
     expect(fleet.state.sent).toEqual([]);
     expect(fleet.state.told).toEqual([
       {
@@ -230,10 +230,10 @@ describe('telling the requester why its crew request waits', () => {
     aWaitingRequest();
     const told = new Set<string>();
     fleet.state.isAnsweringSends = false;
-    await expect(tellWith(told)(FLEET_ID)).resolves.toEqual({ isOk: true, value: { told: 0, untold: 1 } });
+    await expect(tellWith(told)(FLEET_ID)).resolves.toEqual({ isOk: true, value: { told: 0, untold: 1, refused: 0 } });
     fleet.state.isAnsweringSends = true;
 
-    await expect(tellWith(told)(FLEET_ID)).resolves.toEqual({ isOk: true, value: { told: 1, untold: 0 } });
+    await expect(tellWith(told)(FLEET_ID)).resolves.toEqual({ isOk: true, value: { told: 1, untold: 0, refused: 0 } });
     expect(fleet.state.sent).toHaveLength(1);
   });
 
@@ -249,6 +249,36 @@ describe('telling the requester why its crew request waits', () => {
     expect(fleet.state.told).toHaveLength(1);
   });
 
+  it('tells argo once, naming the refusal, when the fleet refuses the message to the requester, and tries it no more', async () => {
+    aRequester();
+    fleet.state.refusingSends.add(ORCHESTRATOR);
+    aWaitingRequest();
+    const told = new Set<string>();
+
+    await expect(tellWith(told)(FLEET_ID)).resolves.toEqual({ isOk: true, value: { told: 1, untold: 0, refused: 0 } });
+    await expect(tellWith(told)(FLEET_ID)).resolves.toEqual({ isOk: true, value: { told: 0, untold: 0, refused: 0 } });
+
+    expect(fleet.state.sent).toEqual([]);
+    expect(fleet.state.told).toEqual([
+      {
+        text: `Ship scout waits: ${MODEL_REASON}\n\nShip scout's crew request (settings version 1) waits: ${MODEL_REASON}. Ship orchestrator made it, and the fleet refused the message to it (FORBIDDEN: No network rule allows this message), so the trierarch plugin tells argo.`,
+        idempotencyKey: `trierarch-plugin:crew-request-reason:${SCOUT}:1:model`,
+      },
+    ]);
+  });
+
+  it('tries no more a tell argo refuses, counting it refused', async () => {
+    aWaitingRequest({ requestedBy: null });
+    fleet.state.isRefusingArgo = true;
+    const told = new Set<string>();
+
+    await expect(tellWith(told)(FLEET_ID)).resolves.toEqual({ isOk: true, value: { told: 0, untold: 0, refused: 1 } });
+    fleet.state.isRefusingArgo = false;
+
+    await expect(tellWith(told)(FLEET_ID)).resolves.toEqual({ isOk: true, value: { told: 0, untold: 0, refused: 0 } });
+    expect(fleet.state.told).toEqual([]);
+  });
+
   it('goes on with the other requests when one tell is refused', async () => {
     aRequester();
     fleet.state.ships.push({ shipId: LOOKOUT, name: 'lookout', type: 'orchestrator', status: 'crewed', lastSeenAt: AT, model: null, crewRequest: null, labels: [] });
@@ -256,8 +286,9 @@ describe('telling the requester why its crew request waits', () => {
     aWaitingRequest({ shipId: MAC, name: 'mac', requestedBy: { shipId: LOOKOUT, name: 'lookout' } });
     aWaitingRequest();
 
-    await expect(tell()).resolves.toEqual({ isOk: true, value: { told: 1, untold: 1 } });
+    await expect(tell()).resolves.toEqual({ isOk: true, value: { told: 2, untold: 0, refused: 0 } });
     expect(fleet.state.sent.map((message) => message.shipId)).toEqual([ORCHESTRATOR]);
+    expect(fleet.state.told.map((notice) => notice.idempotencyKey)).toEqual([`trierarch-plugin:crew-request-reason:${MAC}:1:model`]);
   });
 
   it('refuses while the trierarch plugin is not connected to the fleet', async () => {
