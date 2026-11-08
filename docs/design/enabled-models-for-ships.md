@@ -1,6 +1,6 @@
 # Enabled models for ships: read, refused by the plugin, told why a request waits
 
-Design for [#57](https://github.com/ThomasHendrickx/aeolus-fleet-trierarch-plugin/issues/57). Docs only. Status: purpose agreed by Thomas (8 Nov); Q1 and Q2 answered; Q3 to Q5 wait for his answers, and no rule below is decided until he answers.
+Design for [#57](https://github.com/ThomasHendrickx/aeolus-fleet-trierarch-plugin/issues/57). Docs only. Status: purpose agreed by Thomas (8 Nov); Q1 to Q3 answered; Q4 and Q5 wait for his answers, and no rule below is decided until he answers.
 
 ## 1. Purpose (agreed by Thomas, 8 Nov)
 
@@ -41,7 +41,7 @@ Sent to Thomas on Bridge, each with a pick and a "none of these" option. The rul
 
 - **Q1. Where is a request for a disabled model refused?** Answered (Thomas, 8 Nov): option 2, by the plugin, never in core. The request is accepted; the plugin's next assignment pass (within 10 s) writes the reason and tells the requester (Q3). Why: "Writing models to core would mean the plugin logic leaks into core plus the plugin needs to update core and we get 2 sources of truth. A model can change both due to selection changing and by the updates of the harnesses on the different trierarchs. That would introduce race conditions." So outcome 2 reads: refused by the plugin's next pass, with the reason told to the ship that asked.
 - **Q2. How does a ship read the enabled models?** Answered (Thomas, 8 Nov): a message to the plugin's ship, answered as a reply with the exact set as it is now; a content type in common for each. With network rules applied, the requester needs a rule that lets it reach the plugin's ship; the reply goes back by the answer built-in.
-- **Q3. Who is told, and by whom?** 1, core records the requester on the crew request (the ship that last made it) and the plugin's ship sends it the reason once per settings version, with a declared rule that lets the plugin's ship send to requesters (pick). 2, the plugin's ship tells the ship's owner, which core records already; no core change. 3, core itself sends the requester a message when the reason is written. 4, none of these.
+- **Q3. Who is told, and by whom?** Answered (Thomas, 8 Nov): option 1. Core records the requester on the crew request (the ship that last made it), and the plugin's ship sends it the reason once per settings version, with a declared rule that lets the plugin's ship send to requesters.
 - **Q4. Which reasons are told?** (replaced after Q1) 1, `model disabled` and the give-back reason, each once per settings version (pick). 2, every reason placement writes, once per change, which also covers aeolus-fleet#1256. 3, none of these.
 - **Q5. Screens.** No console screen changes in outcomes 1 to 3; the console's forms already leave disabled models out. 1, no mockups for this design (pick). 2, the crew request card shows who was told; mockups before and after. 3, none of these.
 
