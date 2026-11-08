@@ -61,10 +61,8 @@ describe('sharing the AIP with the trierarchs', () => {
   });
 
   it('refuses when the plugin is not connected to the fleet', async () => {
-    await connections.remove(FLEET_ID);
+    await connections.drop(FLEET_ID);
 
-    const shared = await shareWith(new Set())(FLEET_ID);
-
-    expect(!shared.isOk && shared.error.code).toBe('NOT_CONNECTED');
+    await expect(shareWith(new Set())(FLEET_ID)).resolves.toMatchObject({ isOk: false, error: { kind: 'NOT_CONNECTED' } });
   });
 });
