@@ -47,15 +47,76 @@ Sent to Thomas on Bridge, each with a pick and a "none of these" option. The rul
 
 - **Q6. In a fleet with network rules, how does the plugin reach requesters?** (asked after Q3: 0037 lets a plugin declare rules only on labels it owns, and requesters carry no trierarch label, so Q3's declared rule cannot be.) 1, the operator's own rules decide; a tell refused `NOT_REACHABLE` goes to argo instead, once, naming the requester and the reason (pick). 2, the operator's own rules decide; a refused tell is logged by ship. 3, amend 0037 so a plugin may declare a send rule from its own label to every ship. 4, none of these.
 
-## 4. Repositories and slices, by the picks
 
-These hold only if Thomas takes the open picks; other answers change them.
+## 4. Rules (from the answers; for Thomas to approve)
 
-- **aeolus-fleet (core and common):** the requester on the crew request (Q3); the content types in common for asking the plugin's ship for the set and for telling a requester why its request waits; `docs/compatibility.md` listing what the plugin newly calls; decision 0029 amended. No enabled models in core (Q1).
-- **aeolus-fleet-trierarch-plugin:** answering a ship that asks for the set; telling the requester `model disabled` and the give-back reason once per settings version; declaring the send rules it needs; `MINIMUM_CORE_VERSION` raised; decision 0063 amended.
+| # | Rule |
+| --- | --- |
+| R1 | **Asking the plugin's ship for the enabled models** (Q2). Any ship sends the trierarch plugin's ship a message of content type `application/vnd.aeolus.trierarch.enabled-models-ask+json`, payload `{}`. The plugin answers it in its inbox round (about 1 s) as a reply (inReplyTo), content type `application/vnd.aeolus.trierarch.enabled-models+json`, payload `{"models":["<exact id>"]}`, sorted: the fleet's set as it is when answered, read from `enabled_models`. An empty list means no rule: every model is allowed (0063). No scope is checked, as every session reads the set (L14). The reply's idempotency key is made from the ask's message id, and the ask is acked only after the reply is stored, so a crash answers again and the fleet stores the reply once. Both shapes are schemas in common. |
+| R2 | **The requester on the crew request** (Q3). Core records, on every `crewRequest`, the ship that made it: the caller's ship (for the console, the ship the session acts as). It is listed with the request as `requestedBy` (`{ id, name }`, null for a request made before it was recorded), replaced by every new request, and removed with the request. The console shows nothing new (Q5). |
+| R3 | **A model that is not available** (Q4, Thomas's note). Placement, before any trierarch is picked, writes `model not available: <id>` for a request whose named model (`options.model`) is outside a non-empty set of enabled models, or that no trierarch offering the request's harness reports. A request naming none, where no trierarch left reports an enabled default for the harness, waits with `model not available: no enabled default model for <harness>`. These replace 0063's `model disabled` reasons; the check before a request answers the same, with the field `options`. The rest of placement is unchanged. |
+| R4 | **Telling the requester** (Q3, Q4). When an assignment pass writes a reason of R3 or the give-back reason (`given back by every trierarch that fits; last: <reason>`) on a request, the plugin's ship sends `requestedBy` a message of content type `application/vnd.aeolus.trierarch.crew-request-reason+json`, payload `{"shipId","shipName","settingsVersion","reason"}`, a schema in common. Once per ship, settings version and kind (model or given back): the idempotency key is made from the three, so a restart and a rewritten reason tell nothing again, as the model mismatch tell does (L11). Other reasons are not told. |
+| R5 | **When the requester cannot be told** (Q6, by the pick). A tell refused `NOT_REACHABLE`, to a retired requester, or for a request with no `requestedBy`, goes to argo instead, once under the same kind of key, as a message that opens with its headline (`argoMessage`) and names the ship, the requester and the reason. A tell the fleet does not answer is tried again by the next pass. The pass goes on either way. |
+| R6 | **Switched off, or not connected.** The plugin's ship takes no messages for a fleet it does not serve: an ask waits in its inbox and is answered once the fleet is served again, as any message waits. Nothing is placed, so nothing is told. |
+
+## 5. Flows
+
+### Asking for the enabled models
+
+```mermaid
+flowchart TD
+  ask(["A ship sends the plugin's ship enabled-models-ask"]) --> reach{"Fleet's own rules applied, and none lets it reach the plugin's ship?"}
+  reach -->|yes| refused(["NOT_REACHABLE at send: the asker knows at once"])
+  reach -->|no| stored["Stored; waits in the plugin's ship's inbox"]
+  stored --> served{"Plugin serves the fleet and is connected?"}
+  served -->|no| waits(["Waits until it is served again (R6)"])
+  served -->|"yes, next round within about 1 s"| read["Read enabled_models"]
+  read -->|"database fails"| again(["Not acked: handed again next round"])
+  read --> reply["Reply enabled-models, inReplyTo the ask, key from the ask's id"]
+  reply -->|"fleet does not answer"| again
+  reply -->|stored| ack(["Ask acked; the asker has the set, empty meaning no rule"])
+```
+
+### Placing a request and telling the requester
+
+```mermaid
+flowchart TD
+  req(["A ship makes a crew request"]) --> core{"Core: settings read as crew settings, labels known?"}
+  core -->|no| r0(["Refused at the call, as today"])
+  core -->|yes| rec["Stored with requestedBy, the caller's ship (R2)"]
+  rec --> pass(["Next assignment pass, within 10 s"])
+  pass --> model{"Named model enabled and reported for the harness? Or, none named, an enabled default?"}
+  model -->|no| w1["Writes: model not available (R3)"]
+  model -->|yes| fit["Labels, harness, workspace, options, MCP servers, given back, room, as today"]
+  fit -->|"every one that fits gave it back"| w2["Writes: given back by every trierarch that fits"]
+  fit -->|"other reason"| w3(["Writes that reason; nobody told (R4)"])
+  fit -->|fits| claim(["Claimed; the trierarch crews it"])
+  w1 --> told{"Told for this ship, version and kind before?"}
+  w2 --> told
+  told -->|yes| quiet(["Nothing sent"])
+  told -->|no| who{"requestedBy set and not retired?"}
+  who -->|no| argo["Tell argo (R5)"]
+  who -->|yes| send["Send requestedBy crew-request-reason"]
+  send -->|NOT_REACHABLE| argo
+  send -->|"fleet does not answer"| retry(["Tried again next pass"])
+  send -->|stored| done(["The requester has the reason"])
+  argo -->|stored| done2(["argo has it, naming the requester"])
+  argo -->|"fleet does not answer"| retry
+```
+
+### The requester makes a new request
+
+A new settings version clears the give-back records (0029) and makes a new key: its next reason is told again. Enabling the model places the request at the next pass; nothing is told for that.
+
+## 6. Repositories and slices
+
+- **aeolus-fleet (core and common):** `requestedBy` on the crew request (R2) and decision 0029 amended; the three content types' schemas in common (R1, R4); `docs/compatibility.md` naming the core version the trierarch plugin needs for `requestedBy`. No enabled models in core (Q1).
+- **aeolus-fleet-trierarch-plugin:** answering the ask (R1), `model not available` (R3), telling the requester or argo (R4, R5); decision 0063 amended; `MINIMUM_CORE_VERSION` raised in slice 4.
+- **aeolus-fleet-trierarch:** docs only, the reasons in `docs/trierarch.md`, "Assignment" (R3).
 
 Slices, each ending on its tests by name:
 
-1. **Core and common: the requester on the crew request and the content types** (aeolus-fleet).
-2. **The plugin answers a ship that asks for the enabled models** (this repository), after slice 1's release.
-3. **The plugin tells the requester why its request waits** (this repository), after slice 1's release.
+1. **Core and common: the requester and the content types** (aeolus-fleet). Tests: `crewRequest` records the caller as `requestedBy` and a new request replaces it; a request made in the console records the session's ship; the list and the request's page carry it; the three schemas take and refuse their shapes.
+2. **The plugin answers an ask** (this repository), after slice 1's common release. Tests: the set answered as a reply, empty as no rule; a crash after the reply answers once; a database failure leaves the ask unacked; a fleet not served leaves it waiting.
+3. **Model not available** (this repository and aeolus-fleet-trierarch's docs). Tests: placement and the check for a named model disabled, one no trierarch offering the harness reports, none named with no enabled default; a fleet with no rule.
+4. **The plugin tells the requester** (this repository), after slice 1's core release. Tests: told once per ship, version and kind, across a restart and a rewritten reason; a new settings version told again; other reasons not told; `NOT_REACHABLE`, a retired requester and no requester told to argo; the fleet not answering tried again next pass.
