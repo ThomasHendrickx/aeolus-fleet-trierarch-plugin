@@ -1,8 +1,8 @@
 # Enabled models for ships: read, refused when requested, told when given back
 
-Design for [#57](https://github.com/ThomasHendrickx/aeolus-fleet-trierarch-plugin/issues/57). Docs only. Status: purpose, lessons and questions sent to Thomas for his answer; no rule below is decided until he answers.
+Design for [#57](https://github.com/ThomasHendrickx/aeolus-fleet-trierarch-plugin/issues/57). Docs only. Status: purpose agreed by Thomas (8 Nov); questions Q1 to Q5 wait for his answers, and no rule below is decided until he answers.
 
-## 1. Purpose (for Thomas to agree)
+## 1. Purpose (agreed by Thomas, 8 Nov)
 
 A ship that asks for crews learns, without a person, what the fleet lets it ask for and why a request of its own is not crewed (Thomas, 8 Nov: "That is a trierarchs plugin issue to fix").
 
