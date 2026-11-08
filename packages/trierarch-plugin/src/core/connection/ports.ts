@@ -1,4 +1,4 @@
-import type { CrewLine, DeliveryId, FleetId, LabelId, LabelValueId, NetworkRule, ShipId } from '@aeolus-fleet/common';
+import type { CrewLine, DeliveryId, FleetId, LabelId, LabelValueId, MessageId, NetworkRule, ShipId } from '@aeolus-fleet/common';
 
 import type { Result } from '../shared/result.js';
 
@@ -111,13 +111,15 @@ export interface FleetDoor {
   declareScopes(crewToken: string, declaration: { namespace: string; scopes: { scope: string; description: string }[] }): Promise<Result<undefined, FleetRefusal>>;
   /** Sends argo, the operator, plain text, stored once under its idempotency key. */
   tellArgo(crewToken: string, notice: { text: string; idempotencyKey: string }): Promise<Result<undefined, FleetRefusal>>;
-  /** Sends a ship a message of the given content type, stored once under its idempotency key. */
-  send(crewToken: string, message: { shipId: ShipId; contentType: string; payload: string; idempotencyKey: string }): Promise<Result<undefined, FleetRefusal>>;
+  /** Sends a ship a message of the given content type, stored once under its idempotency key; a reply names the message it answers. */
+  send(crewToken: string, message: { shipId: ShipId; contentType: string; payload: string; idempotencyKey: string; inReplyTo?: MessageId }): Promise<Result<undefined, FleetRefusal>>;
 }
 
 /** A delivery to the trierarch plugin's own ship: what tells a ping apart, and who sent it. */
 export interface PluginDelivery {
   deliveryId: DeliveryId;
+  /** The message the delivery carries: what a reply names. */
+  messageId: MessageId;
   contentType: string;
   senderShipId: ShipId;
   /** The sender's type as the fleet read it, never as the sender says. */

@@ -1,4 +1,4 @@
-import type { FleetId, LabelId, LabelValueId, NetworkRule, ShipId } from '@aeolus-fleet/common';
+import type { FleetId, LabelId, LabelValueId, MessageId, NetworkRule, ShipId } from '@aeolus-fleet/common';
 
 import type { ConnectionStore, FleetDoor, FleetRefusal, ListedShip, PluginBinding, PluginCrew } from '../../src/core/connection/ports.js';
 import { err, ok, type Result } from '../../src/core/shared/result.js';
@@ -68,7 +68,7 @@ export function fakePluginFleet() {
     /** What argo was told, once per idempotency key, in order. */
     told: new Array<{ text: string; idempotencyKey: string }>(),
     /** What the trierarch plugin's ship sent other ships, in order. */
-    sent: new Array<{ shipId: ShipId; contentType: string; payload: string; idempotencyKey: string }>(),
+    sent: new Array<{ shipId: ShipId; contentType: string; payload: string; idempotencyKey: string; inReplyTo?: MessageId }>(),
     /** Ships a send to is refused, as when the network rules do not allow it. */
     refusingSends: new Set<ShipId>(),
     /** The days the fleet keeps its finished history, as fleet.limits answers it; null for kept for good (decision 0066). */
@@ -323,7 +323,13 @@ export function fakePluginFleet() {
       if (state.refusingSends.has(message.shipId)) {
         return Promise.resolve(err({ code: 'FORBIDDEN', message: 'No network rule allows this message' }));
       }
-      state.sent.push({ ...message });
+      const earlier = state.sent.find((each) => each.idempotencyKey === message.idempotencyKey);
+      if (earlier !== undefined && earlier.payload !== message.payload) {
+        return Promise.resolve(err({ code: 'CONFLICT', message: 'The idempotency key was used for a different request' }));
+      }
+      if (earlier === undefined) {
+        state.sent.push({ ...message });
+      }
       return Promise.resolve(ok(undefined));
     },
   };
