@@ -14,6 +14,9 @@ const EPOCH = new Date(0);
 /** A fleet's retention when none applies: it keeps its finished history for good. */
 const KEPT_FOR_GOOD: number | null = null;
 
+/** A call the fake fleet takes, refusing nothing. */
+const NO_REFUSAL: FleetRefusal | null = null;
+
 /** What core's fleet.list answers when no status is asked: the active ships. */
 const ACTIVE_STATUSES: readonly ListedShip['status'][] = ['awaitingCrew', 'crewed'];
 
@@ -77,7 +80,7 @@ export function fakePluginFleet() {
     /** Whether the fleet answers sends and what argo is told, while it answers every other call. */
     isAnsweringSends: true,
     /** Why the fleet refuses what argo is told, as it would a message it cannot take; null while it takes it. */
-    argoRefusal: null as FleetRefusal | null,
+    argoRefusal: NO_REFUSAL,
     /** Why the fleet refuses a send to each of these ships, by its code and message. */
     sendRefusals: new Map<ShipId, FleetRefusal>(),
     /** The days the fleet keeps its finished history, as fleet.limits answers it; null for kept for good (decision 0066). */
