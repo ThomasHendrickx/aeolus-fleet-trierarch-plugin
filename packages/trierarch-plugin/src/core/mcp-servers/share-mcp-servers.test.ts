@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { ListedShip } from '../connection/ports.js';
 import { FLEET_ID, SHIP_ID, fakePluginFleet, memoryConnectionStore } from '../../../test/support/connection-fakes.js';
 import { createShareMcpServers } from './share-mcp-servers.js';
-import { readMcpServers, withAip, type McpServers } from './mcp-servers.js';
+import { readMcpServers, type McpServers } from './mcp-servers.js';
 
 const AT = new Date('2026-10-24T08:00:00.000Z');
 const MAC: ShipId = 'shp_01m3tbfspe96yf1rnr4ank9h2a';
@@ -50,15 +50,6 @@ describe('sharing the MCP servers with the trierarchs', () => {
       { shipId: MAC, contentType: CONTENT_TYPE, payload: GRAPH_PAYLOAD, idempotencyKey: 'key-0' },
       { shipId: STUDIO, contentType: CONTENT_TYPE, payload: GRAPH_PAYLOAD, idempotencyKey: 'key-1' },
     ]);
-  });
-
-  it('sends the aip with the list, its token by secret name only', async () => {
-    aShip(MAC);
-    const added = withAip(GRAPH, { server: 'https://aip.example.invalid', tokenSecret: 'aip-token' });
-
-    await share(added.isOk ? added.value : GRAPH);
-
-    expect(fleet.state.sent.map((each) => each.payload)).toEqual([`${GRAPH_PAYLOAD.slice(0, -1)},"aip":{"server":"https://aip.example.invalid","tokenSecret":"aip-token"}}`]);
   });
 
   it('sends an empty list too, so a trierarch stops offering what left it', async () => {

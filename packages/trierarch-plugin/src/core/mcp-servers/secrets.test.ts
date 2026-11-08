@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { readMcpServers, withAip, type McpServers } from './mcp-servers.js';
+import { readMcpServers, type McpServers } from './mcp-servers.js';
 import { readSecrets } from './secrets.js';
 
 const VALUE = 'Bearer test-value-not-a-real-token';
@@ -90,18 +90,15 @@ describe('the secret store', () => {
     expect(readSecrets(listed, NONE).isOk).toBe(true);
   });
 
-  describe('with the aip', () => {
-    const WITH_AIP = ((): McpServers => {
-      const added = withAip(NONE, { server: 'https://aip.example.invalid', tokenSecret: 'aip-token' });
-      return added.isOk ? added.value : NONE;
-    })();
+  describe('with the AIP', () => {
+    const AIP = { server: 'https://aip.example.invalid', tokenSecret: 'aip-token' };
 
     it('holds the secret its token names', () => {
-      expect(readSecrets({ 'aip-token': VALUE }, WITH_AIP).isOk).toBe(true);
+      expect(readSecrets({ 'aip-token': VALUE }, NONE, AIP).isOk).toBe(true);
     });
 
     it('refuses a store that lacks the secret its token names, naming the secret, never a value', () => {
-      const read = readSecrets({ other: VALUE }, WITH_AIP);
+      const read = readSecrets({ other: VALUE }, NONE, AIP);
 
       expect(!read.isOk && read.error.reason).toBe('the AIP: its token names the secret aip-token, which the store does not hold');
     });

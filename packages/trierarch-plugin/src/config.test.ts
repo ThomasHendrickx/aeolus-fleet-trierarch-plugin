@@ -21,6 +21,7 @@ describe('loadConfig', () => {
       trustedRepositories: { repositories: [] },
       mcpServers: { servers: [] },
       secrets: { secrets: [] },
+      aip: undefined,
     });
   });
 
@@ -77,7 +78,8 @@ describe('loadConfig', () => {
   it('reads the AIP as its server and the secret that holds its token', () => {
     const config = loadConfig({ ...environment, AIP: '{"server":"https://aip.example.invalid","tokenSecret":"aip-token"}', MCP_SECRETS: '{"aip-token":"Bearer test-value"}' });
 
-    expect(config.mcpServers).toEqual({ servers: [], aip: { server: 'https://aip.example.invalid', tokenSecret: 'aip-token' } });
+    expect(config.aip).toEqual({ server: 'https://aip.example.invalid', tokenSecret: 'aip-token' });
+    expect(config.mcpServers).toEqual({ servers: [] });
   });
 
   it('refuses an AIP whose token secret the store does not hold', () => {

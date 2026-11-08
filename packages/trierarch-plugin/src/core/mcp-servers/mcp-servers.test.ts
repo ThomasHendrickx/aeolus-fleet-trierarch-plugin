@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { mcpServersPayload, readMcpServers, withAip } from './mcp-servers.js';
+import { mcpServersPayload, readMcpServers } from './mcp-servers.js';
 
 const GRAPH = { url: 'https://graph.example.invalid/mcp', tools: ['read_neo4j_cypher', 'get_neo4j_schema'] };
 
@@ -106,41 +106,5 @@ describe('the crew-time MCP servers', () => {
     expect(read.isOk && mcpServersPayload(read.value)).toBe(
       '{"servers":[{"name":"graph","url":"https://graph.example.invalid/mcp","transport":"streamable-http","tools":["read_neo4j_cypher","get_neo4j_schema"],"credential":{"secret":"graph-token","header":"Authorization"}}]}',
     );
-  });
-
-  describe('the aip', () => {
-    const AIP = { server: 'https://aip.example.invalid', tokenSecret: 'aip-token' };
-    const NONE = { servers: [] };
-
-    it('is read as a server URL and the name of the secret that holds its token', () => {
-      expect(withAip(NONE, AIP)).toEqual({ isOk: true, value: { servers: [], aip: AIP } });
-    });
-
-    it('goes in the payload after the servers, by secret name, never a value', () => {
-      const added = withAip(NONE, AIP);
-
-      expect(added.isOk && mcpServersPayload(added.value)).toBe('{"servers":[],"aip":{"server":"https://aip.example.invalid","tokenSecret":"aip-token"}}');
-    });
-
-    it.each([
-      ['not an object', 'https://aip.example.invalid'],
-      ['an array', []],
-      ['no server', { tokenSecret: 'aip-token' }],
-      ['no token secret', { server: 'https://aip.example.invalid' }],
-      ['a server that is not http', { ...AIP, server: 'ftp://aip.example.invalid' }],
-      ['a server URL that holds a credential', { ...AIP, server: 'https://me:secret@aip.example.invalid' }],
-      ['a server URL with a query', { ...AIP, server: 'https://aip.example.invalid?token=x' }],
-      ['a token secret that is no name', { ...AIP, tokenSecret: 'not a name!' }],
-      ['another field', { ...AIP, extra: 'x' }],
-    ])('is refused when it is %s', (_label, listed) => {
-      expect(withAip(NONE, listed).isOk).toBe(false);
-    });
-
-    it('is refused with a reason that holds no value it was given', () => {
-      const added = withAip(NONE, { ...AIP, tokenSecret: 'leaked value!' });
-
-      expect(!added.isOk && added.error.reason).toMatch(/^the AIP: /);
-      expect(!added.isOk && added.error.reason).not.toMatch(/leaked/);
-    });
   });
 });
