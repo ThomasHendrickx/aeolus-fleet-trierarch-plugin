@@ -174,3 +174,20 @@ describe('the fleet door over REST when fleet.list answers in pages (aeolus-flee
     });
   });
 });
+
+describe('the fleet door over REST, replying', () => {
+  it('sends a reply naming the message it answers', async () => {
+    await aFleetAnswering([{ status: 200, body: { messageId: 'msg_01m3tbfspe96yf1rnr4ank9h1d' } }], async (fleetUrl, asked) => {
+      const sent = await createRestFleetDoor(fleetUrl).send('aeolus_ct_v1_x', {
+        shipId: SHIP_ID,
+        contentType: 'application/vnd.aeolus.trierarch.enabled-models+json',
+        payload: '{"models":[]}',
+        idempotencyKey: 'reply-1',
+        inReplyTo: 'msg_01m3tbfspe96yf1rnr4ank9ask',
+      });
+
+      expect(sent).toMatchObject({ isOk: true });
+      expect(JSON.parse(asked[0]?.body ?? '')).toMatchObject({ selector: { kind: 'ship', shipId: SHIP_ID }, inReplyTo: 'msg_01m3tbfspe96yf1rnr4ank9ask', idempotencyKey: 'reply-1' });
+    });
+  });
+});

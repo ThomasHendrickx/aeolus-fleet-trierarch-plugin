@@ -44,6 +44,7 @@ import { createShareTrustedRepositories } from './core/repositories/share-truste
 import type { TrustedRepositories } from './core/repositories/trusted-repositories.js';
 import { createWithdrawNetworkRules } from './core/network/withdraw-network-rules.js';
 import { createListMachines } from './core/machines/list-machines.js';
+import { createAnswerEnabledModelsAsks } from './core/models/answer-enabled-models-asks.js';
 import { createListEnabledModels } from './core/models/list-enabled-models.js';
 import { createSetModelEnabled } from './core/models/set-model-enabled.js';
 import { createKeepUsage } from './core/usage/keep-usage.js';
@@ -326,6 +327,7 @@ export function createTrierarchPluginApp(options: {
     connections,
     inbox: door.inbox,
     // A store that fails leaves the delivery unacked, handed again; said here, as the round only counts it.
+    answerAsk: createAnswerEnabledModelsAsks({ door, models, isServed }),
     keepUsage: (fleetId, delivery) =>
       keepUsage(fleetId, delivery).catch((error: unknown) => {
         server.log.error({ err: error, fleet: fleetId, senderShipId: delivery.senderShipId }, "a trierarch's usage could not be kept; the fleet hands it again");
