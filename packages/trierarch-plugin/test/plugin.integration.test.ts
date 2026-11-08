@@ -280,7 +280,7 @@ describe('assignment against a real fleet', () => {
 });
 
 describe("the fleet's enabled models against a real fleet (model governance)", () => {
-  it("an operator enables a model, and the next pass leaves a request naming another waiting with model disabled; disabling the last places it", async () => {
+  it("an operator enables a model, and the next pass leaves a request naming another waiting with model not available; disabling the last places it", async () => {
     const address = await connected();
     const joined = joinedSchema.parse(await (await mutate(address, { procedure: 'machines.join', cookie, body: { name: 'mac-studio' } })).json()).result.data;
     const machineShipId = z.templateLiteral(['shp_', z.string()]).parse(joined.shipId);
@@ -292,7 +292,7 @@ describe("the fleet's enabled models against a real fleet (model governance)", (
     expect(await enabled.json()).toEqual({ result: { data: ['claude-sonnet-5-5'] } });
     await apps[0]?.assignOnce();
 
-    await expect(fleetDatabase.crewRequest.findUniqueOrThrow({ where: { shipId: scout.shipId } })).resolves.toMatchObject({ assignedTo: null, reason: 'model disabled: claude-opus-5-5' });
+    await expect(fleetDatabase.crewRequest.findUniqueOrThrow({ where: { shipId: scout.shipId } })).resolves.toMatchObject({ assignedTo: null, reason: 'model not available: claude-opus-5-5' });
 
     await mutate(address, { procedure: 'models.disable', cookie, body: { model: 'claude-sonnet-5-5' } });
     await apps[0]?.assignOnce();

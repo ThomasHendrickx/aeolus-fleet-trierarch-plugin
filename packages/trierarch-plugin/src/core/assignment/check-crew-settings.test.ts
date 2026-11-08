@@ -55,7 +55,7 @@ describe('checking crew settings against the fleet’s trierarchs (#245)', () =>
 
     await expect(check({ ...SETTINGS, options: { model: 'claude-opus-5-5' } })).resolves.toEqual({
       isOk: true,
-      value: { kind: 'refused', field: 'options', reason: 'model disabled: claude-opus-5-5' },
+      value: { kind: 'refused', field: 'options', reason: 'model not available: claude-opus-5-5' },
     });
   });
 

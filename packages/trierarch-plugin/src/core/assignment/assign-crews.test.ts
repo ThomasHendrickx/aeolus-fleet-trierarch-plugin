@@ -63,13 +63,13 @@ const assignedTo = (shipId: ShipId) => fleet.state.ships.find((ship) => ship.shi
 const pass = () => createAssignCrews({ door: fleet.door, connections, models, clock: { now: () => NOW }, silentAfterMs: SILENT_AFTER_MS })(FLEET_ID);
 
 describe("a pass of the trierarch plugin's assignment", () => {
-  it("places by the fleet's enabled models as they are at the pass: a request naming none waits on model disabled (model governance, M3, M5)", async () => {
+  it("places by the fleet's enabled models as they are at the pass: a request naming none waits on model not available (model governance, M3, M5)", async () => {
     aTrierarch(MAC);
     aRequest(SCOUT);
     await models.enable(FLEET_ID, 'claude-opus-5-5');
 
     await expect(pass()).resolves.toEqual({ isOk: true, value: { assigned: 0, explained: 1, lost: 0 } });
-    expect(fleet.state.ships.find((ship) => ship.shipId === SCOUT)?.crewRequest?.reason).toBe('model disabled: no enabled default model for claude-code');
+    expect(fleet.state.ships.find((ship) => ship.shipId === SCOUT)?.crewRequest?.reason).toBe('model not available: no enabled default model for claude-code');
   });
 
   it('claims each unassigned request for the trierarch placement picks', async () => {

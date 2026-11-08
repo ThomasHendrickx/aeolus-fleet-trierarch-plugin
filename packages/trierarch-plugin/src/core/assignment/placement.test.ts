@@ -210,17 +210,42 @@ describe("placement under the fleet's enabled models (model governance, M3)", ()
     expect(place([naming(OPUS)], { trierarchs: [aTrierarch(MAC, { details: offering(OPUS) })], enabledModels: [] })).toEqual([{ kind: 'assign', shipId: SCOUT, trierarchShipId: MAC }]);
   });
 
-  it('leaves a request naming a model the fleet did not enable unassigned, with the reason model disabled', () => {
+  it('leaves a request naming a model the fleet did not enable unassigned, with the reason model not available', () => {
     expect(place([naming(OPUS)], { trierarchs: [aTrierarch(MAC, { details: offering(OPUS) })], enabledModels: [SONNET] })).toEqual([
-      { kind: 'explain', shipId: SCOUT, reason: 'model disabled: claude-opus-5-5' },
+      { kind: 'explain', shipId: SCOUT, reason: 'model not available: claude-opus-5-5' },
     ]);
   });
 
-  it('checks a named model first, before any trierarch: model disabled even while no trierarch reports', () => {
-    expect(place([naming(OPUS)], { trierarchs: [], enabledModels: [SONNET] })).toEqual([{ kind: 'explain', shipId: SCOUT, reason: 'model disabled: claude-opus-5-5' }]);
+  it('checks a named model first, before any trierarch: model not available even while no trierarch reports', () => {
+    expect(place([naming(OPUS)], { trierarchs: [], enabledModels: [SONNET] })).toEqual([{ kind: 'explain', shipId: SCOUT, reason: 'model not available: claude-opus-5-5' }]);
   });
 
-  it('keeps the model disabled reason for a long model within the 200 characters a reason may hold', () => {
+  it('leaves a request naming an enabled model that no trierarch offering the harness reports unassigned, with the reason model not available', () => {
+    const UNREPORTED = 'claude-haiku-5-5';
+
+    expect(place([naming(UNREPORTED)], { trierarchs: [aTrierarch(MAC, { details: offering(OPUS) })], enabledModels: [UNREPORTED] })).toEqual([
+      { kind: 'explain', shipId: SCOUT, reason: 'model not available: claude-haiku-5-5' },
+    ]);
+  });
+
+  it('places a request naming an enabled model that one trierarch offering the harness reports', () => {
+    const reportsOnlyOpus = aTrierarch(MAC, { details: details({ harnesses: [{ harness: 'claude-code', options: { type: 'object', properties: { model: { enum: [OPUS] } } }, flags: [] }] }) });
+    const reportsSonnet = aTrierarch(LINUX, { details: offering(OPUS) });
+
+    expect(place([naming(SONNET)], { trierarchs: [reportsOnlyOpus, reportsSonnet], enabledModels: [SONNET] })).toEqual([{ kind: 'assign', shipId: SCOUT, trierarchShipId: LINUX }]);
+  });
+
+  it('refuses before a request an enabled model no trierarch offering the harness reports, with the field options', () => {
+    const settings = { harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: { model: 'claude-haiku-5-5' } };
+
+    expect(checkPlacement(settings, { trierarchs: [aTrierarch(MAC, { details: offering(OPUS) })], enabledModels: ['claude-haiku-5-5'] })).toEqual({
+      kind: 'refused',
+      field: 'options',
+      reason: 'model not available: claude-haiku-5-5',
+    });
+  });
+
+  it('keeps the model not available reason for a long model within the 200 characters a reason may hold', () => {
     const [placement] = place([naming('x'.repeat(300))], { trierarchs: [aTrierarch(MAC)], enabledModels: [SONNET] });
 
     expect(placement?.kind === 'explain' ? placement.reason.length : 0).toBe(200);
@@ -243,7 +268,7 @@ describe("placement under the fleet's enabled models (model governance, M3)", ()
     { label: 'its harness has no model option', trierarch: aTrierarch(MAC, { details: details({ harnesses: [{ harness: 'claude-code', options: {}, flags: [] }] }) }) },
   ])('leaves a request naming no model unassigned when $label, with the reason', ({ trierarch }) => {
     expect(place([namingNone()], { trierarchs: [trierarch], enabledModels: [OPUS] })).toEqual([
-      { kind: 'explain', shipId: SCOUT, reason: 'model disabled: no enabled default model for claude-code' },
+      { kind: 'explain', shipId: SCOUT, reason: 'model not available: no enabled default model for claude-code' },
     ]);
   });
 
@@ -251,7 +276,7 @@ describe("placement under the fleet's enabled models (model governance, M3)", ()
     const request = { ...namingNone(), settings: { workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: {} } };
 
     expect(place([request], { trierarchs: [aTrierarch(MAC, { details: offering(SONNET) })], enabledModels: [OPUS] })).toEqual([
-      { kind: 'explain', shipId: SCOUT, reason: 'model disabled: no enabled default model for its default harness' },
+      { kind: 'explain', shipId: SCOUT, reason: 'model not available: no enabled default model for its default harness' },
     ]);
   });
 
@@ -270,7 +295,7 @@ describe("placement under the fleet's enabled models (model governance, M3)", ()
     expect(checkPlacement(settings, { trierarchs: [aTrierarch(MAC, { details: offering(OPUS) })], enabledModels: [SONNET] })).toEqual({
       kind: 'refused',
       field: 'options',
-      reason: 'model disabled: claude-opus-5-5',
+      reason: 'model not available: claude-opus-5-5',
     });
   });
 
@@ -280,7 +305,7 @@ describe("placement under the fleet's enabled models (model governance, M3)", ()
     expect(checkPlacement(settings, { trierarchs: [aTrierarch(MAC, { details: offering(SONNET) })], enabledModels: [OPUS] })).toEqual({
       kind: 'refused',
       field: 'options',
-      reason: 'model disabled: no enabled default model for claude-code',
+      reason: 'model not available: no enabled default model for claude-code',
     });
   });
 });
