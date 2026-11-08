@@ -1,6 +1,6 @@
 import type { FleetId, ShipId } from '@aeolus-fleet/common';
 
-import type { ConnectionStore, FleetDoor } from '../connection/ports.js';
+import { EVERY_SHIP_STATUS, type ConnectionStore, type FleetDoor } from '../connection/ports.js';
 import { refuse, type DomainError } from '../shared/errors.js';
 import { ok, type Result } from '../shared/result.js';
 import type { UsageBreakdown } from './token-usage.js';
@@ -21,7 +21,7 @@ export async function readShipNames(
   if (!crew) {
     return refuse('NOT_CONNECTED', 'The trierarch plugin is not connected to this fleet: connect it in the console');
   }
-  const listed = await deps.door.listShips(crew.crewToken);
+  const listed = await deps.door.listShips(crew.crewToken, { statuses: EVERY_SHIP_STATUS });
   if (!listed.isOk) {
     return refuse('FLEET_UNAVAILABLE', `The fleet did not answer its ships: ${listed.error.message}`);
   }

@@ -232,6 +232,8 @@ export function createTrierarchPluginApp(options: {
     const told = await tellCrewRequestReasons(fleetId);
     if (!told.isOk) {
       server.log.warn({ fleet: fleetId, refusal: told.error }, 'crew request reasons refused; the next pass tries again');
+    } else if (told.value.refused > 0) {
+      server.log.warn({ fleet: fleetId, ...told.value }, "argo's tell of a crew request reason was refused; it is tried no more");
     } else if (told.value.untold > 0) {
       server.log.warn({ fleet: fleetId, ...told.value }, 'a crew request reason was not told; the next pass tries again');
     } else if (told.value.told > 0) {
