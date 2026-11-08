@@ -26,6 +26,7 @@ async function start(): Promise<void> {
     trustedRepositories: config.trustedRepositories,
     mcpServers: config.mcpServers,
     secrets: config.secrets,
+    ...(config.aip === undefined ? {} : { aip: config.aip }),
     ...(config.installationToken === undefined ? {} : { installationToken: config.installationToken }),
   });
   const restored = await app.restoreConnections();

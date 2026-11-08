@@ -1,8 +1,9 @@
 import { z } from 'zod';
 
 import { DEFAULT_SILENT_AFTER_MS } from './core/machines/silent.js';
-import { readMcpServers, withAip, type McpServers } from './core/mcp-servers/mcp-servers.js';
-import { readSecrets, type Secrets } from './core/mcp-servers/secrets.js';
+import { readAip, type Aip } from './core/mcp-servers/aip.js';
+import { readMcpServers, type McpServers } from './core/mcp-servers/mcp-servers.js';
+import { readSecrets, requireAipToken, type Secrets } from './core/mcp-servers/secrets.js';
 import { readTrustedRepositories, type TrustedRepositories } from './core/repositories/trusted-repositories.js';
 
 /** The shortest installation token the trierarch plugin takes, as the fleet core does (decision 0020). */
@@ -65,6 +66,8 @@ export interface Config {
    * Never logged; none by default.
    */
   secrets: Secrets;
+  /** The AIP every trierarch is sent (aeolus-fleet-trierarch-plugin#63); its token is one of the secrets. None unless set. */
+  aip: Aip | undefined;
 }
 
 export class ConfigError extends Error {
@@ -109,17 +112,17 @@ function mcpServers(text: string): McpServers {
   return read.value;
 }
 
-/** AIP as JSON `{ server, tokenSecret }` added to the list; throws a ConfigError saying what is wrong, never a value. */
-function withAipFrom(text: string, servers: McpServers): McpServers {
+/** AIP as JSON `{ server, tokenSecret }`; throws a ConfigError saying what is wrong, never a value. */
+function aip(text: string): Aip {
   let listed: unknown;
   try {
     listed = JSON.parse(text);
   } catch {
     throw new ConfigError('AIP: must be JSON of { server, tokenSecret }');
   }
-  const read = withAip(servers, listed);
+  const read = readAip(listed);
   if (!read.isOk) {
-    throw new ConfigError(`AIP: ${read.error.reason.replace(/^the AIP: /, '')}`);
+    throw new ConfigError(`AIP: ${read.error.reason}`);
   }
   return read.value;
 }
@@ -142,8 +145,15 @@ function secrets(text: string, servers: McpServers): Secrets {
 /** The configuration from the environment; throws a ConfigError naming every variable that is wrong. */
 export function loadConfig(environment: Record<string, string | undefined>): Config {
   const variables = parsed(environmentSchema, environment);
-  const listed = mcpServers(variables.MCP_SERVERS);
-  const servers = variables.AIP === undefined ? listed : withAipFrom(variables.AIP, listed);
+  const servers = mcpServers(variables.MCP_SERVERS);
+  const configured = variables.AIP === undefined ? undefined : aip(variables.AIP);
+  const store = secrets(variables.MCP_SECRETS, servers);
+  if (configured !== undefined) {
+    const held = requireAipToken(store, configured);
+    if (!held.isOk) {
+      throw new ConfigError(`MCP_SECRETS: ${held.error.reason}`);
+    }
+  }
   return {
     databaseUrl: variables.DATABASE_URL,
     fleetUrl: variables.FLEET_URL.replace(/\/$/, ''),
@@ -155,7 +165,8 @@ export function loadConfig(environment: Record<string, string | undefined>): Con
     passIntervalMs: variables.TRIERARCH_PASS_INTERVAL_SECONDS * MS_PER_SECOND,
     trustedRepositories: trustedRepositories(variables.TRUSTED_REPOSITORIES),
     mcpServers: servers,
-    secrets: secrets(variables.MCP_SECRETS, servers),
+    secrets: store,
+    aip: configured,
   };
 }
 
