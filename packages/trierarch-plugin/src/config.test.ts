@@ -82,7 +82,7 @@ describe('loadConfig', () => {
 
   it('refuses an AIP whose token secret the store does not hold', () => {
     expect(() => loadConfig({ ...environment, AIP: '{"server":"https://aip.example.invalid","tokenSecret":"aip-token"}' })).toThrow(
-      'MCP_SECRETS: the AIP: its token names the secret aip-token, which the store does not hold',
+      'MCP_SECRETS: the AIP: its token secret is not in the store',
     );
   });
 

@@ -33,9 +33,6 @@ import { createJoinMachine } from './core/machines/join-machine.js';
 import { createNewSetupLine } from './core/machines/new-setup-line.js';
 import { createDeclareNetworkRules, type Declarations } from './core/network/declare-network-rules.js';
 import { createDeclareScopes } from './core/scopes/declare-scopes.js';
-import type { Aip } from './core/mcp-servers/aip.js';
-import { createResendAip } from './core/mcp-servers/resend-aip.js';
-import { createShareAip } from './core/mcp-servers/share-aip.js';
 import { createResendMcpServers } from './core/mcp-servers/resend-mcp-servers.js';
 import { createResendSecrets } from './core/mcp-servers/resend-secrets.js';
 import type { Secrets } from './core/mcp-servers/secrets.js';
@@ -107,8 +104,6 @@ export function createTrierarchPluginApp(options: {
   mcpServers?: McpServers;
   /** The secret store the MCP servers' credentials come from (decision M5), sent to each trierarch only sealed; none unless given. */
   secrets?: Secrets;
-  /** The AIP every trierarch is sent (aeolus-fleet-trierarch-plugin#63), its token one of the secrets; none unless given. */
-  aip?: Aip;
 }): TrierarchPluginApp {
   const prisma = createPrismaClient(options.databaseUrl);
   const server = Fastify({ logger: options.logger ?? true });
@@ -256,21 +251,6 @@ export function createTrierarchPluginApp(options: {
       server.log.info({ fleet: fleetId, ...shared.value }, 'MCP servers sent');
     }
   };
-  const sharedAip = new Set<ShipId>();
-  const shareAip = options.aip === undefined ? undefined : createShareAip({ door, connections, keys: randomIdempotencyKeys, aip: options.aip, shared: sharedAip });
-  const resendAip = createResendAip({ shared: sharedAip });
-  /** Sends each trierarch the AIP once, when one is configured; a refusal is logged and the pass goes on. */
-  const shareAipOnce = async (fleetId: FleetId): Promise<void> => {
-    const shared = await shareAip?.(fleetId);
-    if (shared === undefined) {
-      return;
-    }
-    if (!shared.isOk) {
-      server.log.warn({ fleet: fleetId, refusal: shared.error }, 'sharing the AIP refused; the next pass tries again');
-    } else if (shared.value.shared > 0) {
-      server.log.info({ fleet: fleetId, ...shared.value }, 'AIP sent');
-    }
-  };
   // The key this process last sealed the store to, per trierarch; a restart seals it to every trierarch again, and so does a trierarch asking.
   const sealedSecrets = new Map<ShipId, string>();
   const shareSecrets = createShareSecrets({
@@ -329,7 +309,6 @@ export function createTrierarchPluginApp(options: {
       await declareScopesOnce(crew.fleetId);
       await shareOnce(crew.fleetId);
       await shareMcpServersOnce(crew.fleetId);
-      await shareAipOnce(crew.fleetId);
       await shareSecretsOnce(crew.fleetId);
       const assigned = await assignCrews(crew.fleetId);
       await tellOnce(crew.fleetId);
@@ -364,8 +343,7 @@ export function createTrierarchPluginApp(options: {
       if (resendTrustedRepositories(delivery)) {
         server.log.info({ senderShipId }, 'a trierarch asked for the trusted repositories: the next pass sends them');
       } else if (resendMcpServers(delivery)) {
-        resendAip(delivery);
-        server.log.info({ senderShipId }, 'a trierarch asked for the MCP servers: the next pass sends them, and the AIP');
+        server.log.info({ senderShipId }, 'a trierarch asked for the MCP servers: the next pass sends them');
       } else if (resendSecrets(delivery)) {
         server.log.info({ senderShipId }, 'a trierarch asked for the secrets: the next pass seals them to it');
       } else {

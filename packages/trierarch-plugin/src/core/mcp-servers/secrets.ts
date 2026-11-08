@@ -10,7 +10,6 @@ import { PAYLOAD_MAX_BYTES, payloadBytes, trierarchNameSchema } from '@aeolus-fl
 import { z } from 'zod';
 
 import { err, ok, type Result } from '../shared/result.js';
-import type { Aip } from './aip.js';
 import type { McpServers } from './mcp-servers.js';
 
 /** The store as read: each secret by name with its value, in name order. Built only by `readSecrets`. */
@@ -69,7 +68,7 @@ function sealedPayloadBytes(store: Secrets): number {
  * The store from the configuration's object of names to values, or why not,
  * never naming a value or a name that fails the rules (an entry is told by
  * its position): each name a trierarch name, each value fit for a
- * header, every secret a server's credential names held, and the whole
+ * header, every secret a server's credential and the AIP's token name held, and the whole
  * small enough, once sealed, to reach a trierarch in one message.
  */
 export function readSecrets(listed: unknown, servers: McpServers): Result<Secrets, { reason: string }> {
@@ -96,17 +95,12 @@ export function readSecrets(listed: unknown, servers: McpServers): Result<Secret
       return err({ reason: `${server.name}: its credential names the secret ${server.credential.secret}, which the store does not hold` });
     }
   }
+  if (servers.aip !== undefined && !names.has(servers.aip.tokenSecret)) {
+    return err({ reason: "the AIP: its token secret is not in the store" });
+  }
   const store: Secrets = { secrets };
   if (sealedPayloadBytes(store) > PAYLOAD_MAX_BYTES) {
     return err({ reason: `the secrets do not fit one message of ${String(PAYLOAD_MAX_BYTES / BYTES_PER_KB)} KB once sealed` });
-  }
-  return ok(store);
-}
-
-/** The store itself when it holds the secret the AIP's token names, or why not, naming the secret, never a value. */
-export function requireAipToken(store: Secrets, aip: Aip): Result<Secrets, { reason: string }> {
-  if (!store.secrets.some((secret) => secret.name === aip.tokenSecret)) {
-    return err({ reason: `the AIP: its token names the secret ${aip.tokenSecret}, which the store does not hold` });
   }
   return ok(store);
 }

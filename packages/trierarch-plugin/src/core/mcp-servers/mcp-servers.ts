@@ -6,6 +6,8 @@
  * trierarchs. It holds no credential: a URL has no user, query or fragment.
  * A server that needs one names it (decision M6): a secret of the store by
  * name and the HTTP header the trierarch's proxy sets to its value verbatim.
+ * The AIP (aeolus-fleet-trierarch-plugin#63) rides with the list: its server
+ * URL and the secret that holds its token, by name.
  */
 import { PAYLOAD_MAX_BYTES, payloadBytes, trierarchNameSchema } from '@aeolus-fleet/common';
 import { z } from 'zod';
@@ -26,9 +28,16 @@ export interface McpServer {
   readonly credential?: McpCredential;
 }
 
+/** The AIP every trierarch is sent: its server, and the secret of the store that holds its token, by name. */
+export interface Aip {
+  readonly server: string;
+  readonly tokenSecret: string;
+}
+
 /** The list as read: by name, each URL one a session may reach and each with the tools it may call. Built only by `readMcpServers`. */
 export interface McpServers {
   readonly servers: readonly McpServer[];
+  readonly aip?: Aip;
 }
 
 /** The content type of the message that carries the list to a trierarch. */
@@ -110,10 +119,36 @@ export function readMcpServers(listed: unknown): Result<McpServers, { reason: st
   return ok(list);
 }
 
+const aipSchema = z.strictObject({
+  server: z.string().refine(isCredentialFree, { error: URL_REFUSED }),
+  tokenSecret: trierarchNameSchema,
+});
+
+/**
+ * The list carrying the AIP from the configuration's `{ server, tokenSecret }`,
+ * or why not. The reason never holds a value it was given: a field is told by
+ * its name.
+ */
+export function withAip(list: McpServers, listed: unknown): Result<McpServers, { reason: string }> {
+  const read = aipSchema.safeParse(listed);
+  if (!read.success) {
+    const field = read.error.issues[0]?.path[0];
+    return err({ reason: `the AIP: ${typeof field === 'string' ? `${field} is missing or not valid` : 'is { server, tokenSecret }'}` });
+  }
+  const carrying: McpServers = { ...list, aip: { server: read.data.server, tokenSecret: read.data.tokenSecret } };
+  if (payloadBytes(mcpServersPayload(carrying)) > PAYLOAD_MAX_BYTES) {
+    return err({ reason: `the AIP and the MCP servers do not fit one message of ${String(PAYLOAD_MAX_BYTES / BYTES_PER_KB)} KB` });
+  }
+  return ok(carrying);
+}
+
 /** The one transport a server on the list speaks (decision M8), named in each server of the payload. */
 const TRANSPORT = 'streamable-http';
 
-/** The list as a trierarch receives it: `{ "servers": [{ "name", "url", "transport", "tools", "credential"? }] }`. */
+/** The list as a trierarch receives it: `{ "servers": [{ "name", "url", "transport", "tools", "credential"? }], "aip"?: { "server", "tokenSecret" } }`. */
 export function mcpServersPayload(list: McpServers): string {
-  return JSON.stringify({ servers: list.servers.map(({ name, url, tools, credential }) => ({ name, url, transport: TRANSPORT, tools, ...(credential && { credential }) })) });
+  return JSON.stringify({
+    servers: list.servers.map(({ name, url, tools, credential }) => ({ name, url, transport: TRANSPORT, tools, ...(credential && { credential }) })),
+    ...(list.aip && { aip: { server: list.aip.server, tokenSecret: list.aip.tokenSecret } }),
+  });
 }
