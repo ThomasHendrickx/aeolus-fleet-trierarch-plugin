@@ -63,6 +63,15 @@ describe('the plugin answers a ship asking for the enabled models', () => {
     expect(new Set(fleet.state.sent.map(({ idempotencyKey }) => idempotencyKey)).size).toBe(1);
   });
 
+  it('takes an ask handed again after the set changed as answered, sending no second reply', async () => {
+    await models.enable(FLEET_ID, 'gpt-5.5');
+    await answer();
+    await models.enable(FLEET_ID, 'claude-opus-5-5');
+
+    await expect(answer()).resolves.toEqual({ kind: 'answered' });
+    expect(fleet.state.sent.map(({ payload }) => payload)).toEqual(['{"models":["gpt-5.5"]}']);
+  });
+
   it('leaves a delivery that is no ask to the rest of the ship', async () => {
     await expect(answer({ ...ASK, contentType: 'text/plain' })).resolves.toEqual({ kind: 'notAsk' });
     expect(fleet.state.sent).toEqual([]);

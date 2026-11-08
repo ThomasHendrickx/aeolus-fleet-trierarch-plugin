@@ -323,7 +323,13 @@ export function fakePluginFleet() {
       if (state.refusingSends.has(message.shipId)) {
         return Promise.resolve(err({ code: 'FORBIDDEN', message: 'No network rule allows this message' }));
       }
-      state.sent.push({ ...message });
+      const earlier = state.sent.find((each) => each.idempotencyKey === message.idempotencyKey);
+      if (earlier !== undefined && earlier.payload !== message.payload) {
+        return Promise.resolve(err({ code: 'CONFLICT', message: 'The idempotency key was used for a different request' }));
+      }
+      if (earlier === undefined) {
+        state.sent.push({ ...message });
+      }
       return Promise.resolve(ok(undefined));
     },
   };

@@ -151,4 +151,30 @@ describe("the trierarch plugin's ship takes what waits for it", () => {
     await expect(answerPings({ connections: await connected(), inbox, fleet })()).resolves.toEqual({ ponged: 0, acked: [], keptUsage: 0, notHandled: [], refused: 1 });
     expect(inbox.acked).toEqual([]);
   });
+
+  it('acks an ask once when its ack was lost and the set changed before it came again, with no second reply', async () => {
+    const fleet = fakePluginFleet();
+    const models = memoryEnabledModels();
+    await models.enable(FLEET_ID, 'gpt-5.5');
+    const acked: DeliveryId[] = [];
+    let ackRefusals = 1;
+    const inbox: PluginInbox = {
+      receive: () => Promise.resolve(ok([ASK])),
+      pong: () => Promise.resolve(ok(undefined)),
+      ack: (_crewToken, deliveryId) => {
+        if (ackRefusals > 0) {
+          ackRefusals -= 1;
+          return Promise.resolve(err({ code: 'UNAVAILABLE', message: 'The fleet did not answer' }));
+        }
+        acked.push(deliveryId);
+        return Promise.resolve(ok(undefined));
+      },
+    };
+    const round = answerPings({ connections: await connected(), inbox, fleet, models });
+
+    await round();
+    await models.enable(FLEET_ID, 'claude-opus-5-5');
+    await expect(round()).resolves.toEqual({ ponged: 0, acked: [], keptUsage: 0, notHandled: [], refused: 0 });
+    expect({ acked, replies: fleet.state.sent.map(({ payload }) => payload) }).toEqual({ acked: [ASK.deliveryId], replies: ['{"models":["gpt-5.5"]}'] });
+  });
 });
