@@ -32,7 +32,7 @@ export interface CommissionedShip {
  * A fleet that knows the trierarch plugin's ship: its secret claims it once,
  * its crew tokens work while their lease holds, and it has the scopes it was
  * given. It commissions ships by name, refusing a name an active ship holds,
- * holds each ship's last report, and tells argo once per idempotency key.
+ * holds each ship's last report, and tells argo and sends once per idempotency key.
  */
 export function fakePluginFleet() {
   const state = {
@@ -71,6 +71,8 @@ export function fakePluginFleet() {
     sent: new Array<{ shipId: ShipId; contentType: string; payload: string; idempotencyKey: string }>(),
     /** Ships a send to is refused, as when the network rules do not allow it. */
     refusingSends: new Set<ShipId>(),
+    /** Whether the fleet answers sends and what argo is told, while it answers every other call. */
+    isAnsweringSends: true,
     /** The days the fleet keeps its finished history, as fleet.limits answers it; null for kept for good (decision 0066). */
     retentionDays: KEPT_FOR_GOOD,
   };
@@ -298,7 +300,7 @@ export function fakePluginFleet() {
       return Promise.resolve(ok(undefined));
     },
     tellArgo: (crewToken, notice) => {
-      if (!state.isAnswering) {
+      if (!state.isAnswering || !state.isAnsweringSends) {
         return unavailable();
       }
       if (!state.liveTokens.has(crewToken)) {
@@ -314,7 +316,7 @@ export function fakePluginFleet() {
       return Promise.resolve(ok(undefined));
     },
     send: (crewToken, message) => {
-      if (!state.isAnswering) {
+      if (!state.isAnswering || !state.isAnsweringSends) {
         return unavailable();
       }
       if (!state.liveTokens.has(crewToken)) {
@@ -323,7 +325,13 @@ export function fakePluginFleet() {
       if (state.refusingSends.has(message.shipId)) {
         return Promise.resolve(err({ code: 'FORBIDDEN', message: 'No network rule allows this message' }));
       }
-      state.sent.push({ ...message });
+      const earlier = state.sent.find((each) => each.idempotencyKey === message.idempotencyKey);
+      if (earlier !== undefined && (earlier.shipId !== message.shipId || earlier.payload !== message.payload)) {
+        return Promise.resolve(err({ code: 'CONFLICT', message: 'The idempotency key was used for a different request' }));
+      }
+      if (earlier === undefined) {
+        state.sent.push({ ...message });
+      }
       return Promise.resolve(ok(undefined));
     },
   };
