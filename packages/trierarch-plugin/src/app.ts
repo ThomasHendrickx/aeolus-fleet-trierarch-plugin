@@ -323,11 +323,17 @@ export function createTrierarchPluginApp(options: {
   };
   let assigning: NodeJS.Timeout | undefined;
   const keepUsage = createKeepUsage({ usage });
+  const answerEnabledModelsAsk = createAnswerEnabledModelsAsks({ door, models, isServed });
   const answerPings = createAnswerPings({
     connections,
     inbox: door.inbox,
+    // A store that fails leaves an ask unacked, handed again; said here, as the round only counts it.
+    answerAsk: (crew, delivery) =>
+      answerEnabledModelsAsk(crew, delivery).catch((error: unknown) => {
+        server.log.error({ err: error, fleet: crew.fleetId, senderShipId: delivery.senderShipId }, 'an enabled models ask could not be answered; the fleet hands it again');
+        throw error;
+      }),
     // A store that fails leaves the delivery unacked, handed again; said here, as the round only counts it.
-    answerAsk: createAnswerEnabledModelsAsks({ door, models, isServed }),
     keepUsage: (fleetId, delivery) =>
       keepUsage(fleetId, delivery).catch((error: unknown) => {
         server.log.error({ err: error, fleet: fleetId, senderShipId: delivery.senderShipId }, "a trierarch's usage could not be kept; the fleet hands it again");
