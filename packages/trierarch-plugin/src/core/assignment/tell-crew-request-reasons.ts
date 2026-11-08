@@ -6,8 +6,11 @@ import { ok, type Result } from '../shared/result.js';
 import { GIVEN_BACK_OPENING, MODEL_NOT_AVAILABLE_OPENING } from './placement.js';
 
 /**
- * What a pass told: the tells the fleet holds; those it did not answer, tried
- * again next pass; and those argo's tell was refused, tried no more.
+ * What a pass told: the tells the fleet holds that this process had not
+ * counted before; those it did not answer, tried again next pass; and those
+ * argo's tell was refused, tried no more. After a restart a tell the fleet
+ * held already counts once more: the fleet answers a repeat under its key
+ * with OK and stores nothing, so the process cannot tell the two apart.
  */
 export interface TellOutcome {
   told: number;
