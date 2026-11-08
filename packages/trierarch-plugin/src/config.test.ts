@@ -74,6 +74,26 @@ describe('loadConfig', () => {
     expect(JSON.stringify(configured)).not.toContain('aeolus_sk_v1_secret');
   });
 
+  it('reads the AIP as its server and the secret that holds its token', () => {
+    const config = loadConfig({ ...environment, AIP: '{"server":"https://aip.example.invalid","tokenSecret":"aip-token"}', MCP_SECRETS: '{"aip-token":"Bearer test-value"}' });
+
+    expect(config.mcpServers).toEqual({ servers: [], aip: { server: 'https://aip.example.invalid', tokenSecret: 'aip-token' } });
+  });
+
+  it('refuses an AIP whose token secret the store does not hold', () => {
+    expect(() => loadConfig({ ...environment, AIP: '{"server":"https://aip.example.invalid","tokenSecret":"aip-token"}' })).toThrow(
+      'MCP_SECRETS: the AIP: its token names the secret aip-token, which the store does not hold',
+    );
+  });
+
+  it.each([
+    ['an AIP that is not JSON', 'https://aip.example.invalid'],
+    ['an AIP with no token secret', '{"server":"https://aip.example.invalid"}'],
+    ['an AIP server that is not http', '{"server":"ftp://aip.example.invalid","tokenSecret":"aip-token"}'],
+  ])('refuses %s with the reason', (_label, aip) => {
+    expect(() => loadConfig({ ...environment, AIP: aip, MCP_SECRETS: '{"aip-token":"x"}' })).toThrow(/^AIP: /);
+  });
+
   it.each([
     ['no database', { ...environment, DATABASE_URL: undefined }],
     ['a fleet URL that is not http', { ...environment, FLEET_URL: 'ftp://fleet.example.com' }],
