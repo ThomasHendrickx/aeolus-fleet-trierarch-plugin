@@ -119,11 +119,15 @@ describe('telling the requester why its crew request waits', () => {
   it('tells the requester once across restarts of the trierarch plugin', async () => {
     aRequester();
     aWaitingRequest();
+    const key = `trierarch-plugin:crew-request-reason:${SCOUT}:1:model`;
 
     await tell();
-    await tell();
+    const afterRestart = await tell();
 
     expect(fleet.state.sent).toHaveLength(1);
+    expect(fleet.state.sent.filter((message) => message.idempotencyKey === key)).toHaveLength(1);
+    // The fleet answers a repeat under the key with OK and stores nothing; a new process cannot tell it apart, so it counts the tell the fleet holds.
+    expect(afterRestart).toEqual({ isOk: true, value: { told: 1, untold: 0, refused: 0 } });
   });
 
   it('tells nothing again for a rewritten reason of the same kind, across a restart', async () => {
@@ -218,11 +222,15 @@ describe('telling the requester why its crew request waits', () => {
 
   it('tells argo once across restarts of the trierarch plugin', async () => {
     aWaitingRequest({ requestedBy: null });
+    const key = `trierarch-plugin:crew-request-reason:${SCOUT}:1:model`;
 
     await tell();
-    await tell();
+    const afterRestart = await tell();
 
     expect(fleet.state.told).toHaveLength(1);
+    expect(fleet.state.told.filter((notice) => notice.idempotencyKey === key)).toHaveLength(1);
+    // The fleet answers a repeat under the key with OK and stores nothing; a new process cannot tell it apart, so it counts the tell the fleet holds.
+    expect(afterRestart).toEqual({ isOk: true, value: { told: 1, untold: 0, refused: 0 } });
   });
 
   it('tells the requester next pass when the fleet did not answer the tell', async () => {
