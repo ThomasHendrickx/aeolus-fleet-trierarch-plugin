@@ -1,6 +1,6 @@
-# Enabled models for ships: read, refused when requested, told when given back
+# Enabled models for ships: read, refused by the plugin, told why a request waits
 
-Design for [#57](https://github.com/ThomasHendrickx/aeolus-fleet-trierarch-plugin/issues/57). Docs only. Status: purpose agreed by Thomas (8 Nov); questions Q1 to Q5 wait for his answers, and no rule below is decided until he answers.
+Design for [#57](https://github.com/ThomasHendrickx/aeolus-fleet-trierarch-plugin/issues/57). Docs only. Status: purpose agreed by Thomas (8 Nov); Q1 answered; Q2 to Q5 wait for his answers, and no rule below is decided until he answers.
 
 ## 1. Purpose (agreed by Thomas, 8 Nov)
 
@@ -39,22 +39,21 @@ Not the purpose: changing what placement picks or the rules of 0063; stopping or
 
 Sent to Thomas on Bridge, each with a pick and a "none of these" option. The rules, flows, repositories and slices follow from his answers.
 
-- **Q1. Where is a request for a disabled model refused?** 1, core holds a copy: the plugin writes the fleet's enabled models to core through a new call (with `crew:assign`), and `crewRequest` refuses a named model outside a non-empty copy, as it refuses an unknown label value; the set stays the plugin's (pick). 2, the plugin's next pass (within 10 s) writes the reason and the requester is told as in Q3; no core change, but the request is still accepted. 3, core asks the plugin during `crewRequest` (against L3). 4, none of these.
-- **Q2. How does a ship read the enabled models?** 1, from core's copy (Q1 option 1), a new call with `fleet:read` (pick). 2, in the plugin ship's statement, read with `discover`. 3, a message to the plugin's ship, answered with the set. 4, none of these.
-- **Q3. Who is told when every trierarch that fits gave a request back, and by whom?** 1, core records the requester on the crew request (the ship that last made it) and the plugin's ship sends it a message with the reason, once per settings version, with a declared rule that lets the plugin's ship send to requesters (pick). 2, the plugin's ship tells the ship's owner, which core records already; no core change. 3, core itself sends the requester a message when the reason is written. 4, none of these.
-- **Q4. Which reasons are told?** 1, only the give-back one, as #57 asks (pick). 2, every reason placement writes, once per change, which also covers a model disabled after the request (L6, aeolus-fleet#1256). 3, none of these.
+- **Q1. Where is a request for a disabled model refused?** Answered (Thomas, 8 Nov): option 2, by the plugin, never in core. The request is accepted; the plugin's next assignment pass (within 10 s) writes the reason and tells the requester (Q3). Why: "Writing models to core would mean the plugin logic leaks into core plus the plugin needs to update core and we get 2 sources of truth. A model can change both due to selection changing and by the updates of the harnesses on the different trierarchs. That would introduce race conditions." So outcome 2 reads: refused by the plugin's next pass, with the reason told to the ship that asked.
+- **Q2. How does a ship read the enabled models?** (replaced after Q1) 1, a message to the plugin's ship, of a content type in common, answered as a reply with the exact set as it is now (pick). 2, the plugin reports the set in its ship's details (0028), read with `fleet/ship`. 3, the plugin states it in its statement, read with `discover`. 4, none of these. With network rules applied, each needs a rule that lets the requester reach the plugin's ship.
+- **Q3. Who is told, and by whom?** 1, core records the requester on the crew request (the ship that last made it) and the plugin's ship sends it the reason once per settings version, with a declared rule that lets the plugin's ship send to requesters (pick). 2, the plugin's ship tells the ship's owner, which core records already; no core change. 3, core itself sends the requester a message when the reason is written. 4, none of these.
+- **Q4. Which reasons are told?** (replaced after Q1) 1, `model disabled` and the give-back reason, each once per settings version (pick). 2, every reason placement writes, once per change, which also covers aeolus-fleet#1256. 3, none of these.
 - **Q5. Screens.** No console screen changes in outcomes 1 to 3; the console's forms already leave disabled models out. 1, no mockups for this design (pick). 2, the crew request card shows who was told; mockups before and after. 3, none of these.
 
 ## 4. Repositories and slices, by the picks
 
-These hold only if Thomas takes the picks; other answers change them.
+These hold only if Thomas takes the open picks; other answers change them.
 
-- **aeolus-fleet (core and common):** the copy of a fleet's enabled models and its write and read calls; `crewRequest` refusing a named model outside it; the requester on the crew request; the message's content type in common; `docs/compatibility.md` listing the new calls for the trierarch plugin; decision 0029 amended.
-- **aeolus-fleet-trierarch-plugin:** writing the copy on every change and at connect; sending the requester the reason once per settings version; `MINIMUM_CORE_VERSION` raised; decision 0063 amended.
+- **aeolus-fleet (core and common):** the requester on the crew request (Q3); the content types in common for asking the plugin's ship for the set and for telling a requester why its request waits; `docs/compatibility.md` listing what the plugin newly calls; decision 0029 amended. No enabled models in core (Q1).
+- **aeolus-fleet-trierarch-plugin:** answering a ship that asks for the set; telling the requester `model disabled` and the give-back reason once per settings version; declaring the send rules it needs; `MINIMUM_CORE_VERSION` raised; decision 0063 amended.
 
 Slices, each ending on its tests by name:
 
-1. **Core: the copy, the refusal and the read** (aeolus-fleet).
-2. **Core: the requester on the crew request and the message's content type** (aeolus-fleet).
-3. **The plugin writes the copy** (this repository), after slice 1's release.
-4. **The plugin tells the requester** (this repository), after slice 2's release.
+1. **Core and common: the requester on the crew request and the content types** (aeolus-fleet).
+2. **The plugin answers a ship that asks for the enabled models** (this repository), after slice 1's release.
+3. **The plugin tells the requester why its request waits** (this repository), after slice 1's release.
