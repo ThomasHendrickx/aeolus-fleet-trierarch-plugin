@@ -68,7 +68,7 @@ function sealedPayloadBytes(store: Secrets): number {
  * The store from the configuration's object of names to values, or why not,
  * never naming a value or a name that fails the rules (an entry is told by
  * its position): each name a trierarch name, each value fit for a
- * header, every secret a server's credential names held, and the whole
+ * header, every secret a server's credential and the AIP's token name held, and the whole
  * small enough, once sealed, to reach a trierarch in one message.
  */
 export function readSecrets(listed: unknown, servers: McpServers): Result<Secrets, { reason: string }> {
@@ -94,6 +94,9 @@ export function readSecrets(listed: unknown, servers: McpServers): Result<Secret
     if (server.credential !== undefined && !names.has(server.credential.secret)) {
       return err({ reason: `${server.name}: its credential names the secret ${server.credential.secret}, which the store does not hold` });
     }
+  }
+  if (servers.aip !== undefined && !names.has(servers.aip.tokenSecret)) {
+    return err({ reason: "the AIP: its token secret is not in the store" });
   }
   const store: Secrets = { secrets };
   if (sealedPayloadBytes(store) > PAYLOAD_MAX_BYTES) {
