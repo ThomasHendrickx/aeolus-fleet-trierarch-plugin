@@ -14,6 +14,12 @@ const EPOCH = new Date(0);
 /** A fleet's retention when none applies: it keeps its finished history for good. */
 const KEPT_FOR_GOOD: number | null = null;
 
+/** A call the fake fleet takes, refusing nothing. */
+const NO_REFUSAL: FleetRefusal | null = null;
+
+/** What core's fleet.list answers when no status is asked: the active ships. */
+const ACTIVE_STATUSES: readonly ListedShip['status'][] = ['awaitingCrew', 'crewed'];
+
 /** The trierarch another assigner claims for when the fake fleet loses a claim. */
 export const OTHER_ASSIGNEE: ShipId = 'shp_01m3tbfspe96yf1rnr4ank9h9z';
 
@@ -32,7 +38,7 @@ export interface CommissionedShip {
  * A fleet that knows the trierarch plugin's ship: its secret claims it once,
  * its crew tokens work while their lease holds, and it has the scopes it was
  * given. It commissions ships by name, refusing a name an active ship holds,
- * holds each ship's last report, and tells argo once per idempotency key.
+ * holds each ship's last report, and tells argo and sends once per idempotency key.
  */
 export function fakePluginFleet() {
   const state = {
@@ -71,6 +77,12 @@ export function fakePluginFleet() {
     sent: new Array<{ shipId: ShipId; contentType: string; payload: string; idempotencyKey: string; inReplyTo?: MessageId }>(),
     /** Ships a send to is refused, as when the network rules do not allow it. */
     refusingSends: new Set<ShipId>(),
+    /** Whether the fleet answers sends and what argo is told, while it answers every other call. */
+    isAnsweringSends: true,
+    /** Why the fleet refuses what argo is told, as it would a message it cannot take; null while it takes it. */
+    argoRefusal: NO_REFUSAL,
+    /** Why the fleet refuses a send to each of these ships, by its code and message. */
+    sendRefusals: new Map<ShipId, FleetRefusal>(),
     /** The days the fleet keeps its finished history, as fleet.limits answers it; null for kept for good (decision 0066). */
     retentionDays: KEPT_FOR_GOOD,
   };
@@ -151,12 +163,13 @@ export function fakePluginFleet() {
         }),
       );
     },
-    listShips: (crewToken) => {
+    // As core's fleet.list: the active ships, retired ones only when the statuses ask for them.
+    listShips: (crewToken, filter = { statuses: ACTIVE_STATUSES }) => {
       if (!state.isAnswering) {
         return unavailable();
       }
       return state.liveTokens.has(crewToken)
-        ? Promise.resolve(ok(state.ships.map((ship) => ({ ...ship, crewRequest: ship.crewRequest && { ...ship.crewRequest }, labels: [...ship.labels] }))))
+        ? Promise.resolve(ok(state.ships.filter((ship) => filter.statuses.includes(ship.status)).map((ship) => ({ ...ship, crewRequest: ship.crewRequest && { ...ship.crewRequest }, labels: [...ship.labels] }))))
         : released();
     },
     assignCrew: (crewToken, { shipId, trierarchShipId }) => {
@@ -298,11 +311,14 @@ export function fakePluginFleet() {
       return Promise.resolve(ok(undefined));
     },
     tellArgo: (crewToken, notice) => {
-      if (!state.isAnswering) {
+      if (!state.isAnswering || !state.isAnsweringSends) {
         return unavailable();
       }
       if (!state.liveTokens.has(crewToken)) {
         return released();
+      }
+      if (state.argoRefusal !== null) {
+        return Promise.resolve(err({ ...state.argoRefusal }));
       }
       const earlier = state.told.find((each) => each.idempotencyKey === notice.idempotencyKey);
       if (earlier !== undefined && earlier.text !== notice.text) {
@@ -314,7 +330,7 @@ export function fakePluginFleet() {
       return Promise.resolve(ok(undefined));
     },
     send: (crewToken, message) => {
-      if (!state.isAnswering) {
+      if (!state.isAnswering || !state.isAnsweringSends) {
         return unavailable();
       }
       if (!state.liveTokens.has(crewToken)) {
@@ -323,8 +339,12 @@ export function fakePluginFleet() {
       if (state.refusingSends.has(message.shipId)) {
         return Promise.resolve(err({ code: 'FORBIDDEN', message: 'No network rule allows this message' }));
       }
+      const refusal = state.sendRefusals.get(message.shipId);
+      if (refusal !== undefined) {
+        return Promise.resolve(err({ ...refusal }));
+      }
       const earlier = state.sent.find((each) => each.idempotencyKey === message.idempotencyKey);
-      if (earlier !== undefined && earlier.payload !== message.payload) {
+      if (earlier !== undefined && (earlier.shipId !== message.shipId || earlier.payload !== message.payload)) {
         return Promise.resolve(err({ code: 'CONFLICT', message: 'The idempotency key was used for a different request' }));
       }
       if (earlier === undefined) {

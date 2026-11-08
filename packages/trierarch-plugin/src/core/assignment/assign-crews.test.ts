@@ -52,7 +52,7 @@ function aRequest(shipId: ShipId, at: { status?: 'awaitingCrew' | 'crewed'; assi
     status: at.status ?? 'awaitingCrew',
     lastSeenAt: null,
     model: null,
-    crewRequest: { settingsVersion: 1, requestedAt: at.requestedAt ?? AT, assignedTo: at.assignedTo ?? null, reason: null, startedAt: null, givenBack: [] },
+    crewRequest: { settingsVersion: 1, requestedAt: at.requestedAt ?? AT, assignedTo: at.assignedTo ?? null, reason: null, startedAt: null, givenBack: [], requestedBy: null },
     labels: [],
   });
   fleet.state.settings.set(shipId, SETTINGS);

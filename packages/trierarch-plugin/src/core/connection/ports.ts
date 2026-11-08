@@ -19,12 +19,18 @@ export interface IssuedPrompt {
   secret: string;
 }
 
+/** Where a ship stands, as the fleet lists it. */
+export type ShipStatus = 'awaitingCrew' | 'crewed' | 'retired';
+
+/** Every status a ship can have: what a read that must see retired ships asks for. */
+export const EVERY_SHIP_STATUS: readonly ShipStatus[] = ['awaitingCrew', 'crewed', 'retired'];
+
 /** A ship as `fleet.list` lists it: what the trierarch plugin reads of it. */
 export interface ListedShip {
   shipId: ShipId;
   name: string;
   type: string;
-  status: 'awaitingCrew' | 'crewed' | 'retired';
+  status: ShipStatus;
   /** When its session last called the fleet; null while no session crews it. */
   lastSeenAt: Date | null;
   /** The model its crew last stated (decision 0018); null until one states any. */
@@ -32,7 +38,9 @@ export interface ListedShip {
   /**
    * Its crew request, without its settings: their version, when the session
    * its trierarch runs now started, or null while none runs, and the
-   * trierarchs that gave it back, oldest first (#382); null when it holds none.
+   * trierarchs that gave it back, oldest first (#382), and the ship that last
+   * made it, null for a request made before the fleet recorded it; null when
+   * it holds none.
    */
   crewRequest: {
     settingsVersion: number;
@@ -41,6 +49,7 @@ export interface ListedShip {
     reason: string | null;
     startedAt: Date | null;
     givenBack: { trierarchShipId: ShipId; reason: string }[];
+    requestedBy: { shipId: ShipId; name: string } | null;
   } | null;
   /** The label values it carries, every owner's, with their labels (#102). */
   labels: { labelId: LabelId; valueId: LabelValueId }[];
@@ -89,8 +98,8 @@ export interface FleetDoor {
   ): Promise<Result<{ shipId: ShipId } & IssuedPrompt, FleetRefusal>>;
   /** The days the fleet keeps its finished history, null for kept for good (fleet:read; decision 0066). */
   limits(crewToken: string): Promise<Result<{ retentionDays: number | null }, FleetRefusal>>;
-  /** Every ship of the fleet, retired ones included (fleet:read). */
-  listShips(crewToken: string): Promise<Result<ListedShip[], FleetRefusal>>;
+  /** The fleet's active ships, retired ones too when the statuses ask for them, as `fleet.list` answers (fleet:read). */
+  listShips(crewToken: string, filter?: { statuses: readonly ShipStatus[] }): Promise<Result<ListedShip[], FleetRefusal>>;
   /** Claims a ship's crew request for a trierarch (crew:assign), only while it is unassigned: a lost claim is CONFLICT. */
   assignCrew(crewToken: string, claim: { shipId: ShipId; trierarchShipId: ShipId }): Promise<Result<undefined, FleetRefusal>>;
   /** Every label of the fleet, with its owner (fleet:read). */

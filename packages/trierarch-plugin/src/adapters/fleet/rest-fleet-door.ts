@@ -147,8 +147,10 @@ export function createRestFleetDoor(fleetUrl: string, options: { busyWaitsMs?: r
       }
       return ok({ shipId, prompt, crewLines, secret });
     },
-    listShips: async (crewToken) => {
-      const listed = await listEveryPage((cursor) => call({ path: '/fleet/list', method: 'POST', crewToken, body: { cursor, limit: PAGE_SIZE_MAX }, answers: fleetListOutputSchema }));
+    listShips: async (crewToken, filter) => {
+      const listed = await listEveryPage((cursor) =>
+        call({ path: '/fleet/list', method: 'POST', crewToken, body: { cursor, limit: PAGE_SIZE_MAX, ...(filter === undefined ? {} : { status: filter.statuses }) }, answers: fleetListOutputSchema }),
+      );
       return listed.isOk
         ? ok(
             // A ship outside read reach shows too little to crew (decision 0034).
@@ -166,6 +168,7 @@ export function createRestFleetDoor(fleetUrl: string, options: { busyWaitsMs?: r
                 reason: crewRequest.reason,
                 startedAt: dateOf(crewRequest.startedAt),
                 givenBack: crewRequest.givenBack.map((back) => ({ trierarchShipId: back.trierarch.id, reason: back.reason })),
+                requestedBy: crewRequest.requestedBy && { shipId: crewRequest.requestedBy.id, name: crewRequest.requestedBy.name },
               },
               labels: labels.map(({ labelId, valueId }) => ({ labelId, valueId })),
             })),

@@ -28,6 +28,7 @@ import { createSetFleetEnabled } from './core/installation/set-fleet-enabled.js'
 import { createAssignCrews, type AssignOutcome } from './core/assignment/assign-crews.js';
 import { createLabelMachines } from './core/machines/label-machines.js';
 import { createCheckCrewSettings } from './core/assignment/check-crew-settings.js';
+import { createTellCrewRequestReasons } from './core/assignment/tell-crew-request-reasons.js';
 import { createTellModelMismatches } from './core/assignment/tell-model-mismatches.js';
 import { createJoinMachine } from './core/machines/join-machine.js';
 import { createNewSetupLine } from './core/machines/new-setup-line.js';
@@ -224,6 +225,21 @@ export function createTrierarchPluginApp(options: {
       server.log.info({ fleet: fleetId, ...told.value }, 'model check told argo');
     }
   };
+  // What this process told already; the fleet keeps each tell once across restarts.
+  const tellCrewRequestReasons = createTellCrewRequestReasons({ door, connections, told: new Set() });
+  /** Tells each requester, or argo, why its crew request waits (R4, R5); a refusal is logged and the pass goes on. */
+  const tellReasonsOnce = async (fleetId: FleetId): Promise<void> => {
+    const told = await tellCrewRequestReasons(fleetId);
+    if (!told.isOk) {
+      server.log.warn({ fleet: fleetId, refusal: told.error }, 'crew request reasons refused; the next pass tries again');
+    } else if (told.value.refused > 0) {
+      server.log.warn({ fleet: fleetId, ...told.value }, "argo's tell of a crew request reason was refused; it is tried no more");
+    } else if (told.value.untold > 0) {
+      server.log.warn({ fleet: fleetId, ...told.value }, 'a crew request reason was not told; the next pass tries again');
+    } else if (told.value.told > 0) {
+      server.log.info({ fleet: fleetId, ...told.value }, 'crew request reasons told');
+    }
+  };
   // The trierarchs this process sent the list; a restart sends it to every trierarch again, and so does a trierarch asking.
   const shared = new Set<ShipId>();
   const shareTrustedRepositories = createShareTrustedRepositories({
@@ -312,6 +328,7 @@ export function createTrierarchPluginApp(options: {
       await shareMcpServersOnce(crew.fleetId);
       await shareSecretsOnce(crew.fleetId);
       const assigned = await assignCrews(crew.fleetId);
+      await tellReasonsOnce(crew.fleetId);
       await tellOnce(crew.fleetId);
       if (assigned.isOk) {
         done.push({ fleetId: crew.fleetId, outcome: assigned.value });

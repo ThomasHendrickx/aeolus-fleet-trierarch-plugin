@@ -1,4 +1,4 @@
-import { isInReadReach, TRIERARCH_USAGE_CONTENT_TYPE } from '@aeolus-fleet/common';
+import { CREW_REQUEST_REASON_CONTENT_TYPE, isInReadReach, TRIERARCH_USAGE_CONTENT_TYPE } from '@aeolus-fleet/common';
 import type { ShipId } from '@aeolus-fleet/common';
 import type { FastifyInstance } from 'fastify';
 import sodium from 'libsodium-wrappers';
@@ -298,6 +298,51 @@ describe("the fleet's enabled models against a real fleet (model governance)", (
     await apps[0]?.assignOnce();
 
     await expect(fleetDatabase.crewRequest.findUniqueOrThrow({ where: { shipId: scout.shipId } })).resolves.toMatchObject({ assignedTo: joined.shipId });
+  });
+});
+
+describe('telling the requester why its crew request waits, against a real fleet', () => {
+  it('tells the ship that made a request naming a model not available, once, as the trierarch plugin\'s ship', async () => {
+    const address = await connected();
+    const joined = joinedSchema.parse(await (await mutate(address, { procedure: 'machines.join', cookie, body: { name: 'mac-studio' } })).json()).result.data;
+    const machineShipId = z.templateLiteral(['shp_', z.string()]).parse(joined.shipId);
+    await reportAsTrierarch(fleetUrl, { shipId: machineShipId, secret: joined.secret, setup: { caps: { ships: 4, running: 2 }, flags: [], version: '0.19.0' } });
+    const scout = unwrap(await useCases.commissionShip(argo, { idempotencyKey: newKey(), name: 'scout', type: 'implementer' }));
+    unwrap(await useCases.requestCrew(argo, { shipId: scout.shipId, settings: { harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: { model: 'claude-opus-5-5' } } }));
+    await mutate(address, { procedure: 'models.enable', cookie, body: { model: 'claude-sonnet-5-5' } });
+
+    await apps[0]?.assignOnce();
+    await apps[0]?.assignOnce();
+
+    const inbox = await useCases.readInbox(argo, { filter: 'all' });
+    const items = inbox.isOk ? inbox.value.items : [];
+    const reasons = items.filter((entry) => entry.message.contentType === CREW_REQUEST_REASON_CONTENT_TYPE);
+    expect(reasons.map((entry) => ({ payload: z.string().transform((text): unknown => JSON.parse(text)).parse(entry.message.payload), sender: entry.message.sender.name }))).toEqual([
+      { payload: { shipId: scout.shipId, shipName: 'scout', settingsVersion: 1, reason: 'model not available: claude-opus-5-5' }, sender: 'trierarch-plugin' },
+    ]);
+  });
+
+  it('tells argo, naming the requester, when the ship that made the request is retired', async () => {
+    const address = await connected();
+    const joined = joinedSchema.parse(await (await mutate(address, { procedure: 'machines.join', cookie, body: { name: 'mac-studio' } })).json()).result.data;
+    const machineShipId = z.templateLiteral(['shp_', z.string()]).parse(joined.shipId);
+    await reportAsTrierarch(fleetUrl, { shipId: machineShipId, secret: joined.secret, setup: { caps: { ships: 4, running: 2 }, flags: [], version: '0.19.0' } });
+    const orchestrator = unwrap(await useCases.commissionShip(argo, { idempotencyKey: newKey(), name: 'orchestrator', type: 'orchestrator', scopes: ['fleet:manage'] }));
+    const scout = unwrap(await useCases.commissionShip(argo, { idempotencyKey: newKey(), name: 'scout', type: 'implementer' }));
+    const asOrchestrator = { shipId: orchestrator.shipId, fleetId: argo.fleetId, kind: 'agent' as const, scopes: ['fleet:manage' as const] };
+    unwrap(await useCases.requestCrew(asOrchestrator, { shipId: scout.shipId, settings: { harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: { model: 'claude-opus-5-5' } } }));
+    unwrap(await useCases.retireShip(argo, { shipId: orchestrator.shipId }));
+    await mutate(address, { procedure: 'models.enable', cookie, body: { model: 'claude-sonnet-5-5' } });
+
+    await apps[0]?.assignOnce();
+    await apps[0]?.assignOnce();
+
+    const inbox = await useCases.readInbox(argo, { filter: 'all' });
+    const items = inbox.isOk ? inbox.value.items : [];
+    const fromPlugin = items.filter((entry) => entry.message.sender.name === 'trierarch-plugin').map((entry) => entry.message.payload);
+    expect(fromPlugin).toEqual([
+      "Ship scout waits: model not available: claude-opus-5-5\n\nShip scout's crew request (settings version 1) waits: model not available: claude-opus-5-5. Ship orchestrator made it and is retired, so the trierarch plugin tells argo.",
+    ]);
   });
 });
 
