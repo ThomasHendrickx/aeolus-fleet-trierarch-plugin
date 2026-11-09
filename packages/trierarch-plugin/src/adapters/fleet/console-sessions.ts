@@ -11,7 +11,7 @@ import type { ConsoleSessions } from '../../core/operator/ports.js';
 import { err, ok } from '../../core/shared/result.js';
 
 // Only what the plugin reads: a core older than common's schema answers fewer fields (MINIMUM_CORE_VERSION).
-const sessionAnswer = z.object({ result: z.object({ data: consoleSessionOutputSchema.pick({ fleetId: true, kind: true, scopes: true }) }) });
+const sessionAnswer = z.object({ result: z.object({ data: consoleSessionOutputSchema.pick({ fleetId: true, kind: true, accountId: true, scopes: true }) }) });
 
 export function createFleetConsoleSessions(fleetUrl: string): ConsoleSessions {
   return {
@@ -20,8 +20,8 @@ export function createFleetConsoleSessions(fleetUrl: string): ConsoleSessions {
       if (!response.ok) {
         return err({ code: 'UNAUTHORIZED', message: 'No signed-in console session' });
       }
-      const { fleetId, kind, scopes } = sessionAnswer.parse(await response.json()).result.data;
-      return ok({ fleetId, kind, scopes });
+      const { fleetId, kind, accountId, scopes } = sessionAnswer.parse(await response.json()).result.data;
+      return ok({ fleetId, kind, ...(accountId !== undefined && { accountId }), scopes });
     },
   };
 }

@@ -21,6 +21,7 @@ async function start(): Promise<void> {
   const app = createTrierarchPluginApp({
     databaseUrl: config.databaseUrl,
     fleetUrl: config.fleetUrl,
+    consoleOrigin: config.consoleOrigin,
     logger: { level: config.logLevel },
     silentAfterMs: config.silentAfterMs,
     trustedRepositories: config.trustedRepositories,

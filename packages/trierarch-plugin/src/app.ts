@@ -16,6 +16,7 @@ import { createPrismaUsageHistory } from './adapters/prisma/usage-history.js';
 import { createPrismaFleetForgetter } from './adapters/prisma/fleet-forgetter.js';
 import { createPrismaFleetSwitches } from './adapters/prisma/fleet-switches.js';
 import { createPrismaInstallationRequests } from './adapters/prisma/installation-requests.js';
+import { createPrismaMcpConfigurations } from './adapters/prisma/mcp-configurations.js';
 import { trierarchPluginRouter, type TrierarchPluginRouter } from './adapters/trpc/router.js';
 import { createAnswerPings } from './core/connection/answer-pings.js';
 import { createConnect } from './core/connection/connect.js';
@@ -34,6 +35,8 @@ import { createJoinMachine } from './core/machines/join-machine.js';
 import { createNewSetupLine } from './core/machines/new-setup-line.js';
 import { createDeclareNetworkRules, type Declarations } from './core/network/declare-network-rules.js';
 import { createDeclareScopes } from './core/scopes/declare-scopes.js';
+import { createReadMcpConfiguration } from './core/mcp-configuration/read-mcp-configuration.js';
+import { createReplaceMcpConfiguration } from './core/mcp-configuration/replace-mcp-configuration.js';
 import { createResendMcpServers } from './core/mcp-servers/resend-mcp-servers.js';
 import { createResendSecrets } from './core/mcp-servers/resend-secrets.js';
 import type { Secrets } from './core/mcp-servers/secrets.js';
@@ -94,6 +97,8 @@ export interface TrierarchPluginApp {
 export function createTrierarchPluginApp(options: {
   databaseUrl: string;
   fleetUrl: string;
+  /** The console's origin, the only Origin a change of a fleet's MCP configuration comes from; the origin of fleetUrl unless given. */
+  consoleOrigin?: string;
   clock?: Clock;
   logger?: FastifyServerOptions['logger'];
   /** The installation token (decision 0021): unset, the installation is open and every fleet is served. */
@@ -310,6 +315,9 @@ export function createTrierarchPluginApp(options: {
   const checkCrewSettings = createCheckCrewSettings({ door, connections, models, clock, silentAfterMs });
   const listEnabledModels = createListEnabledModels({ models });
   const setModelEnabled = createSetModelEnabled({ models });
+  const mcpConfigurations = createPrismaMcpConfigurations(prisma);
+  const readMcpConfiguration = createReadMcpConfiguration({ configurations: mcpConfigurations });
+  const replaceMcpConfiguration = createReplaceMcpConfiguration({ configurations: mcpConfigurations, clock });
   const usage = createPrismaUsageHistory(prisma);
   const readTokenUsage = createReadTokenUsage({ usage, door, connections });
   const readUsageValues = createReadUsageValues({ usage, door, connections });
@@ -431,6 +439,7 @@ export function createTrierarchPluginApp(options: {
       createContext: ({ req }) => ({
         cookie: req.headers.cookie,
         origin: req.headers.origin,
+        consoleOrigin: options.consoleOrigin ?? new URL(options.fleetUrl).origin,
         authenticateOperator: createAuthenticateOperator({ sessions: createFleetConsoleSessions(options.fleetUrl) }),
         isConnected: async (fleetId: FleetId) => (await connections.find(fleetId)) !== undefined,
         isServed,
@@ -448,6 +457,8 @@ export function createTrierarchPluginApp(options: {
         checkCrewSettings,
         listEnabledModels,
         setModelEnabled,
+        readMcpConfiguration,
+        replaceMcpConfiguration,
         readTokenUsage,
         readUsageValues,
         readSubscriptionWindows,

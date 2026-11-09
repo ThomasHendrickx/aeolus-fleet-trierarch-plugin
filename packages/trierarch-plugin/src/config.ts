@@ -16,6 +16,10 @@ const MS_PER_SECOND = 1000;
 const environmentSchema = z.object({
   DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/, error: 'must be a postgres:// or postgresql:// URL' }),
   FLEET_URL: z.url({ protocol: /^https?$/, error: 'must be an http:// or https:// URL' }),
+  CONSOLE_ORIGIN: z
+    .url({ protocol: /^https?$/, error: 'must be an http:// or https:// origin' })
+    .refine((origin) => URL.canParse(origin) && new URL(origin).origin === origin.replace(/\/$/, ''), { error: 'must be an origin without a path, like https://console.example.com' })
+    .optional(),
   HOST: z.string().min(1).default('127.0.0.1'),
   PORT: z.coerce.number().int().min(0).max(65_535).default(4200),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
@@ -42,6 +46,12 @@ export interface Config {
    * operator connects the trierarch plugin in the console.
    */
   fleetUrl: string;
+  /**
+   * The console's origin, which a change of a fleet's MCP configuration must
+   * come from (its Origin header), as the fleet checks its own console's;
+   * the origin of FLEET_URL unless CONSOLE_ORIGIN says otherwise.
+   */
+  consoleOrigin: string;
   host: string;
   port: number;
   logLevel: string;
@@ -147,6 +157,7 @@ export function loadConfig(environment: Record<string, string | undefined>): Con
   return {
     databaseUrl: variables.DATABASE_URL,
     fleetUrl: variables.FLEET_URL.replace(/\/$/, ''),
+    consoleOrigin: new URL(variables.CONSOLE_ORIGIN ?? variables.FLEET_URL).origin,
     host: variables.HOST,
     port: variables.PORT,
     logLevel: variables.LOG_LEVEL,

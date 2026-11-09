@@ -6,7 +6,8 @@
  * procedure works on that fleet. A fleet the trierarch plugin does not serve
  * (switched off) gets only `connection.status`; only `connection` works
  * before the trierarch plugin is connected to the fleet. The installation
- * procedures take the installation token instead (decision 0021).
+ * procedures take the installation token instead (decision 0021). A change
+ * of a fleet's MCP configuration also needs the console's Origin.
  */
 import { timingSafeEqual } from 'node:crypto';
 
@@ -25,6 +26,8 @@ import type { CheckCrewSettings } from '../../core/assignment/check-crew-setting
 import type { JoinMachine } from '../../core/machines/join-machine.js';
 import type { MakeNewSetupLine } from '../../core/machines/new-setup-line.js';
 import type { ListMachines } from '../../core/machines/list-machines.js';
+import type { ReadMcpConfiguration } from '../../core/mcp-configuration/read-mcp-configuration.js';
+import type { ReplaceMcpConfiguration } from '../../core/mcp-configuration/replace-mcp-configuration.js';
 import type { ListEnabledModels } from '../../core/models/list-enabled-models.js';
 import type { SetModelEnabled } from '../../core/models/set-model-enabled.js';
 import type { AuthenticateOperator } from '../../core/operator/authenticate-operator.js';
@@ -40,6 +43,8 @@ export interface Context {
   cookie: string | undefined;
   /** The Origin header the console's server forwarded: the browser's, which the fleet checks on a change made with the cookie. */
   origin: string | undefined;
+  /** The console's origin, as the configuration holds it: the only Origin a change of a fleet's MCP configuration comes from. */
+  consoleOrigin: string;
   authenticateOperator: AuthenticateOperator;
   /** Whether the trierarch plugin is connected to the fleet. */
   isConnected: (fleetId: FleetId) => Promise<boolean>;
@@ -60,6 +65,8 @@ export interface Context {
   checkCrewSettings: CheckCrewSettings;
   listEnabledModels: ListEnabledModels;
   setModelEnabled: SetModelEnabled;
+  readMcpConfiguration: ReadMcpConfiguration;
+  replaceMcpConfiguration: ReplaceMcpConfiguration;
   readTokenUsage: ReadTokenUsage;
   readUsageValues: ReadUsageValues;
   readSubscriptionWindows: ReadSubscriptionWindows;
@@ -78,7 +85,7 @@ const operatorProcedure = t.procedure.use(async ({ ctx, next }) => {
   if (!operator.isOk) {
     throw new TRPCError({ code: 'UNAUTHORIZED', message: operator.error.message });
   }
-  return next({ ctx: { fleetId: operator.value.fleetId, kind: operator.value.kind, scopes: operator.value.scopes } });
+  return next({ ctx: { fleetId: operator.value.fleetId, kind: operator.value.kind, accountId: operator.value.accountId ?? null, scopes: operator.value.scopes } });
 });
 
 /**
@@ -133,6 +140,20 @@ const connectedProcedure = servedProcedure.use(async ({ ctx, next }) => {
   return next();
 });
 
+/**
+ * A change that must come from the console itself, as the fleet checks its
+ * own console's: the forwarded Origin is exactly the configured console
+ * origin, or FORBIDDEN before the input is read or anything written.
+ */
+function fromTheConsole(procedure: typeof operatorProcedure) {
+  return procedure.use(({ ctx, next }) => {
+    if (ctx.origin !== ctx.consoleOrigin) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: "Needs the console's Origin: a change of the MCP configuration comes only from the console" });
+    }
+    return next();
+  });
+}
+
 /** The refusals of connecting, as the API states them. */
 const CONNECT_CODES = {
   ALREADY_CONNECTED: 'CONFLICT',
@@ -169,6 +190,23 @@ const USAGE_CODES = {
   NOT_CONNECTED: 'PRECONDITION_FAILED',
   FLEET_UNAVAILABLE: 'BAD_GATEWAY',
 } as const satisfies Record<string, TRPCError['code']>;
+
+/** The refusals of replacing a fleet's MCP configuration, as the API states them. */
+const MCP_REPLACE_CODES = {
+  VERSION_CONFLICT: 'CONFLICT',
+  INVALID_CONFIGURATION: 'BAD_REQUEST',
+} as const satisfies Record<string, TRPCError['code']>;
+
+/** A server of a fleet's MCP configuration, as the API reads and takes it. */
+const mcpServerSchema = z.strictObject({
+  name: z.string(),
+  url: z.string(),
+  tools: z.array(z.string()),
+  credential: z.strictObject({ secret: z.string(), header: z.string() }).optional(),
+});
+
+/** A fleet's MCP configuration as `mcp.get` answers it: secret names, never a value. */
+const mcpConfigurationOutputSchema = z.object({ version: z.int().nonnegative(), servers: z.array(mcpServerSchema), secrets: z.array(z.string()) });
 
 /** The refusals of deleting a fleet, as the installation API states them. */
 const DELETE_CODES = {
@@ -388,6 +426,36 @@ export const trierarchPluginRouter = t.router({
       .input(z.strictObject({ model: modelSchema }))
       .output(z.array(z.string()))
       .mutation(({ ctx, input }) => ctx.setModelEnabled({ fleetId: ctx.fleetId, model: input.model, isEnabled: false })),
+  }),
+  mcp: t.router({
+    /** The fleet's MCP configuration (the fleet crew MCP design, section 4): its version, servers and secret names, never a value. fleet:manage only. */
+    get: managing(servedProcedure)
+      .output(mcpConfigurationOutputSchema)
+      .query(async ({ ctx }) => {
+        const read = await ctx.readMcpConfiguration(ctx.fleetId);
+        return { version: read.version, servers: read.servers.map((server) => ({ ...server, tools: [...server.tools] })), secrets: [...read.secrets] };
+      }),
+    /**
+     * Replaces the fleet's MCP configuration whole at the version read: every
+     * server, every secret it retains by name, and the new or replacement
+     * values. fleet:manage, from the console's Origin. Saved, not yet applied
+     * on any trierarch. A failure answers no detail: the log holds no value
+     * either.
+     */
+    replace: fromTheConsole(managing(servedProcedure))
+      .input(z.strictObject({ expectedVersion: z.int().nonnegative(), servers: z.array(mcpServerSchema), secrets: z.array(z.string()), secretValues: z.record(z.string(), z.string()) }))
+      .output(z.object({ version: z.int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        const replaced = await ctx.replaceMcpConfiguration({ fleetId: ctx.fleetId, actor: { kind: ctx.kind, accountId: ctx.accountId }, replacement: input }).catch(() => undefined);
+        if (replaced === undefined) {
+          // The store's error may quote what it was given, values included: neither its message nor its cause goes on.
+          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'The MCP configuration could not be saved' });
+        }
+        if (!replaced.isOk) {
+          throw new TRPCError({ code: MCP_REPLACE_CODES[replaced.error.kind], message: replaced.error.message });
+        }
+        return replaced.value;
+      }),
   }),
   usage: t.router({
     /**

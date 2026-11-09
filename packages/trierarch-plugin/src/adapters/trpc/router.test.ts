@@ -315,7 +315,8 @@ describe("a fleet's MCP configuration over the API (the fleet crew MCP design, s
       .mcp.replace({ ...WITH_GRAPH, servers: [{ ...GRAPH, url: 'https://me:secret@graph.example.invalid/mcp' }] })
       .catch((error: unknown) => error);
 
-    expect(refused instanceof TRPCError && { code: refused.code, message: refused.message }).toEqual({ code: 'BAD_REQUEST', message: expect.stringMatching(/^company-graph: an MCP server is an http/) });
+    expect(refused instanceof TRPCError && refused.code).toBe('BAD_REQUEST');
+    expect(refused instanceof TRPCError && refused.message).toMatch(/^company-graph: an MCP server is an http/);
     expect(JSON.stringify(refused)).not.toContain('test-value');
   });
 
