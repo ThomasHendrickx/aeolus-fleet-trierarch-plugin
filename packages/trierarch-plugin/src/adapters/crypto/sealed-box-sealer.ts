@@ -1,6 +1,6 @@
 import sodium from 'libsodium-wrappers';
 
-import type { Sealer } from '../../core/mcp-servers/ports.js';
+import type { Sealer } from '../../core/mcp-configuration/ports.js';
 import { err, ok } from '../../core/shared/result.js';
 
 /**

@@ -507,7 +507,8 @@ describe('a trierarch asking for the trusted repositories again (aeolus-fleet#38
     const joined = joinedSchema.parse(await (await mutate(address, { procedure: 'machines.join', cookie, body: { name: 'mac-studio' } })).json()).result.data;
     const machine = await crewAsTrierarch(fleetUrl, { shipId: z.templateLiteral(['shp_', z.string()]).parse(joined.shipId), secret: joined.secret });
     await app.assignOnce();
-    await expect(machine.receive()).resolves.toHaveLength(2);
+    // The trusted repositories alone: a trierarch that states no sealing key is sent no MCP configuration.
+    await expect(machine.receive()).resolves.toHaveLength(1);
 
     await machine.send({ shipId, contentType: 'application/vnd.aeolus.trierarch.trusted-repositories-request+json', payload: '{}' });
     await expect
@@ -675,12 +676,12 @@ describe("a fleet's MCP configuration against a real fleet (the fleet crew MCP d
 
   it('a trierarch without a key is sent nothing', async () => {
     const { app, address, machine } = await aMachine();
-    await crewAsTrierarch(fleetUrl, machine);
+    const trierarch = await crewAsTrierarch(fleetUrl, machine);
     await replace(address, WITH_GRAPH);
 
     await app.assignOnce();
 
-    expect((await receiveAsTrierarch(fleetUrl, machine)).map((each) => each.contentType)).not.toContain(CONFIGURATION_TYPE);
+    expect((await trierarch.receive()).map((each) => each.contentType)).not.toContain(CONFIGURATION_TYPE);
   });
 
   it('sends no message of the old contracts', async () => {

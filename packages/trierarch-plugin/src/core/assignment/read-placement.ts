@@ -4,7 +4,7 @@ import type { FleetDoor, FleetRefusal } from '../connection/ports.js';
 import { TRIERARCH_TYPE } from '../machines/join-machine.js';
 import { isSilent } from '../machines/silent.js';
 import { isMcpConfigurationCurrent, type McpDelivery } from '../mcp-configuration/mcp-delivery.js';
-import { readSealingKey } from '../mcp-servers/sealing-key.js';
+import { readSealingKey } from '../mcp-configuration/sealing-key.js';
 import { ok, type Result } from '../shared/result.js';
 import type { PlacementRequest, PlacementTrierarch } from './placement.js';
 

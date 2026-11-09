@@ -4,7 +4,7 @@ import type { ConnectionStore, FleetDoor, FleetRefusal } from '../connection/por
 import { TRIERARCH_TYPE } from '../machines/join-machine.js';
 import type { IdempotencyKeys } from '../machines/ports.js';
 import { isSilent } from '../machines/silent.js';
-import { readSealingKey } from '../mcp-servers/sealing-key.js';
+import { readSealingKey } from './sealing-key.js';
 import type { Clock } from '../shared/clock.js';
 import { refuse, type DomainError } from '../shared/errors.js';
 import { ok, type Result } from '../shared/result.js';
