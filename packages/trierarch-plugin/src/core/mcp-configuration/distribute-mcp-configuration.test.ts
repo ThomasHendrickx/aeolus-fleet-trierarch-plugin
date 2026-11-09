@@ -5,15 +5,19 @@ import { z } from 'zod';
 import { FLEET_ID, SHIP_ID, fakePluginFleet, memoryConnectionStore } from '../../../test/support/connection-fakes.js';
 import { memoryMcpConfigurations } from '../../../test/support/memory-mcp-configurations.js';
 import { memoryMcpDeliveries } from '../../../test/support/memory-mcp-deliveries.js';
-import type { ListedShip } from '../connection/ports.js';
+import type { ListedShip, PluginDelivery } from '../connection/ports.js';
 import { err, ok } from '../shared/result.js';
 import { createDistributeMcpConfiguration } from './distribute-mcp-configuration.js';
+import { isMcpConfigurationCurrent } from './mcp-delivery.js';
 import { createReplaceMcpConfiguration } from './replace-mcp-configuration.js';
+import { createTakeMcpConfigurationMessage } from './take-mcp-configuration-message.js';
 
 const START = new Date('2026-11-09T12:00:00.000Z');
 const MAC: ShipId = 'shp_01m3tbfspe96yf1rnr4ank9h2a';
 const STUDIO: ShipId = 'shp_01m3tbfspe96yf1rnr4ank9h3a';
 const CONTENT_TYPE = 'application/vnd.aeolus.trierarch.mcp-configuration+json';
+const APPLIED_CONTENT_TYPE = 'application/vnd.aeolus.trierarch.mcp-configuration-applied+json';
+const REQUEST_CONTENT_TYPE = 'application/vnd.aeolus.trierarch.mcp-configuration-request+json';
 /** Public keys shaped as the scheme's (32 bytes as base64), plainly not real ones. */
 const MAC_KEY = `${'mac'.padEnd(43, 'A')}=`;
 const STUDIO_KEY = `${'studio'.padEnd(43, 'A')}=`;
@@ -196,6 +200,23 @@ describe("distributing a fleet's MCP configuration to its trierarchs", () => {
     await distribute();
 
     expect(fleet.state.sent.map((each) => each.idempotencyKey)).toEqual(['key-0', 'key-1']);
+  });
+
+  it('sends a new copy to a trierarch released and crewed again between passes with the same key, which is not current until its new lease confirms', async () => {
+    const take = createTakeMcpConfigurationMessage({ configurations, deliveries });
+    const crew = { fleetId: FLEET_ID, shipId: SHIP_ID, name: 'trierarch-plugin', crewToken: 'aeolus_ct_v1_plugin', crewedAt: START };
+    const fromMac = (contentType: string, body: object): PluginDelivery => ({ deliveryId: 'dlv_01m3tbfspe96yf1rnr4ank9h2a', messageId: 'msg_01m3tbfspe96yf1rnr4ank9h2a', contentType, senderShipId: MAC, senderType: 'trierarch', senderStatus: 'crewed', payload: JSON.stringify(body) });
+    aShip(MAC);
+    await distribute();
+    await take(crew, fromMac(APPLIED_CONTENT_TYPE, { fleetId: FLEET_ID, pluginShipId: SHIP_ID, version: 0, publicKey: MAC_KEY }));
+
+    // The new lease's trierarch asks when it starts, under the same key.
+    await take(crew, fromMac(REQUEST_CONTENT_TYPE, { fleetId: FLEET_ID, pluginShipId: SHIP_ID }));
+    expect(isMcpConfigurationCurrent(deliveries.held.get(FLEET_ID)?.get(MAC), { version: 0, publicKey: MAC_KEY })).toBe(false);
+
+    await distribute();
+    expect(fleet.state.sent.map((each) => each.idempotencyKey)).toEqual(['key-0', 'key-1']);
+    expect(isMcpConfigurationCurrent(deliveries.held.get(FLEET_ID)?.get(MAC), { version: 0, publicKey: MAC_KEY })).toBe(false);
   });
 
   it('forgets the delivery of a trierarch seen not crewed, so its next lease is sent the set again and must confirm again', async () => {

@@ -88,6 +88,14 @@ describe("a trierarch asking for its fleet's MCP configuration", () => {
     expect(deliveries.held.get(FLEET_ID)?.get(MAC)?.isRequested).toBe(true);
   });
 
+  it('forgets at once the confirmation its trierarch gave before, as a trierarch asks when its lease starts', async () => {
+    await take(CREW, aDelivery());
+
+    await take(CREW, aDelivery({ contentType: REQUEST, body: { fleetId: FLEET_ID, pluginShipId: SHIP_ID } }));
+
+    expect(appliedOf()).toBeNull();
+  });
+
   it.each([
     { label: 'another fleet', delivery: aDelivery({ contentType: REQUEST, body: { fleetId: OTHER_FLEET_ID, pluginShipId: SHIP_ID } }), reason: 'it names another fleet or plugin ship' },
     { label: 'another shape', delivery: aDelivery({ contentType: REQUEST, body: {} }), reason: 'its payload is not { fleetId, pluginShipId }' },

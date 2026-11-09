@@ -76,6 +76,16 @@ describe("the deliveries of a fleet's MCP configuration in Postgres", () => {
     await expect(deliveries.list(FLEET_ID)).resolves.toMatchObject([{ trierarchShipId: STUDIO, isRequested: false }]);
   });
 
+  it('forgets the confirmation when its trierarch asks, keeping the attempt', async () => {
+    const deliveries = createPrismaMcpDeliveries(aClient());
+    await deliveries.recordAttempt(FLEET_ID, { trierarchShipId: MAC, attempt: ATTEMPT });
+    await deliveries.recordApplied(FLEET_ID, { trierarchShipId: MAC, applied: { version: 1, publicKey: MAC_KEY } });
+
+    await deliveries.markRequested(FLEET_ID, MAC);
+
+    await expect(deliveries.list(FLEET_ID)).resolves.toEqual([{ trierarchShipId: MAC, attempt: ATTEMPT, applied: null, isRequested: true }]);
+  });
+
   it("forgets only the trierarchs named, and keeps each fleet's deliveries apart", async () => {
     const deliveries = createPrismaMcpDeliveries(aClient());
     await deliveries.recordAttempt(FLEET_ID, { trierarchShipId: MAC, attempt: ATTEMPT });
