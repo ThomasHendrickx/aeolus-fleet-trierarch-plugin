@@ -53,7 +53,9 @@ While it is off for the fleet, every procedure but `connection.status` answers F
 There is no page for it. Use a local HTTP client on your own trusted computer, signed in to the console:
 
 1. Keep the session cookie in a file only you can read (mode 600), and write the request body with an editor into another mode-600 file, or pass it on stdin. Only these file paths go on the command line, never the cookie or a value.
-2. Call `mcp.replace` (`POST <plugin>/trpc/mcp.replace`) with the cookie from its file, `content-type: application/json`, `Origin: <console origin>` and the body from its file, with shell tracing, verbose HTTP output and request logging off.
-3. Read `mcp.get` to check the version and names, then remove both files.
+2. Call `mcp.replace` (`POST <console>/api/trierarch-plugin/mcp.replace`) with the cookie from its file, `content-type: application/json`, `Origin: <console origin>` and the body from its file, with shell tracing, verbose HTTP output and request logging off.
+3. Read `mcp.get` (`GET <console>/api/trierarch-plugin/mcp.get`) with the cookie from its file, to check the version and names, then remove both files.
+
+The plugin has no public route: only the console's server calls it, so these calls go to the console, never to the plugin directly.
 
 The plugin's database holds the values readable to the service and its database administrators, its backups included: protect its access and backups as you protect the crew tokens it keeps.
