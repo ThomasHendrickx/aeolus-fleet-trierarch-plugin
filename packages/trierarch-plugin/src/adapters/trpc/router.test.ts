@@ -3,8 +3,11 @@ import { TRPCError } from '@trpc/server';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { FLEET_ID, SHIP_ID, fakePluginFleet, memoryConnectionStore } from '../../../test/support/connection-fakes.js';
+import { memoryMcpConfigurations } from '../../../test/support/memory-mcp-configurations.js';
 import { memoryEnabledModels } from '../../../test/support/memory-models.js';
 import { cannedUsageHistory } from '../../../test/support/memory-usage.js';
+import { createReadMcpConfiguration } from '../../core/mcp-configuration/read-mcp-configuration.js';
+import { createReplaceMcpConfiguration } from '../../core/mcp-configuration/replace-mcp-configuration.js';
 import { createListEnabledModels } from '../../core/models/list-enabled-models.js';
 import { createSetModelEnabled } from '../../core/models/set-model-enabled.js';
 import { createReadTokenUsage } from '../../core/usage/read-token-usage.js';
@@ -18,7 +21,9 @@ import { trierarchPluginRouter, type Context } from './router.js';
 // models is every signed-in session's, viewer included; enabling and disabling
 // take fleet:manage. Each needs the trierarch plugin to serve the fleet and be
 // connected to it. Reading usage (the usage design) is every signed-in
-// session's too.
+// session's too. A fleet's MCP configuration (the fleet crew MCP design,
+// section 4) is read and replaced with fleet:manage, a replacement only with
+// the console's Origin.
 
 const OPUS = 'claude-opus-5-5';
 const SONNET = 'claude-sonnet-5-5';
@@ -29,6 +34,9 @@ const VIEWER: readonly ScopeName[] = ['fleet:read'];
 const notReached = () => Promise.reject(new Error('not reached by the models procedures'));
 
 const NINE = new Date('2026-10-28T09:00:00.000Z');
+
+/** The console's origin, as the configuration holds it. */
+const CONSOLE_ORIGIN = 'https://console.example.com';
 
 /** One hour of Opus usage, as the history answers it. */
 const OPUS_HOUR: TokenUsage = {
@@ -62,11 +70,13 @@ const MAC_WINDOWS = {
 };
 
 let models: ReturnType<typeof memoryEnabledModels>;
+let mcpConfigurations: ReturnType<typeof memoryMcpConfigurations>;
 let windowsFleet: ReturnType<typeof fakePluginFleet>;
 let windowsConnections: ReturnType<typeof memoryConnectionStore>;
 
 beforeEach(async () => {
   models = memoryEnabledModels();
+  mcpConfigurations = memoryMcpConfigurations();
   windowsFleet = fakePluginFleet();
   windowsConnections = memoryConnectionStore();
   windowsFleet.state.liveTokens.add('aeolus_ct_v1_plugin');
@@ -75,10 +85,11 @@ beforeEach(async () => {
 });
 
 /** The router as the console's server calls it, for a session of the given scopes, on a fleet served and connected unless it says otherwise. */
-function caller(session: { kind?: 'operator' | 'viewer'; scopes: readonly ScopeName[]; isServed?: boolean; isConnected?: boolean }) {
+function caller(session: { kind?: 'operator' | 'viewer'; scopes: readonly ScopeName[]; isServed?: boolean; isConnected?: boolean; origin?: string }) {
   const context: Context = {
     cookie: 'aeolus_session=a-session',
-    origin: undefined,
+    origin: session.origin,
+    consoleOrigin: CONSOLE_ORIGIN,
     authenticateOperator: () => Promise.resolve(ok({ fleetId: FLEET_ID, kind: session.kind ?? 'operator', scopes: session.scopes })),
     isConnected: (fleetId: FleetId) => Promise.resolve(fleetId === FLEET_ID && (session.isConnected ?? true)),
     isServed: (fleetId: FleetId) => Promise.resolve(fleetId === FLEET_ID && (session.isServed ?? true)),
@@ -96,6 +107,8 @@ function caller(session: { kind?: 'operator' | 'viewer'; scopes: readonly ScopeN
     checkCrewSettings: notReached,
     listEnabledModels: createListEnabledModels({ models }),
     setModelEnabled: createSetModelEnabled({ models }),
+    readMcpConfiguration: createReadMcpConfiguration({ configurations: mcpConfigurations }),
+    replaceMcpConfiguration: createReplaceMcpConfiguration({ configurations: mcpConfigurations, clock: { now: () => NINE } }),
     readTokenUsage: createReadTokenUsage({ usage: cannedUsageHistory({ usage: OPUS_HOUR }), door: fakePluginFleet().door, connections: memoryConnectionStore() }),
     readUsageValues: createReadUsageValues({ usage: cannedUsageHistory({ values: MODELS }), door: fakePluginFleet().door, connections: memoryConnectionStore() }),
     readSubscriptionWindows: createReadSubscriptionWindows({ usage: cannedUsageHistory({ windows: [MAC_WINDOWS] }), door: windowsFleet.door, connections: windowsConnections }),
@@ -243,5 +256,75 @@ describe("the subscription windows of the fleet's machines over the API (the usa
     const windows = caller({ scopes: OPERATOR }).usage.windows({ ...range, filters: {}, cursor: 'not-a-cursor' });
 
     await expect(refusalOf(windows)).resolves.toBe('BAD_REQUEST');
+  });
+});
+
+describe("a fleet's MCP configuration over the API (the fleet crew MCP design, section 4)", () => {
+  const GRAPH = { name: 'company-graph', url: 'https://graph.example.invalid/mcp', tools: ['read_neo4j_cypher'], credential: { secret: 'graph-token', header: 'Authorization' } };
+  /** A value no real credential looks like, searched for in every answer. */
+  const VALUE = 'Bearer test-value-api-entry-3e8f';
+  const WITH_GRAPH = { expectedVersion: 0, servers: [GRAPH], secrets: ['graph-token'], secretValues: { 'graph-token': VALUE } };
+  const manager = () => caller({ scopes: OPERATOR, origin: CONSOLE_ORIGIN });
+
+  it('answers version 0 with no servers and no secrets before the first replacement', async () => {
+    await expect(manager().mcp.get()).resolves.toEqual({ version: 0, servers: [], secrets: [] });
+  });
+
+  it('replaces the set with the console Origin and answers the version; a read answers secret names only', async () => {
+    await expect(manager().mcp.replace(WITH_GRAPH)).resolves.toEqual({ version: 1 });
+
+    const read = await manager().mcp.get();
+    expect(read).toEqual({ version: 1, servers: [GRAPH], secrets: ['graph-token'] });
+    expect(JSON.stringify(read)).not.toContain('test-value');
+  });
+
+  it('refuses a viewer holding only fleet:read both the read and the replacement', async () => {
+    const viewer = caller({ kind: 'viewer', scopes: VIEWER, origin: CONSOLE_ORIGIN });
+
+    await expect(refusalOf(viewer.mcp.get())).resolves.toBe('FORBIDDEN');
+    await expect(refusalOf(viewer.mcp.replace(WITH_GRAPH))).resolves.toBe('FORBIDDEN');
+    expect(mcpConfigurations.events).toEqual([]);
+  });
+
+  it.each([
+    { label: 'no Origin', origin: undefined },
+    { label: 'another Origin', origin: 'https://elsewhere.example.com' },
+    { label: 'the Origin with a path', origin: `${CONSOLE_ORIGIN}/` },
+  ])('refuses a replacement with $label before any write', async ({ origin }) => {
+    await expect(refusalOf(caller({ scopes: OPERATOR, origin }).mcp.replace(WITH_GRAPH))).resolves.toBe('FORBIDDEN');
+
+    expect(mcpConfigurations.events).toEqual([]);
+    await expect(manager().mcp.get()).resolves.toMatchObject({ version: 0 });
+  });
+
+  it('refuses both while the trierarch plugin is off for the fleet', async () => {
+    const off = caller({ scopes: OPERATOR, origin: CONSOLE_ORIGIN, isServed: false });
+
+    await expect(refusalOf(off.mcp.get())).resolves.toBe('FORBIDDEN');
+    await expect(refusalOf(off.mcp.replace(WITH_GRAPH))).resolves.toBe('FORBIDDEN');
+  });
+
+  it('refuses a stale expected version as CONFLICT', async () => {
+    await manager().mcp.replace(WITH_GRAPH);
+
+    await expect(refusalOf(manager().mcp.replace(WITH_GRAPH))).resolves.toBe('CONFLICT');
+  });
+
+  it('refuses an invalid replacement as BAD_REQUEST, its message holding no value', async () => {
+    const refused: unknown = await manager()
+      .mcp.replace({ ...WITH_GRAPH, servers: [{ ...GRAPH, url: 'https://me:secret@graph.example.invalid/mcp' }] })
+      .catch((error: unknown) => error);
+
+    expect(refused instanceof TRPCError && { code: refused.code, message: refused.message }).toEqual({ code: 'BAD_REQUEST', message: expect.stringMatching(/^company-graph: an MCP server is an http/) });
+    expect(JSON.stringify(refused)).not.toContain('test-value');
+  });
+
+  it('answers an internal error with no value when the store fails', async () => {
+    mcpConfigurations.isFailing = true;
+
+    const refused: unknown = await manager().mcp.replace(WITH_GRAPH).catch((error: unknown) => error);
+
+    expect(refused instanceof TRPCError && refused.code).toBe('INTERNAL_SERVER_ERROR');
+    expect(refused instanceof TRPCError && refused.cause).toBeUndefined();
   });
 });

@@ -12,6 +12,7 @@ describe('loadConfig', () => {
     expect(loadConfig(environment)).toEqual({
       databaseUrl: environment.DATABASE_URL,
       fleetUrl: 'https://fleet.example.com',
+      consoleOrigin: 'https://fleet.example.com',
       host: '127.0.0.1',
       port: 4200,
       logLevel: 'info',
@@ -22,6 +23,15 @@ describe('loadConfig', () => {
       mcpServers: { servers: [] },
       secrets: { secrets: [] },
     });
+  });
+
+  it("takes the console's origin as CONSOLE_ORIGIN, and the origin of FLEET_URL without it", () => {
+    expect(loadConfig({ ...environment, FLEET_URL: 'https://fleet.example.com/aeolus/' }).consoleOrigin).toBe('https://fleet.example.com');
+    expect(loadConfig({ ...environment, CONSOLE_ORIGIN: 'https://console.example.com' }).consoleOrigin).toBe('https://console.example.com');
+  });
+
+  it.each(['console.example.com', 'https://console.example.com/path', 'ftp://console.example.com'])('refuses a CONSOLE_ORIGIN of %s, which is no origin', (origin) => {
+    expect(() => loadConfig({ ...environment, CONSOLE_ORIGIN: origin })).toThrow(/^CONSOLE_ORIGIN: /);
   });
 
   it('reads the trusted repositories as JSON of names to git URLs', () => {
