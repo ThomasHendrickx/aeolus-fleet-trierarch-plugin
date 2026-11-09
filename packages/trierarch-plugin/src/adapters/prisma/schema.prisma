@@ -187,3 +187,26 @@ model McpConfigurationEvent {
   @@unique([fleetId, version])
   @@map("mcp_configuration_events")
 }
+
+/// The delivery of a fleet's MCP configuration to one of its trierarch ships
+/// (the fleet crew MCP design, section 5): the attempt last made, kept under its
+/// idempotency key before it is sent, with the very message, as the fleet takes
+/// a key only for one message; the version and key the trierarch confirmed it
+/// applied; and whether it asked for the set since. Its secrets are only sealed
+/// to the trierarch's key. Forgotten when the trierarch is seen not crewed.
+model McpDelivery {
+  fleetId               String    @map("fleet_id")
+  trierarchShipId       String    @map("trierarch_ship_id")
+  attemptVersion        Int?      @map("attempt_version")
+  attemptPublicKey      String?   @map("attempt_public_key")
+  attemptIdempotencyKey String?   @map("attempt_idempotency_key")
+  attemptPayload        String?   @map("attempt_payload")
+  /// Null while the fleet is not known to have taken the attempt.
+  attemptSentAt         DateTime? @map("attempt_sent_at") @db.Timestamptz(3)
+  appliedVersion        Int?      @map("applied_version")
+  appliedPublicKey      String?   @map("applied_public_key")
+  isRequested           Boolean   @default(false) @map("is_requested")
+
+  @@id([fleetId, trierarchShipId])
+  @@map("mcp_deliveries")
+}
