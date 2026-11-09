@@ -11,7 +11,7 @@ export function memoryMcpDeliveries(): McpDeliveries & { held: Map<FleetId, Map<
     held.set(fleetId, fleet);
     return fleet;
   };
-  const change = (fleetId: FleetId, trierarchShipId: ShipId, changed: (delivery: McpDelivery) => McpDelivery) => {
+  const change = ({ fleetId, trierarchShipId }: { fleetId: FleetId; trierarchShipId: ShipId }, changed: (delivery: McpDelivery) => McpDelivery) => {
     const fleet = of(fleetId);
     fleet.set(trierarchShipId, changed(fleet.get(trierarchShipId) ?? { trierarchShipId, attempt: null, applied: null, isRequested: false }));
     return Promise.resolve();
@@ -19,11 +19,11 @@ export function memoryMcpDeliveries(): McpDeliveries & { held: Map<FleetId, Map<
   return {
     held,
     list: (fleetId) => Promise.resolve([...of(fleetId).values()]),
-    recordAttempt: (fleetId, trierarchShipId, attempt: McpAttempt) => change(fleetId, trierarchShipId, (delivery) => ({ ...delivery, attempt, isRequested: false })),
-    markSent: (fleetId, trierarchShipId, sent) =>
-      change(fleetId, trierarchShipId, (delivery) => (delivery.attempt?.idempotencyKey === sent.idempotencyKey ? { ...delivery, attempt: { ...delivery.attempt, sentAt: sent.at } } : delivery)),
-    recordApplied: (fleetId, trierarchShipId, applied) => change(fleetId, trierarchShipId, (delivery) => ({ ...delivery, applied })),
-    markRequested: (fleetId, trierarchShipId) => change(fleetId, trierarchShipId, (delivery) => ({ ...delivery, isRequested: true })),
+    recordAttempt: (fleetId, { trierarchShipId, attempt }: { trierarchShipId: ShipId; attempt: McpAttempt }) => change({ fleetId, trierarchShipId }, (delivery) => ({ ...delivery, attempt, isRequested: false })),
+    markSent: (fleetId, sent) =>
+      change({ fleetId, trierarchShipId: sent.trierarchShipId }, (delivery) => (delivery.attempt?.idempotencyKey === sent.idempotencyKey ? { ...delivery, attempt: { ...delivery.attempt, sentAt: sent.at } } : delivery)),
+    recordApplied: (fleetId, { trierarchShipId, applied }) => change({ fleetId, trierarchShipId }, (delivery) => ({ ...delivery, applied })),
+    markRequested: (fleetId, trierarchShipId) => change({ fleetId, trierarchShipId }, (delivery) => ({ ...delivery, isRequested: true })),
     forget: (fleetId, trierarchShipIds) => {
       for (const shipId of trierarchShipIds) {
         of(fleetId).delete(shipId);

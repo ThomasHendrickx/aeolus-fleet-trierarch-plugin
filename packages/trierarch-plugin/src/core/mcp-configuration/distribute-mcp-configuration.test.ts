@@ -108,7 +108,7 @@ describe("distributing a fleet's MCP configuration to its trierarchs", () => {
   it('sends a trierarch nothing more once it confirmed the current version for its key', async () => {
     aShip(MAC);
     await distribute();
-    await deliveries.recordApplied(FLEET_ID, MAC, { version: 0, publicKey: MAC_KEY });
+    await deliveries.recordApplied(FLEET_ID, { trierarchShipId: MAC, applied: { version: 0, publicKey: MAC_KEY } });
     now = new Date(START.getTime() + FIVE_MINUTES_MS * 10);
     aShip(MAC, { lastSeenAt: now });
 
@@ -163,7 +163,7 @@ describe("distributing a fleet's MCP configuration to its trierarchs", () => {
   it('sends a confirmed trierarch the new version once a replacement commits', async () => {
     aShip(MAC);
     await distribute();
-    await deliveries.recordApplied(FLEET_ID, MAC, { version: 0, publicKey: MAC_KEY });
+    await deliveries.recordApplied(FLEET_ID, { trierarchShipId: MAC, applied: { version: 0, publicKey: MAC_KEY } });
 
     await saveGraph();
     await distribute();
@@ -175,7 +175,7 @@ describe("distributing a fleet's MCP configuration to its trierarchs", () => {
     await saveGraph();
     aShip(MAC);
     await distribute();
-    await deliveries.recordApplied(FLEET_ID, MAC, { version: 1, publicKey: MAC_KEY });
+    await deliveries.recordApplied(FLEET_ID, { trierarchShipId: MAC, applied: { version: 1, publicKey: MAC_KEY } });
 
     aShip(MAC, { publicKey: NEW_MAC_KEY });
     await distribute();
@@ -189,7 +189,7 @@ describe("distributing a fleet's MCP configuration to its trierarchs", () => {
   it('answers a trierarch that asked with a new copy under a new key, even right after a confirmed one', async () => {
     aShip(MAC);
     await distribute();
-    await deliveries.recordApplied(FLEET_ID, MAC, { version: 0, publicKey: MAC_KEY });
+    await deliveries.recordApplied(FLEET_ID, { trierarchShipId: MAC, applied: { version: 0, publicKey: MAC_KEY } });
 
     await deliveries.markRequested(FLEET_ID, MAC);
     await distribute();
@@ -201,7 +201,7 @@ describe("distributing a fleet's MCP configuration to its trierarchs", () => {
   it('forgets the delivery of a trierarch seen not crewed, so its next lease is sent the set again and must confirm again', async () => {
     aShip(MAC);
     await distribute();
-    await deliveries.recordApplied(FLEET_ID, MAC, { version: 0, publicKey: MAC_KEY });
+    await deliveries.recordApplied(FLEET_ID, { trierarchShipId: MAC, applied: { version: 0, publicKey: MAC_KEY } });
 
     aShip(MAC, { status: 'awaitingCrew' });
     await distribute();
