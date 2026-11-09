@@ -145,3 +145,68 @@ model SubscriptionReading {
   @@id([fleetId, machineShipId, harness, windowMinutes, readAt])
   @@map("subscription_readings")
 }
+
+/// Each fleet's one current MCP configuration (the fleet crew MCP design,
+/// section 4): its version, which guards every replacement, and its servers as
+/// the model saved them. No row before the fleet's first replacement: version 0
+/// with nothing. Its secrets are in mcp_secrets, so this row holds no value.
+model McpConfiguration {
+  fleetId    String   @id @map("fleet_id")
+  version    Int
+  servers    Json
+  replacedAt DateTime @map("replaced_at") @db.Timestamptz(3)
+
+  @@map("mcp_configurations")
+}
+
+/// The secrets of each fleet's MCP configuration, with their values: the
+/// plugin's credential store, readable to the service and its database
+/// administrators. Replaced with the set, in the same transaction.
+model McpSecret {
+  fleetId String @map("fleet_id")
+  name    String
+  value   String
+
+  @@id([fleetId, name])
+  @@map("mcp_secrets")
+}
+
+/// One row per replacement of a fleet's MCP configuration, written in the same
+/// transaction: the version it saved, the console session's kind and account,
+/// and the server and secret names it changed. Never a value.
+model McpConfigurationEvent {
+  id             BigInt   @id @default(autoincrement())
+  fleetId        String   @map("fleet_id")
+  version        Int
+  actorKind      String   @map("actor_kind")
+  actorAccountId String?  @map("actor_account_id")
+  changedServers String[] @map("changed_servers")
+  changedSecrets String[] @map("changed_secrets")
+  at             DateTime @db.Timestamptz(3)
+
+  @@unique([fleetId, version])
+  @@map("mcp_configuration_events")
+}
+
+/// The delivery of a fleet's MCP configuration to one of its trierarch ships
+/// (the fleet crew MCP design, section 5): the attempt last made, kept under its
+/// idempotency key before it is sent, with the very message, as the fleet takes
+/// a key only for one message; the version and key the trierarch confirmed it
+/// applied; and whether it asked for the set since. Its secrets are only sealed
+/// to the trierarch's key. Forgotten when the trierarch is seen not crewed.
+model McpDelivery {
+  fleetId               String    @map("fleet_id")
+  trierarchShipId       String    @map("trierarch_ship_id")
+  attemptVersion        Int?      @map("attempt_version")
+  attemptPublicKey      String?   @map("attempt_public_key")
+  attemptIdempotencyKey String?   @map("attempt_idempotency_key")
+  attemptPayload        String?   @map("attempt_payload")
+  /// Null while the fleet is not known to have taken the attempt.
+  attemptSentAt         DateTime? @map("attempt_sent_at") @db.Timestamptz(3)
+  appliedVersion        Int?      @map("applied_version")
+  appliedPublicKey      String?   @map("applied_public_key")
+  isRequested           Boolean   @default(false) @map("is_requested")
+
+  @@id([fleetId, trierarchShipId])
+  @@map("mcp_deliveries")
+}

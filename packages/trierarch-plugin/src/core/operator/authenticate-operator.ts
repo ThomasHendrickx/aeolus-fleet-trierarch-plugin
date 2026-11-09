@@ -15,6 +15,7 @@ export type AuthenticateOperator = (
     {
       fleetId: FleetId;
       kind: ConsoleSessionOutput["kind"];
+      accountId?: string;
       scopes: readonly ScopeName[];
     },
     DomainError<"NOT_THE_OPERATOR">
@@ -29,7 +30,8 @@ export type AuthenticateOperator = (
  * operator there is let through as the operator of their own fleet. A
  * viewer session is let through too, with the viewer ship's scopes, which
  * the fleet answers; what each scope may call is the API's to check
- * (decision 0022).
+ * (decision 0022). An account's session carries its account, which a
+ * change records as its actor.
  */
 export function createAuthenticateOperator(deps: {
   sessions: ConsoleSessions;
@@ -46,10 +48,12 @@ export function createAuthenticateOperator(deps: {
     if (!session.isOk) {
       return refusal;
     }
+    const { fleetId, kind, accountId, scopes } = session.value;
     return ok({
-      fleetId: session.value.fleetId,
-      kind: session.value.kind,
-      scopes: session.value.scopes,
+      fleetId,
+      kind,
+      ...(accountId !== undefined && { accountId }),
+      scopes,
     });
   };
 }

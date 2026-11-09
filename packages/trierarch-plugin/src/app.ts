@@ -16,6 +16,8 @@ import { createPrismaUsageHistory } from './adapters/prisma/usage-history.js';
 import { createPrismaFleetForgetter } from './adapters/prisma/fleet-forgetter.js';
 import { createPrismaFleetSwitches } from './adapters/prisma/fleet-switches.js';
 import { createPrismaInstallationRequests } from './adapters/prisma/installation-requests.js';
+import { createPrismaMcpConfigurations } from './adapters/prisma/mcp-configurations.js';
+import { createPrismaMcpDeliveries } from './adapters/prisma/mcp-deliveries.js';
 import { trierarchPluginRouter, type TrierarchPluginRouter } from './adapters/trpc/router.js';
 import { createAnswerPings } from './core/connection/answer-pings.js';
 import { createConnect } from './core/connection/connect.js';
@@ -34,12 +36,10 @@ import { createJoinMachine } from './core/machines/join-machine.js';
 import { createNewSetupLine } from './core/machines/new-setup-line.js';
 import { createDeclareNetworkRules, type Declarations } from './core/network/declare-network-rules.js';
 import { createDeclareScopes } from './core/scopes/declare-scopes.js';
-import { createResendMcpServers } from './core/mcp-servers/resend-mcp-servers.js';
-import { createResendSecrets } from './core/mcp-servers/resend-secrets.js';
-import type { Secrets } from './core/mcp-servers/secrets.js';
-import { createShareSecrets } from './core/mcp-servers/share-secrets.js';
-import { createShareMcpServers } from './core/mcp-servers/share-mcp-servers.js';
-import type { McpServers } from './core/mcp-servers/mcp-servers.js';
+import { createReadMcpConfiguration } from './core/mcp-configuration/read-mcp-configuration.js';
+import { createReplaceMcpConfiguration } from './core/mcp-configuration/replace-mcp-configuration.js';
+import { createDistributeMcpConfiguration } from './core/mcp-configuration/distribute-mcp-configuration.js';
+import { createTakeMcpConfigurationMessage } from './core/mcp-configuration/take-mcp-configuration-message.js';
 import { createResendTrustedRepositories } from './core/repositories/resend-trusted-repositories.js';
 import { createShareTrustedRepositories } from './core/repositories/share-trusted-repositories.js';
 import type { TrustedRepositories } from './core/repositories/trusted-repositories.js';
@@ -94,6 +94,8 @@ export interface TrierarchPluginApp {
 export function createTrierarchPluginApp(options: {
   databaseUrl: string;
   fleetUrl: string;
+  /** The console's origin, the only Origin a change of a fleet's MCP configuration comes from; the origin of fleetUrl unless given. */
+  consoleOrigin?: string;
   clock?: Clock;
   logger?: FastifyServerOptions['logger'];
   /** The installation token (decision 0021): unset, the installation is open and every fleet is served. */
@@ -102,10 +104,6 @@ export function createTrierarchPluginApp(options: {
   silentAfterMs?: number;
   /** The repositories every trierarch may clone on demand (aeolus-fleet#384); none unless given. */
   trustedRepositories?: TrustedRepositories;
-  /** The crew-time MCP servers every trierarch offers sessions (aeolus-fleet-trierarch#120); none unless given. */
-  mcpServers?: McpServers;
-  /** The secret store the MCP servers' credentials come from (decision M5), sent to each trierarch only sealed; none unless given. */
-  secrets?: Secrets;
 }): TrierarchPluginApp {
   const prisma = createPrismaClient(options.databaseUrl);
   const server = Fastify({ logger: options.logger ?? true });
@@ -152,7 +150,9 @@ export function createTrierarchPluginApp(options: {
   const silentAfterMs = options.silentAfterMs ?? DEFAULT_SILENT_AFTER_MS;
   const listMachines = createListMachines({ door, connections, clock, silentAfterMs });
   const models = createPrismaEnabledModels(prisma);
-  const assignCrews = createAssignCrews({ door, connections, models, clock, silentAfterMs });
+  const mcpConfigurations = createPrismaMcpConfigurations(prisma);
+  const mcpDeliveries = createPrismaMcpDeliveries(prisma);
+  const assignCrews = createAssignCrews({ door, connections, models, configurations: mcpConfigurations, deliveries: mcpDeliveries, clock, silentAfterMs });
   const labelMachines = createLabelMachines({ door, connections });
   /** The fleets whose machine labels were last skipped, so the reason is logged once, not every pass. */
   const skippedLabels = new Set<FleetId>();
@@ -250,54 +250,36 @@ export function createTrierarchPluginApp(options: {
     shared,
   });
   const resendTrustedRepositories = createResendTrustedRepositories({ shared });
-  const sharedMcpServers = new Set<ShipId>();
-  const shareMcpServers = createShareMcpServers({
+  const distributeMcpConfiguration = createDistributeMcpConfiguration({
     door,
     connections,
-    keys: randomIdempotencyKeys,
-    mcpServers: options.mcpServers ?? { servers: [] },
-    shared: sharedMcpServers,
-  });
-  const resendMcpServers = createResendMcpServers({ shared: sharedMcpServers });
-  /** Sends each trierarch the crew-time MCP servers once; a refusal is logged and the pass goes on. */
-  const shareMcpServersOnce = async (fleetId: FleetId): Promise<void> => {
-    const shared = await shareMcpServers(fleetId);
-    if (!shared.isOk) {
-      server.log.warn({ fleet: fleetId, refusal: shared.error }, 'sharing the MCP servers refused; the next pass tries again');
-    } else if (shared.value.shared > 0) {
-      server.log.info({ fleet: fleetId, ...shared.value }, 'MCP servers sent');
-    }
-  };
-  // The key this process last sealed the store to, per trierarch; a restart seals it to every trierarch again, and so does a trierarch asking.
-  const sealedSecrets = new Map<ShipId, string>();
-  const shareSecrets = createShareSecrets({
-    door,
-    connections,
-    keys: randomIdempotencyKeys,
-    secrets: options.secrets ?? { secrets: [] },
+    configurations: mcpConfigurations,
+    deliveries: mcpDeliveries,
     sealer: sealedBoxSealer,
-    sealed: sealedSecrets,
+    keys: randomIdempotencyKeys,
+    clock,
+    silentAfterMs,
   });
-  const resendSecrets = createResendSecrets({ sealed: sealedSecrets });
   /** The key last warned about per trierarch, so a key the sealer refuses is logged once, not every pass. */
   const warnedUnsealable = new Map<ShipId, string>();
-  /** Seals the secret store to each trierarch that states a key, once per key; a refusal is logged, never a value, and the pass goes on. */
-  const shareSecretsOnce = async (fleetId: FleetId): Promise<void> => {
-    const shared = await shareSecrets(fleetId);
-    if (!shared.isOk) {
-      server.log.warn({ fleet: fleetId, refusal: shared.error }, 'sharing the secrets refused; the next pass tries again');
-    } else {
-      if (shared.value.shared > 0) {
-        server.log.info({ fleet: fleetId, shared: shared.value.shared }, 'secrets sent sealed');
-      }
-      for (const { shipId, publicKey } of shared.value.unsealable) {
-        if (warnedUnsealable.get(shipId) !== publicKey) {
-          warnedUnsealable.set(shipId, publicKey);
-          server.log.warn({ fleet: fleetId, shipId, publicKey }, "a trierarch's sealing key refuses a sealed box: it gets no secrets until it states another key");
-        }
+  /** Reconciles the fleet's MCP configuration with each trierarch (the fleet crew MCP design, section 5); a refusal is logged, never a value, and the pass goes on. */
+  const distributeOnce = async (fleetId: FleetId): Promise<void> => {
+    const distributed = await distributeMcpConfiguration(fleetId);
+    if (!distributed.isOk) {
+      server.log.warn({ fleet: fleetId, refusal: distributed.error }, 'distributing the MCP configuration refused; the next pass tries again');
+      return;
+    }
+    if (distributed.value.sent > 0) {
+      server.log.info({ fleet: fleetId, sent: distributed.value.sent }, 'MCP configuration sent sealed');
+    }
+    for (const { shipId, publicKey } of distributed.value.unsealable) {
+      if (warnedUnsealable.get(shipId) !== publicKey) {
+        warnedUnsealable.set(shipId, publicKey);
+        server.log.warn({ fleet: fleetId, shipId, publicKey }, "a trierarch's sealing key refuses a sealed box: it gets no MCP configuration until it states another key");
       }
     }
   };
+  const takeMcpConfigurationMessage = createTakeMcpConfigurationMessage({ configurations: mcpConfigurations, deliveries: mcpDeliveries });
   /** Sends each trierarch the trusted repositories once (aeolus-fleet#384); a refusal is logged and the pass goes on. */
   const shareOnce = async (fleetId: FleetId): Promise<void> => {
     const shared = await shareTrustedRepositories(fleetId);
@@ -307,9 +289,11 @@ export function createTrierarchPluginApp(options: {
       server.log.info({ fleet: fleetId, ...shared.value }, 'trusted repositories sent');
     }
   };
-  const checkCrewSettings = createCheckCrewSettings({ door, connections, models, clock, silentAfterMs });
+  const checkCrewSettings = createCheckCrewSettings({ door, connections, models, configurations: mcpConfigurations, deliveries: mcpDeliveries, clock, silentAfterMs });
   const listEnabledModels = createListEnabledModels({ models });
   const setModelEnabled = createSetModelEnabled({ models });
+  const readMcpConfiguration = createReadMcpConfiguration({ configurations: mcpConfigurations });
+  const replaceMcpConfiguration = createReplaceMcpConfiguration({ configurations: mcpConfigurations, clock });
   const usage = createPrismaUsageHistory(prisma);
   const readTokenUsage = createReadTokenUsage({ usage, door, connections });
   const readUsageValues = createReadUsageValues({ usage, door, connections });
@@ -325,8 +309,7 @@ export function createTrierarchPluginApp(options: {
       await declareOnce(crew.fleetId);
       await declareScopesOnce(crew.fleetId);
       await shareOnce(crew.fleetId);
-      await shareMcpServersOnce(crew.fleetId);
-      await shareSecretsOnce(crew.fleetId);
+      await distributeOnce(crew.fleetId);
       const assigned = await assignCrews(crew.fleetId);
       await tellReasonsOnce(crew.fleetId);
       await tellOnce(crew.fleetId);
@@ -344,12 +327,25 @@ export function createTrierarchPluginApp(options: {
   const answerPings = createAnswerPings({
     connections,
     inbox: door.inbox,
-    // A store that fails leaves an ask unacked, handed again; said here, as the round only counts it.
-    answerAsk: (crew, delivery) =>
-      answerEnabledModelsAsk(crew, delivery).catch((error: unknown) => {
+    // A store that fails leaves an ask or a trierarch's MCP configuration message unacked, handed again; said here, as the round only counts it.
+    answerAsk: async (crew, delivery) => {
+      const taken = await takeMcpConfigurationMessage(crew, delivery).catch((error: unknown) => {
+        server.log.error({ err: error, fleet: crew.fleetId, senderShipId: delivery.senderShipId }, "a trierarch's MCP configuration message could not be kept; the fleet hands it again");
+        throw error;
+      });
+      if (taken.kind === 'ignored') {
+        server.log.warn({ fleet: crew.fleetId, senderShipId: delivery.senderShipId, contentType: delivery.contentType, reason: taken.reason }, "a trierarch's MCP configuration message was ignored");
+      } else if (taken.kind !== 'notMcpConfiguration') {
+        server.log.info({ fleet: crew.fleetId, senderShipId: delivery.senderShipId, taken: taken.kind }, taken.kind === 'applied' ? 'a trierarch applied the MCP configuration' : 'a trierarch asked for the MCP configuration: the next pass sends it');
+      }
+      if (taken.kind !== 'notMcpConfiguration') {
+        return { kind: 'answered' };
+      }
+      return answerEnabledModelsAsk(crew, delivery).catch((error: unknown) => {
         server.log.error({ err: error, fleet: crew.fleetId, senderShipId: delivery.senderShipId }, 'an enabled models ask could not be answered; the fleet hands it again');
         throw error;
-      }),
+      });
+    },
     // A store that fails leaves the delivery unacked, handed again; said here, as the round only counts it.
     keepUsage: (fleetId, delivery) =>
       keepUsage(fleetId, delivery).catch((error: unknown) => {
@@ -367,10 +363,6 @@ export function createTrierarchPluginApp(options: {
       const { contentType, senderShipId } = delivery;
       if (resendTrustedRepositories(delivery)) {
         server.log.info({ senderShipId }, 'a trierarch asked for the trusted repositories: the next pass sends them');
-      } else if (resendMcpServers(delivery)) {
-        server.log.info({ senderShipId }, 'a trierarch asked for the MCP servers: the next pass sends them');
-      } else if (resendSecrets(delivery)) {
-        server.log.info({ senderShipId }, 'a trierarch asked for the secrets: the next pass seals them to it');
       } else {
         server.log.info({ contentType, senderShipId }, "the trierarch plugin's ship acked a message it does not handle");
       }
@@ -431,6 +423,7 @@ export function createTrierarchPluginApp(options: {
       createContext: ({ req }) => ({
         cookie: req.headers.cookie,
         origin: req.headers.origin,
+        consoleOrigin: options.consoleOrigin ?? new URL(options.fleetUrl).origin,
         authenticateOperator: createAuthenticateOperator({ sessions: createFleetConsoleSessions(options.fleetUrl) }),
         isConnected: async (fleetId: FleetId) => (await connections.find(fleetId)) !== undefined,
         isServed,
@@ -448,6 +441,8 @@ export function createTrierarchPluginApp(options: {
         checkCrewSettings,
         listEnabledModels,
         setModelEnabled,
+        readMcpConfiguration,
+        replaceMcpConfiguration,
         readTokenUsage,
         readUsageValues,
         readSubscriptionWindows,

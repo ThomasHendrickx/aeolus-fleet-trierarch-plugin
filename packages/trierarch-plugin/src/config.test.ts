@@ -12,6 +12,7 @@ describe('loadConfig', () => {
     expect(loadConfig(environment)).toEqual({
       databaseUrl: environment.DATABASE_URL,
       fleetUrl: 'https://fleet.example.com',
+      consoleOrigin: 'https://fleet.example.com',
       host: '127.0.0.1',
       port: 4200,
       logLevel: 'info',
@@ -19,9 +20,16 @@ describe('loadConfig', () => {
       silentAfterMs: 300_000,
       passIntervalMs: 10_000,
       trustedRepositories: { repositories: [] },
-      mcpServers: { servers: [] },
-      secrets: { secrets: [] },
     });
+  });
+
+  it("takes the console's origin as CONSOLE_ORIGIN, and the origin of FLEET_URL without it", () => {
+    expect(loadConfig({ ...environment, FLEET_URL: 'https://fleet.example.com/aeolus/' }).consoleOrigin).toBe('https://fleet.example.com');
+    expect(loadConfig({ ...environment, CONSOLE_ORIGIN: 'https://console.example.com' }).consoleOrigin).toBe('https://console.example.com');
+  });
+
+  it.each(['console.example.com', 'https://console.example.com/path', 'ftp://console.example.com'])('refuses a CONSOLE_ORIGIN of %s, which is no origin', (origin) => {
+    expect(() => loadConfig({ ...environment, CONSOLE_ORIGIN: origin })).toThrow(/^CONSOLE_ORIGIN: /);
   });
 
   it('reads the trusted repositories as JSON of names to git URLs', () => {
@@ -30,34 +38,16 @@ describe('loadConfig', () => {
     });
   });
 
-  it('reads the MCP servers as JSON of names to a URL and the tools a session may call', () => {
-    expect(loadConfig({ ...environment, MCP_SERVERS: '{"company-graph":{"url":"https://graph.example.invalid/mcp","tools":["read_neo4j_cypher"]}}' }).mcpServers).toEqual({
-      servers: [{ name: 'company-graph', url: 'https://graph.example.invalid/mcp', tools: ['read_neo4j_cypher'] }],
-    });
-  });
-
-  it('reads the secret store as JSON of names to values, holding the secret a server names as its credential', () => {
-    const config = loadConfig({
+  it('reads no MCP servers, secrets or AIP from the environment: each fleet keeps its own set in the plugin, and the old variables are never a fallback', () => {
+    const configured = loadConfig({
       ...environment,
-      MCP_SERVERS: '{"graph":{"url":"https://graph.example.invalid/mcp","tools":["read"],"credential":{"secret":"graph-token","header":"Authorization"}}}',
-      MCP_SECRETS: '{"graph-token":"Bearer test-value"}',
+      MCP_SERVERS: '{"graph":{"url":"https://graph.example.invalid/mcp","tools":["read"]}}',
+      MCP_SECRETS: '{"graph-token":"Bearer test-value-leaked"}',
+      AIP: '{"server":"https://aip.example.invalid","tokenSecret":"aip-token"}',
     });
 
-    expect(config.secrets).toEqual({ secrets: [{ name: 'graph-token', value: 'Bearer test-value' }] });
-  });
-
-  it.each([
-    ['not JSON', 'graph-token=test-value-leaked'],
-    ['a value with a line feed', '{"graph":"test-value\\nleaked"}'],
-  ])('refuses a secret store that is %s without naming its value', (_label, secrets) => {
-    expect(() => loadConfig({ ...environment, MCP_SECRETS: secrets })).toThrow(/^MCP_SECRETS: /);
-    expect(() => loadConfig({ ...environment, MCP_SECRETS: secrets })).not.toThrow(/leaked/);
-  });
-
-  it('refuses an MCP server whose credential names a secret the store does not hold', () => {
-    expect(() => loadConfig({ ...environment, MCP_SERVERS: '{"graph":{"url":"https://graph.example.invalid/mcp","tools":["read"],"credential":{"secret":"graph-token","header":"Authorization"}}}' })).toThrow(
-      'MCP_SECRETS: graph: its credential names the secret graph-token, which the store does not hold',
-    );
+    expect(configured).toEqual(loadConfig(environment));
+    expect(JSON.stringify(configured)).not.toContain('test-value-leaked');
   });
 
   it('reads the silent threshold and the pass interval in seconds', () => {
@@ -74,26 +64,6 @@ describe('loadConfig', () => {
     expect(JSON.stringify(configured)).not.toContain('aeolus_sk_v1_secret');
   });
 
-  it('reads the AIP as its server and the secret that holds its token', () => {
-    const config = loadConfig({ ...environment, AIP: '{"server":"https://aip.example.invalid","tokenSecret":"aip-token"}', MCP_SECRETS: '{"aip-token":"Bearer test-value"}' });
-
-    expect(config.mcpServers).toEqual({ servers: [], aip: { server: 'https://aip.example.invalid', tokenSecret: 'aip-token' } });
-  });
-
-  it('refuses an AIP whose token secret the store does not hold', () => {
-    expect(() => loadConfig({ ...environment, AIP: '{"server":"https://aip.example.invalid","tokenSecret":"aip-token"}' })).toThrow(
-      'MCP_SECRETS: the AIP: its token secret is not in the store',
-    );
-  });
-
-  it.each([
-    ['an AIP that is not JSON', 'https://aip.example.invalid'],
-    ['an AIP with no token secret', '{"server":"https://aip.example.invalid"}'],
-    ['an AIP server that is not http', '{"server":"ftp://aip.example.invalid","tokenSecret":"aip-token"}'],
-  ])('refuses %s with the reason', (_label, aip) => {
-    expect(() => loadConfig({ ...environment, AIP: aip, MCP_SECRETS: '{"aip-token":"x"}' })).toThrow(/^AIP: /);
-  });
-
   it.each([
     ['no database', { ...environment, DATABASE_URL: undefined }],
     ['a fleet URL that is not http', { ...environment, FLEET_URL: 'ftp://fleet.example.com' }],
@@ -102,9 +72,6 @@ describe('loadConfig', () => {
     ['trusted repositories that are not JSON', { ...environment, TRUSTED_REPOSITORIES: 'hemma=git@github.com:a/b.git' }],
     ['a trusted repository whose ssh user does not decode', { ...environment, TRUSTED_REPOSITORIES: '{"hemma":"ssh://%zz@github.com/a/b.git"}' }],
     ['a trusted repository whose URL holds a credential', { ...environment, TRUSTED_REPOSITORIES: '{"hemma":"https://me:secret@github.com/a/b.git"}' }],
-    ['MCP servers that are not JSON', { ...environment, MCP_SERVERS: 'company-graph=https://graph.example.invalid/mcp' }],
-    ['an MCP server whose URL holds a credential', { ...environment, MCP_SERVERS: '{"graph":{"url":"https://me:secret@graph.example.invalid/mcp","tools":["read"]}}' }],
-    ['an MCP server with no tools', { ...environment, MCP_SERVERS: '{"graph":{"url":"https://graph.example.invalid/mcp","tools":[]}}' }],
   ])('refuses %s', (_label, invalid) => {
     expect(() => loadConfig(invalid)).toThrow(ConfigError);
   });

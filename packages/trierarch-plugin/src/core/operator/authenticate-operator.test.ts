@@ -16,6 +16,8 @@ const sessions: ConsoleSessions = {
         ? ok({ fleetId: FLEET, kind: 'operator', scopes: OPERATOR_SCOPES })
         : cookie === 'aeolus_session=theirs'
           ? ok({ fleetId: OTHER_FLEET, kind: 'operator', scopes: OPERATOR_SCOPES })
+          : cookie === 'aeolus_session=account'
+            ? ok({ fleetId: FLEET, kind: 'account', accountId: 'acc_test', scopes: OPERATOR_SCOPES })
           : cookie === 'aeolus_session=viewer'
             ? ok({ fleetId: FLEET, kind: 'viewer', scopes: ['fleet:read'] })
             : err({ code: 'UNAUTHORIZED', message: 'No signed-in console session' }),
@@ -36,6 +38,12 @@ describe('the operator', () => {
     const authenticate = createAuthenticateOperator({ sessions });
 
     await expect(authenticate('aeolus_session=viewer')).resolves.toEqual({ isOk: true, value: { fleetId: FLEET, kind: 'viewer', scopes: ['fleet:read'] } });
+  });
+
+  it("is an account's session too, with its account, which a change records as its actor", async () => {
+    const authenticate = createAuthenticateOperator({ sessions });
+
+    await expect(authenticate('aeolus_session=account')).resolves.toEqual({ isOk: true, value: { fleetId: FLEET, kind: 'account', accountId: 'acc_test', scopes: OPERATOR_SCOPES } });
   });
 
   it.each([

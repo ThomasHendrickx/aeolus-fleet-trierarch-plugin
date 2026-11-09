@@ -1,6 +1,7 @@
 import type { FleetId } from '@aeolus-fleet/common';
 
 import type { ConnectionStore, FleetDoor } from '../connection/ports.js';
+import type { McpConfigurations, McpDeliveries } from '../mcp-configuration/ports.js';
 import type { EnabledModels } from '../models/ports.js';
 import type { Clock } from '../shared/clock.js';
 import { refuse, type DomainError } from '../shared/errors.js';
@@ -16,13 +17,22 @@ export type CheckCrewSettings = (fleetId: FleetId, settings: unknown) => Promise
  * does, and check the settings by placement's rules. It writes nothing; the request itself goes
  * to the fleet, and assignment places it as always.
  */
-export function createCheckCrewSettings(deps: { door: FleetDoor; connections: ConnectionStore; models: EnabledModels; clock: Clock; silentAfterMs: number }): CheckCrewSettings {
+export function createCheckCrewSettings(deps: {
+  door: FleetDoor;
+  connections: ConnectionStore;
+  models: EnabledModels;
+  configurations: McpConfigurations;
+  deliveries: McpDeliveries;
+  clock: Clock;
+  silentAfterMs: number;
+}): CheckCrewSettings {
   return async (fleetId, settings) => {
     const crew = await deps.connections.find(fleetId);
     if (!crew) {
       return refuse('NOT_CONNECTED', 'The trierarch plugin is not connected to this fleet: connect it in the console');
     }
-    const read = await readPlacement(deps.door, { crewToken: crew.crewToken, now: deps.clock.now(), silentAfterMs: deps.silentAfterMs });
+    const [{ version }, deliveries] = await Promise.all([deps.configurations.read(fleetId), deps.deliveries.list(fleetId)]);
+    const read = await readPlacement(deps.door, { crewToken: crew.crewToken, now: deps.clock.now(), silentAfterMs: deps.silentAfterMs, mcp: { version, deliveries } });
     if (!read.isOk) {
       return refuse('FLEET_UNAVAILABLE', `The fleet did not answer the check: ${read.error.message}`);
     }

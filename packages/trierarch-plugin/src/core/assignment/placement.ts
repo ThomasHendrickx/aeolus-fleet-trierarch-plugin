@@ -21,6 +21,8 @@ export interface PlacementTrierarch {
   assigned: number;
   /** The label values its ship carries, every owner's: what a request's machine labels match (#102). */
   labelValueIds: readonly string[];
+  /** Whether it confirmed the fleet's current MCP configuration for the key it reports: until then it offers no MCP server (the fleet crew MCP design, section 5). */
+  isMcpConfigurationCurrent: boolean;
 }
 
 /**
@@ -94,9 +96,9 @@ function workspaceName(workspace: CrewSettings['workspace']): string {
  * names (M4), or undefined when one does: the first server none offers, else
  * the servers no single one offers together.
  */
-function mcpServersRefusal(offering: readonly { harness: TrierarchReportDetails['harnesses'][number] }[], request: { named: readonly string[]; harnessWords: string }): string | undefined {
+function mcpServersRefusal(offering: readonly { trierarch: PlacementTrierarch; harness: TrierarchReportDetails['harnesses'][number] }[], request: { named: readonly string[]; harnessWords: string }): string | undefined {
   const { named, harnessWords } = request;
-  const offered = offering.map(({ harness }) => harness.mcpServers ?? []);
+  const offered = offering.map(offeredServers);
   if (offered.some((servers) => named.every((name) => servers.includes(name)))) {
     return undefined;
   }
@@ -104,6 +106,11 @@ function mcpServersRefusal(offering: readonly { harness: TrierarchReportDetails[
   return missing === undefined
     ? `no trierarch offering ${harnessWords} offers MCP servers ${named.join(', ')} together`
     : `no trierarch offering ${harnessWords} offers MCP server ${missing}`;
+}
+
+/** The MCP servers a trierarch's harness offers: none until the trierarch confirmed the fleet's current MCP configuration. */
+function offeredServers({ trierarch, harness }: { trierarch: PlacementTrierarch; harness: TrierarchReportDetails['harnesses'][number] }): readonly string[] {
+  return trierarch.isMcpConfigurationCurrent ? (harness.mcpServers ?? []) : [];
 }
 
 /** A harness options schema that reports a default model (`properties.model.default`). */
@@ -198,7 +205,7 @@ function fit(settings: CrewSettings, { trierarchs, enabledModels, givenBack }: P
   if (serversRefusal !== undefined) {
     return { reason: serversRefusal.slice(0, CREW_REQUEST_REASON_MAX_LENGTH), field: 'mcpServers' };
   }
-  const withServers = offering.filter(({ harness }) => (settings.mcpServers ?? []).every((name) => (harness.mcpServers ?? []).includes(name)));
+  const withServers = offering.filter((offer) => (settings.mcpServers ?? []).every((name) => offeredServers(offer).includes(name)));
   const withWorkspace = withServers.filter(({ trierarch }) => offersWorkspace(trierarch.details, settings.workspace));
   if (withWorkspace.length === 0) {
     return { reason: `no trierarch offering ${harnessWords} has ${workspaceName(settings.workspace)}`, field: 'workspace' };

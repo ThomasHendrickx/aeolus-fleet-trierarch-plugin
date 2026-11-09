@@ -133,6 +133,8 @@ export interface PluginDelivery {
   senderShipId: ShipId;
   /** The sender's type as the fleet read it, never as the sender says. */
   senderType: string;
+  /** The sender's status as the fleet read it: a confirmation counts only from a crewed trierarch. */
+  senderStatus: ShipStatus;
   payload: string;
 }
 

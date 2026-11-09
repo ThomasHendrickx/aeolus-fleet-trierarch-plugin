@@ -31,7 +31,7 @@ function details(overrides: Partial<TrierarchReportDetails> = {}): TrierarchRepo
 }
 
 function aTrierarch(shipId: ShipId, overrides: Partial<PlacementTrierarch> = {}): PlacementTrierarch {
-  return { shipId, commissionedAt: EARLY, details: details(), assigned: 0, labelValueIds: [], ...overrides };
+  return { shipId, commissionedAt: EARLY, details: details(), assigned: 0, labelValueIds: [], isMcpConfigurationCurrent: true, ...overrides };
 }
 
 const MACOS = 'lbv_01m3tbfspe96yf1rnr4ank9h3a';
@@ -421,6 +421,31 @@ describe('placement and MCP servers (M4)', () => {
       field: 'mcpServers',
       reason: 'no trierarch offering claude-code offers MCP server company-graph',
     });
+  });
+
+  it("leaves out a trierarch that has not confirmed the fleet's current MCP configuration, with the reason as for a server none offers", () => {
+    const stale = withServers(['company-graph'], { shipId: MAC, isMcpConfigurationCurrent: false });
+
+    expect(place([aRequest(SCOUT, { settings: { mcpServers: ['company-graph'] } })], { trierarchs: [stale], enabledModels: [] })).toEqual([
+      { kind: 'explain', shipId: SCOUT, reason: 'no trierarch offering claude-code offers MCP server company-graph' },
+    ]);
+  });
+
+  it('places a request naming servers on the current trierarch, never on a stale one with more room', () => {
+    const stale = withServers(['company-graph'], { shipId: LINUX, isMcpConfigurationCurrent: false });
+    const current = withServers(['company-graph'], { shipId: MAC, assigned: 3 });
+
+    expect(place([aRequest(SCOUT, { settings: { mcpServers: ['company-graph'] } })], { trierarchs: [stale, current], enabledModels: [] })).toEqual([{ kind: 'assign', shipId: SCOUT, trierarchShipId: MAC }]);
+  });
+
+  it('places a request naming no server on a trierarch that has not confirmed any MCP configuration', () => {
+    expect(place([aRequest(SCOUT)], { trierarchs: [withServers(['company-graph'], { isMcpConfigurationCurrent: false })], enabledModels: [] })).toEqual([{ kind: 'assign', shipId: SCOUT, trierarchShipId: MAC }]);
+  });
+
+  it('refuses settings naming a server in the check while only a stale trierarch offers it', () => {
+    expect(
+      checkPlacement({ harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: {}, mcpServers: ['company-graph'] }, { trierarchs: [withServers(['company-graph'], { isMcpConfigurationCurrent: false })], enabledModels: [] }),
+    ).toEqual({ kind: 'refused', field: 'mcpServers', reason: 'no trierarch offering claude-code offers MCP server company-graph' });
   });
 
   it('assigns a request naming no server to a trierarch that offers none', () => {

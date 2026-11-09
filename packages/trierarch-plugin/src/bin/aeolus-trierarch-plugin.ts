@@ -21,11 +21,10 @@ async function start(): Promise<void> {
   const app = createTrierarchPluginApp({
     databaseUrl: config.databaseUrl,
     fleetUrl: config.fleetUrl,
+    consoleOrigin: config.consoleOrigin,
     logger: { level: config.logLevel },
     silentAfterMs: config.silentAfterMs,
     trustedRepositories: config.trustedRepositories,
-    mcpServers: config.mcpServers,
-    secrets: config.secrets,
     ...(config.installationToken === undefined ? {} : { installationToken: config.installationToken }),
   });
   const restored = await app.restoreConnections();
