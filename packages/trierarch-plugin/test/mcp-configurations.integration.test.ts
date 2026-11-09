@@ -106,6 +106,32 @@ describe("a fleet's MCP configuration in Postgres", () => {
     await expect(aClient().mcpConfigurationEvent.count()).resolves.toBe(2);
   });
 
+  it('reads a version with its own secrets while a replacement commits between the read of the set and of its secrets', async () => {
+    await useCases(aClient()).replace({ fleetId: FLEET, actor: MANAGER, replacement: WITH_GRAPH });
+    const reader = createPrismaMcpConfigurations(aClient());
+    const watcher = aClient();
+    const NEXT_VALUE = 'Bearer test-value-of-version-2-9c1d';
+    let read: ReturnType<typeof reader.read> | undefined;
+
+    // The replacement holds the secrets table until it commits: the reader sees the set row as it was, then waits for the secrets.
+    await aClient().$transaction(
+      async (tx) => {
+        await tx.$executeRawUnsafe('LOCK TABLE mcp_secrets IN ACCESS EXCLUSIVE MODE');
+        await tx.mcpConfiguration.update({ where: { fleetId: FLEET }, data: { version: 2 } });
+        read = reader.read(FLEET);
+        await expect.poll(async () => (await watcher.$queryRaw<{ count: bigint }[]>`SELECT count(*) AS count FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query LIKE '%mcp_secrets%'`)[0]?.count).toBe(1n);
+        await tx.mcpSecret.update({ where: { fleetId_name: { fleetId: FLEET, name: 'graph-token' } }, data: { value: NEXT_VALUE } });
+      },
+      { timeout: 20_000 },
+    );
+
+    const { version, secrets } = await (read ?? Promise.reject(new Error('the read never started')));
+    expect([version, secrets]).toBeOneOf([
+      [1, [{ name: 'graph-token', value: VALUE }]],
+      [2, [{ name: 'graph-token', value: NEXT_VALUE }]],
+    ]);
+  });
+
   it('changes neither the set, its secrets, its version nor its events when the transaction fails', async () => {
     const db = aClient();
     const { configurations, replace } = useCases(db);
