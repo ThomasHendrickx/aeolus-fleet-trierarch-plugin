@@ -20,14 +20,19 @@ function serversOf(stored: unknown): McpServer[] {
  * replacement is one transaction that moves the version on only from the
  * version expected (an insert for the first, which a second writer's insert
  * of the same key cannot pass), so of two writers of one version one commits.
+ * A read takes the set and its secrets from one snapshot.
  */
 export function createPrismaMcpConfigurations(db: PrismaClient): McpConfigurations {
   return {
     read: async (fleetId) => {
-      const [row, secrets] = await Promise.all([
-        db.mcpConfiguration.findUnique({ where: { fleetId }, select: { version: true, servers: true } }),
-        db.mcpSecret.findMany({ where: { fleetId }, select: { name: true, value: true }, orderBy: { name: 'asc' } }),
-      ]);
+      // One snapshot for both: a replacement committing between them would give one version's servers with another's secrets.
+      const [row, secrets] = await db.$transaction(
+        [
+          db.mcpConfiguration.findUnique({ where: { fleetId }, select: { version: true, servers: true } }),
+          db.mcpSecret.findMany({ where: { fleetId }, select: { name: true, value: true }, orderBy: { name: 'asc' } }),
+        ],
+        { isolationLevel: 'RepeatableRead' },
+      );
       return row === null ? EMPTY_MCP_CONFIGURATION : { version: row.version, servers: serversOf(row.servers), secrets };
     },
     replace: (fleetId, { expectedVersion, configuration, event }) =>
