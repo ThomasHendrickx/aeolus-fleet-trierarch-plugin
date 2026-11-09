@@ -91,7 +91,7 @@ describe("a fleet's MCP configuration in Postgres", () => {
     const outcomes = await Promise.all([first.replace({ fleetId: FLEET, actor: MANAGER, replacement: WITH_GRAPH }), second.replace({ fleetId: FLEET, actor: MANAGER, replacement: CLEARED })]);
 
     expect(outcomes.filter((outcome) => outcome.isOk)).toEqual([{ isOk: true, value: { version: 1 } }]);
-    expect(outcomes.filter((outcome) => !outcome.isOk).map((outcome) => !outcome.isOk && outcome.error.kind)).toEqual(['VERSION_CONFLICT']);
+    expect(outcomes.flatMap((outcome) => (outcome.isOk ? [] : [outcome.error.kind]))).toEqual(['VERSION_CONFLICT']);
     await expect(aClient().mcpConfigurationEvent.count()).resolves.toBe(1);
   });
 
