@@ -145,3 +145,45 @@ model SubscriptionReading {
   @@id([fleetId, machineShipId, harness, windowMinutes, readAt])
   @@map("subscription_readings")
 }
+
+/// Each fleet's one current MCP configuration (the fleet crew MCP design,
+/// section 4): its version, which guards every replacement, and its servers as
+/// the model saved them. No row before the fleet's first replacement: version 0
+/// with nothing. Its secrets are in mcp_secrets, so this row holds no value.
+model McpConfiguration {
+  fleetId    String   @id @map("fleet_id")
+  version    Int
+  servers    Json
+  replacedAt DateTime @map("replaced_at") @db.Timestamptz(3)
+
+  @@map("mcp_configurations")
+}
+
+/// The secrets of each fleet's MCP configuration, with their values: the
+/// plugin's credential store, readable to the service and its database
+/// administrators. Replaced with the set, in the same transaction.
+model McpSecret {
+  fleetId String @map("fleet_id")
+  name    String
+  value   String
+
+  @@id([fleetId, name])
+  @@map("mcp_secrets")
+}
+
+/// One row per replacement of a fleet's MCP configuration, written in the same
+/// transaction: the version it saved, the console session's kind and account,
+/// and the server and secret names it changed. Never a value.
+model McpConfigurationEvent {
+  id             BigInt   @id @default(autoincrement())
+  fleetId        String   @map("fleet_id")
+  version        Int
+  actorKind      String   @map("actor_kind")
+  actorAccountId String?  @map("actor_account_id")
+  changedServers String[] @map("changed_servers")
+  changedSecrets String[] @map("changed_secrets")
+  at             DateTime @db.Timestamptz(3)
+
+  @@unique([fleetId, version])
+  @@map("mcp_configuration_events")
+}
