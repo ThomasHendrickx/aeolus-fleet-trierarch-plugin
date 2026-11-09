@@ -12,7 +12,7 @@ function aReplacement(change: Partial<McpReplacement> = {}): McpReplacement {
   return { expectedVersion: 0, servers: [], secrets: [], secretValues: {}, ...change };
 }
 
-const replace = (replacement: McpReplacement, current: McpConfiguration = EMPTY_MCP_CONFIGURATION) => replaceMcpConfiguration(current, replacement, { fleetId: FLEET_ID });
+const replace = (replacement: McpReplacement, current: McpConfiguration = EMPTY_MCP_CONFIGURATION) => replaceMcpConfiguration({ fleetId: FLEET_ID, current }, replacement);
 
 function saved(replacement: McpReplacement, current?: McpConfiguration): McpConfiguration {
   const replaced = replace(replacement, current);
@@ -115,27 +115,27 @@ describe("a fleet's MCP configuration", () => {
   });
 
   it.each([
-    ['a server name with capitals', aReplacement({ servers: [{ ...GRAPH, name: 'Graph' }] }), /^server 1: /],
-    ['a server named twice', aReplacement({ servers: [GRAPH, GRAPH] }), /^company-graph: a server is named once$/],
-    ['a URL that is not a URL', aReplacement({ servers: [{ ...GRAPH, url: 'graph.example.invalid' }] }), /^company-graph: an MCP server is an http/],
-    ['a stdio command', aReplacement({ servers: [{ ...GRAPH, url: 'stdio:npx mcp-neo4j-cypher' }] }), /^company-graph: /],
-    ['a URL with a user and password', aReplacement({ servers: [{ ...GRAPH, url: 'https://me:secret@graph.example.invalid/mcp' }] }), /^company-graph: /],
-    ['a URL with a query', aReplacement({ servers: [{ ...GRAPH, url: 'https://graph.example.invalid/mcp?token=abc' }] }), /^company-graph: /],
-    ['a URL with a fragment', aReplacement({ servers: [{ ...GRAPH, url: 'https://graph.example.invalid/mcp#abc' }] }), /^company-graph: /],
-    ['a server with no tool', aReplacement({ servers: [{ ...GRAPH, tools: [] }] }), /^company-graph: a server lists the tools a session may call$/],
-    ['a tool listed twice', aReplacement({ servers: [{ ...GRAPH, tools: ['read', 'read'] }] }), /^company-graph: a tool is listed once$/],
-    ['a tool with no name', aReplacement({ servers: [{ ...GRAPH, tools: [''] }] }), /^company-graph: a tool has a name$/],
-    ['a header the proxy sets itself', aReplacement({ servers: [{ ...GRAPH, credential: { secret: 'graph-token', header: 'Host' } }], secrets: ['graph-token'], secretValues: { 'graph-token': VALUE } }), /^company-graph: a credential header/],
-    ['a header with a space', aReplacement({ servers: [{ ...GRAPH, credential: { secret: 'graph-token', header: 'X Key' } }], secrets: ['graph-token'], secretValues: { 'graph-token': VALUE } }), /^company-graph: a credential header/],
-    ['a Proxy- header', aReplacement({ servers: [{ ...GRAPH, credential: { secret: 'graph-token', header: 'Proxy-Authorization' } }], secrets: ['graph-token'], secretValues: { 'graph-token': VALUE } }), /^company-graph: a credential header/],
-    ['a secret name that is not a name', aReplacement({ secrets: [VALUE], secretValues: {} }), /^secret 1: /],
-    ['a secret retained twice', aReplacement({ secrets: ['graph-token', 'graph-token'], secretValues: { 'graph-token': VALUE } }), /^graph-token: a secret is retained once$/],
-    ['an empty value', aReplacement({ secrets: ['graph-token'], secretValues: { 'graph-token': '' } }), /^graph-token: a value is 1 to 8192 bytes/],
-    ['a value with a line feed', aReplacement({ secrets: ['graph-token'], secretValues: { 'graph-token': `${VALUE}\nX-Other: 1` } }), /^graph-token: a value is 1 to 8192 bytes/],
-    ['a value with a carriage return', aReplacement({ secrets: ['graph-token'], secretValues: { 'graph-token': `${VALUE}\r` } }), /^graph-token: /],
-    ['a value with a NUL', aReplacement({ secrets: ['graph-token'], secretValues: { 'graph-token': `${VALUE}\u0000` } }), /^graph-token: /],
-    ['a value one byte over 8192', aReplacement({ secrets: ['graph-token'], secretValues: { 'graph-token': 'a'.repeat(8193) } }), /^graph-token: /],
-  ])('refuses %s, the whole replacement, never naming a value', (_label, replacement, reason) => {
+    { label: 'a server name with capitals', replacement: aReplacement({ servers: [{ ...GRAPH, name: 'Graph' }] }), reason: /^server 1: / },
+    { label: 'a server named twice', replacement: aReplacement({ servers: [GRAPH, GRAPH] }), reason: /^company-graph: a server is named once$/ },
+    { label: 'a URL that is not a URL', replacement: aReplacement({ servers: [{ ...GRAPH, url: 'graph.example.invalid' }] }), reason: /^company-graph: an MCP server is an http/ },
+    { label: 'a stdio command', replacement: aReplacement({ servers: [{ ...GRAPH, url: 'stdio:npx mcp-neo4j-cypher' }] }), reason: /^company-graph: / },
+    { label: 'a URL with a user and password', replacement: aReplacement({ servers: [{ ...GRAPH, url: 'https://me:secret@graph.example.invalid/mcp' }] }), reason: /^company-graph: / },
+    { label: 'a URL with a query', replacement: aReplacement({ servers: [{ ...GRAPH, url: 'https://graph.example.invalid/mcp?token=abc' }] }), reason: /^company-graph: / },
+    { label: 'a URL with a fragment', replacement: aReplacement({ servers: [{ ...GRAPH, url: 'https://graph.example.invalid/mcp#abc' }] }), reason: /^company-graph: / },
+    { label: 'a server with no tool', replacement: aReplacement({ servers: [{ ...GRAPH, tools: [] }] }), reason: /^company-graph: a server lists the tools a session may call$/ },
+    { label: 'a tool listed twice', replacement: aReplacement({ servers: [{ ...GRAPH, tools: ['read', 'read'] }] }), reason: /^company-graph: a tool is listed once$/ },
+    { label: 'a tool with no name', replacement: aReplacement({ servers: [{ ...GRAPH, tools: [''] }] }), reason: /^company-graph: a tool has a name$/ },
+    { label: 'a header the proxy sets itself', replacement: aReplacement({ servers: [{ ...GRAPH, credential: { secret: 'graph-token', header: 'Host' } }], secrets: ['graph-token'], secretValues: { 'graph-token': VALUE } }), reason: /^company-graph: a credential header/ },
+    { label: 'a header with a space', replacement: aReplacement({ servers: [{ ...GRAPH, credential: { secret: 'graph-token', header: 'X Key' } }], secrets: ['graph-token'], secretValues: { 'graph-token': VALUE } }), reason: /^company-graph: a credential header/ },
+    { label: 'a Proxy- header', replacement: aReplacement({ servers: [{ ...GRAPH, credential: { secret: 'graph-token', header: 'Proxy-Authorization' } }], secrets: ['graph-token'], secretValues: { 'graph-token': VALUE } }), reason: /^company-graph: a credential header/ },
+    { label: 'a secret name that is not a name', replacement: aReplacement({ secrets: [VALUE], secretValues: {} }), reason: /^secret 1: / },
+    { label: 'a secret retained twice', replacement: aReplacement({ secrets: ['graph-token', 'graph-token'], secretValues: { 'graph-token': VALUE } }), reason: /^graph-token: a secret is retained once$/ },
+    { label: 'an empty value', replacement: aReplacement({ secrets: ['graph-token'], secretValues: { 'graph-token': '' } }), reason: /^graph-token: a value is 1 to 8192 bytes/ },
+    { label: 'a value with a line feed', replacement: aReplacement({ secrets: ['graph-token'], secretValues: { 'graph-token': `${VALUE}\nX-Other: 1` } }), reason: /^graph-token: a value is 1 to 8192 bytes/ },
+    { label: 'a value with a carriage return', replacement: aReplacement({ secrets: ['graph-token'], secretValues: { 'graph-token': `${VALUE}\r` } }), reason: /^graph-token: / },
+    { label: 'a value with a NUL', replacement: aReplacement({ secrets: ['graph-token'], secretValues: { 'graph-token': `${VALUE}\u0000` } }), reason: /^graph-token: / },
+    { label: 'a value one byte over 8192', replacement: aReplacement({ secrets: ['graph-token'], secretValues: { 'graph-token': 'a'.repeat(8193) } }), reason: /^graph-token: / },
+  ])('refuses $label, the whole replacement, never naming a value', ({ replacement, reason }) => {
     const replaced = replace(replacement);
 
     expect(replaced.isOk).toBe(false);
@@ -152,8 +152,8 @@ describe("a fleet's MCP configuration", () => {
     const names = Array.from({ length: 40 }, (_, index) => `secret-${String(index).padStart(2, '0')}`);
     const values = (bytes: number) => Object.fromEntries(names.map((name) => [name, 'a'.repeat(bytes)]));
 
-    expect(replace(aReplacement({ secrets: names, secretValues: values(6000) })).isOk).toBe(true);
-    expect(replace(aReplacement({ secrets: names, secretValues: values(8000) }))).toEqual({
+    expect(replace(aReplacement({ secrets: names, secretValues: values(4500) })).isOk).toBe(true);
+    expect(replace(aReplacement({ secrets: names, secretValues: values(6000) }))).toEqual({
       isOk: false,
       error: { kind: 'INVALID_CONFIGURATION', message: 'the MCP configuration does not fit one message of 256 KB once sealed' },
     });
