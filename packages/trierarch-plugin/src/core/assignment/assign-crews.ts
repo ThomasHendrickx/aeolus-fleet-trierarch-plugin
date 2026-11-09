@@ -1,6 +1,7 @@
 import type { FleetId } from '@aeolus-fleet/common';
 
 import type { ConnectionStore, FleetDoor, FleetRefusal } from '../connection/ports.js';
+import type { McpConfigurations, McpDeliveries } from '../mcp-configuration/ports.js';
 import type { EnabledModels } from '../models/ports.js';
 import type { Clock } from '../shared/clock.js';
 import { refuse, type DomainError } from '../shared/errors.js';
@@ -25,19 +26,29 @@ const CHANGED = new Set(['CONFLICT', 'NOT_FOUND']);
  * "Assignment"). It reads the fleet whole each time: the unassigned requests
  * of ships that await crew, and the trierarchs that report details and are
  * not silent, with the requests assigned to each, and the fleet's enabled
- * models as they are now (model governance, M5). Placement decides; each
+ * models as they are now (model governance, M5), and whether each trierarch
+ * confirmed the fleet's current MCP configuration. Placement decides; each
  * claim is optimistic, and one the fleet refuses because the request changed
  * is no error: the next pass reads it again. A silent trierarch gets nothing
  * new and keeps what it holds.
  */
-export function createAssignCrews(deps: { door: FleetDoor; connections: ConnectionStore; models: EnabledModels; clock: Clock; silentAfterMs: number }): AssignCrews {
+export function createAssignCrews(deps: {
+  door: FleetDoor;
+  connections: ConnectionStore;
+  models: EnabledModels;
+  configurations: McpConfigurations;
+  deliveries: McpDeliveries;
+  clock: Clock;
+  silentAfterMs: number;
+}): AssignCrews {
   const unavailable = (refusal: FleetRefusal) => refuse('FLEET_UNAVAILABLE', `The fleet did not answer the assignment: ${refusal.message}`);
   return async (fleetId) => {
     const crew = await deps.connections.find(fleetId);
     if (!crew) {
       return refuse('NOT_CONNECTED', 'The trierarch plugin is not connected to this fleet: connect it in the console');
     }
-    const read = await readPlacement(deps.door, { crewToken: crew.crewToken, now: deps.clock.now(), silentAfterMs: deps.silentAfterMs });
+    const [{ version }, deliveries] = await Promise.all([deps.configurations.read(fleetId), deps.deliveries.list(fleetId)]);
+    const read = await readPlacement(deps.door, { crewToken: crew.crewToken, now: deps.clock.now(), silentAfterMs: deps.silentAfterMs, mcp: { version, deliveries } });
     if (!read.isOk) {
       return unavailable(read.error);
     }

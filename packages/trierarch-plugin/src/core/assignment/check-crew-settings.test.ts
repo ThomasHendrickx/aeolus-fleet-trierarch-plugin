@@ -39,7 +39,7 @@ beforeEach(async () => {
   await connections.save({ fleetId: FLEET_ID, shipId: SHIP_ID, name: 'trierarch-plugin', crewToken: 'aeolus_ct_v1_plugin', crewedAt: AT });
 });
 
-function aTrierarch(shipId: ShipId, lastSeenAt = RECENTLY, details: TrierarchReportDetails = DETAILS): void {
+function aTrierarch(shipId: ShipId, { lastSeenAt = RECENTLY, details = DETAILS }: { lastSeenAt?: Date; details?: TrierarchReportDetails } = {}): void {
   fleet.state.ships.push({ shipId, name: 'trierarch-mac', type: 'trierarch', status: 'crewed', lastSeenAt, model: null, crewRequest: null, labels: [] });
   fleet.state.reports.set(shipId, { state: 'idle', note: null, reportedAt: lastSeenAt, details });
 }
@@ -53,14 +53,14 @@ describe("checking crew settings naming an MCP server (the fleet crew MCP design
   const NAMING_GRAPH = { ...SETTINGS, mcpServers: ['company-graph'] };
 
   it("fits on a trierarch that confirmed the fleet's current version for its key", async () => {
-    aTrierarch(MAC, RECENTLY, GRAPH_DETAILS);
+    aTrierarch(MAC, { details: GRAPH_DETAILS });
     await deliveries.recordApplied(FLEET_ID, { trierarchShipId: MAC, applied: { version: 0, publicKey: MAC_KEY } });
 
     await expect(check(NAMING_GRAPH)).resolves.toEqual({ isOk: true, value: { kind: 'fits' } });
   });
 
   it('refuses the field mcpServers while the trierarch offering it confirmed nothing', async () => {
-    aTrierarch(MAC, RECENTLY, GRAPH_DETAILS);
+    aTrierarch(MAC, { details: GRAPH_DETAILS });
 
     await expect(check(NAMING_GRAPH)).resolves.toEqual({ isOk: true, value: { kind: 'refused', field: 'mcpServers', reason: 'no trierarch offering claude-code offers MCP server company-graph' } });
   });
@@ -97,7 +97,7 @@ describe('checking crew settings against the fleet’s trierarchs (#245)', () =>
   });
 
   it('leaves out a silent trierarch, as assignment does', async () => {
-    aTrierarch(MAC, LONG_AGO);
+    aTrierarch(MAC, { lastSeenAt: LONG_AGO });
 
     await expect(check(SETTINGS)).resolves.toEqual({ isOk: true, value: { kind: 'noRoom', reason: 'no trierarch reports yet' } });
   });

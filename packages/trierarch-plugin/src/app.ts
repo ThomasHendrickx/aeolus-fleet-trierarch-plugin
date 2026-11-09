@@ -17,6 +17,7 @@ import { createPrismaFleetForgetter } from './adapters/prisma/fleet-forgetter.js
 import { createPrismaFleetSwitches } from './adapters/prisma/fleet-switches.js';
 import { createPrismaInstallationRequests } from './adapters/prisma/installation-requests.js';
 import { createPrismaMcpConfigurations } from './adapters/prisma/mcp-configurations.js';
+import { createPrismaMcpDeliveries } from './adapters/prisma/mcp-deliveries.js';
 import { trierarchPluginRouter, type TrierarchPluginRouter } from './adapters/trpc/router.js';
 import { createAnswerPings } from './core/connection/answer-pings.js';
 import { createConnect } from './core/connection/connect.js';
@@ -157,7 +158,9 @@ export function createTrierarchPluginApp(options: {
   const silentAfterMs = options.silentAfterMs ?? DEFAULT_SILENT_AFTER_MS;
   const listMachines = createListMachines({ door, connections, clock, silentAfterMs });
   const models = createPrismaEnabledModels(prisma);
-  const assignCrews = createAssignCrews({ door, connections, models, clock, silentAfterMs });
+  const mcpConfigurations = createPrismaMcpConfigurations(prisma);
+  const mcpDeliveries = createPrismaMcpDeliveries(prisma);
+  const assignCrews = createAssignCrews({ door, connections, models, configurations: mcpConfigurations, deliveries: mcpDeliveries, clock, silentAfterMs });
   const labelMachines = createLabelMachines({ door, connections });
   /** The fleets whose machine labels were last skipped, so the reason is logged once, not every pass. */
   const skippedLabels = new Set<FleetId>();
@@ -312,10 +315,9 @@ export function createTrierarchPluginApp(options: {
       server.log.info({ fleet: fleetId, ...shared.value }, 'trusted repositories sent');
     }
   };
-  const checkCrewSettings = createCheckCrewSettings({ door, connections, models, clock, silentAfterMs });
+  const checkCrewSettings = createCheckCrewSettings({ door, connections, models, configurations: mcpConfigurations, deliveries: mcpDeliveries, clock, silentAfterMs });
   const listEnabledModels = createListEnabledModels({ models });
   const setModelEnabled = createSetModelEnabled({ models });
-  const mcpConfigurations = createPrismaMcpConfigurations(prisma);
   const readMcpConfiguration = createReadMcpConfiguration({ configurations: mcpConfigurations });
   const replaceMcpConfiguration = createReplaceMcpConfiguration({ configurations: mcpConfigurations, clock });
   const usage = createPrismaUsageHistory(prisma);

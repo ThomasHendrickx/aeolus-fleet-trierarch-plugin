@@ -3,6 +3,8 @@ import { trierarchReportDetailsSchema } from '@aeolus-fleet/common';
 import type { FleetDoor, FleetRefusal } from '../connection/ports.js';
 import { TRIERARCH_TYPE } from '../machines/join-machine.js';
 import { isSilent } from '../machines/silent.js';
+import { isMcpConfigurationCurrent, type McpDelivery } from '../mcp-configuration/mcp-delivery.js';
+import { readSealingKey } from '../mcp-servers/sealing-key.js';
 import { ok, type Result } from '../shared/result.js';
 import type { PlacementRequest, PlacementTrierarch } from './placement.js';
 
@@ -10,11 +12,12 @@ import type { PlacementRequest, PlacementTrierarch } from './placement.js';
  * What placement reads from the fleet, whole, each time (docs/trierarch.md,
  * "Assignment"): the unassigned requests of ships that await crew, and the
  * trierarchs that report details and are not silent, with the requests
- * assigned to each. A silent trierarch gets nothing new.
+ * assigned to each. A silent trierarch gets nothing new. With them, whether
+ * each confirmed the fleet's current MCP configuration for the key it reports.
  */
 export async function readPlacement(
   door: FleetDoor,
-  at: { crewToken: string; now: Date; silentAfterMs: number },
+  at: { crewToken: string; now: Date; silentAfterMs: number; mcp: { version: number; deliveries: readonly McpDelivery[] } },
 ): Promise<Result<{ requests: PlacementRequest[]; trierarchs: PlacementTrierarch[] }, FleetRefusal>> {
   const listed = await door.listShips(at.crewToken);
   if (!listed.isOk) {
@@ -35,7 +38,16 @@ export async function readPlacement(
     const details = trierarchReportDetailsSchema.safeParse(read.value.report?.details);
     if (isTrierarch && details.success) {
       const assigned = listed.value.filter((each) => each.crewRequest?.assignedTo === ship.shipId).length;
-      trierarchs.push({ shipId: ship.shipId, commissionedAt: read.value.commissionedAt, details: details.data, assigned, labelValueIds: ship.labels.map((label) => label.valueId) });
+      const publicKey = readSealingKey(read.value.report?.details);
+      const delivery = at.mcp.deliveries.find((each) => each.trierarchShipId === ship.shipId);
+      trierarchs.push({
+        shipId: ship.shipId,
+        commissionedAt: read.value.commissionedAt,
+        details: details.data,
+        assigned,
+        labelValueIds: ship.labels.map((label) => label.valueId),
+        isMcpConfigurationCurrent: publicKey !== undefined && isMcpConfigurationCurrent(delivery, { version: at.mcp.version, publicKey }),
+      });
     }
     if (isRequest && ship.crewRequest !== null) {
       requests.push({
