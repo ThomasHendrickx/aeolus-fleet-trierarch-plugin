@@ -2,6 +2,8 @@ import type { ShipId, TrierarchReportDetails } from '@aeolus-fleet/common';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { FLEET_ID, OTHER_ASSIGNEE, SHIP_ID, fakePluginFleet, memoryConnectionStore } from '../../../test/support/connection-fakes.js';
+import { memoryMcpConfigurations } from '../../../test/support/memory-mcp-configurations.js';
+import { memoryMcpDeliveries } from '../../../test/support/memory-mcp-deliveries.js';
 import { memoryEnabledModels } from '../../../test/support/memory-models.js';
 import { createAssignCrews } from './assign-crews.js';
 
@@ -28,11 +30,15 @@ const SETTINGS = { harness: 'claude-code', workspace: { kind: 'worktree', reposi
 let fleet: ReturnType<typeof fakePluginFleet>;
 let connections: ReturnType<typeof memoryConnectionStore>;
 let models: ReturnType<typeof memoryEnabledModels>;
+let configurations: ReturnType<typeof memoryMcpConfigurations>;
+let deliveries: ReturnType<typeof memoryMcpDeliveries>;
 
 beforeEach(async () => {
   fleet = fakePluginFleet();
   connections = memoryConnectionStore();
   models = memoryEnabledModels();
+  configurations = memoryMcpConfigurations();
+  deliveries = memoryMcpDeliveries();
   fleet.state.liveTokens.add('aeolus_ct_v1_plugin');
   await connections.save({ fleetId: FLEET_ID, shipId: SHIP_ID, name: 'trierarch-plugin', crewToken: 'aeolus_ct_v1_plugin', crewedAt: AT });
 });
@@ -44,7 +50,7 @@ function aTrierarch(shipId: ShipId, at: { lastSeenAt?: Date; details?: Trierarch
 }
 
 /** A ship with a crew request, unassigned unless it says otherwise. */
-function aRequest(shipId: ShipId, at: { status?: 'awaitingCrew' | 'crewed'; assignedTo?: ShipId; requestedAt?: Date } = {}): void {
+function aRequest(shipId: ShipId, at: { status?: 'awaitingCrew' | 'crewed'; assignedTo?: ShipId; requestedAt?: Date; settings?: unknown } = {}): void {
   fleet.state.ships.push({
     shipId,
     name: `ship-${shipId.slice(-2)}`,
@@ -55,12 +61,63 @@ function aRequest(shipId: ShipId, at: { status?: 'awaitingCrew' | 'crewed'; assi
     crewRequest: { settingsVersion: 1, requestedAt: at.requestedAt ?? AT, assignedTo: at.assignedTo ?? null, reason: null, startedAt: null, givenBack: [], requestedBy: null },
     labels: [],
   });
-  fleet.state.settings.set(shipId, SETTINGS);
+  fleet.state.settings.set(shipId, at.settings ?? SETTINGS);
 }
 
 const assignedTo = (shipId: ShipId) => fleet.state.ships.find((ship) => ship.shipId === shipId)?.crewRequest?.assignedTo;
 
-const pass = () => createAssignCrews({ door: fleet.door, connections, models, clock: { now: () => NOW }, silentAfterMs: SILENT_AFTER_MS })(FLEET_ID);
+const pass = () => createAssignCrews({ door: fleet.door, connections, models, configurations, deliveries, clock: { now: () => NOW }, silentAfterMs: SILENT_AFTER_MS })(FLEET_ID);
+
+const MAC_KEY = `${'mac'.padEnd(43, 'A')}=`;
+/** What a trierarch offering company-graph on Claude Code reports, with its sealing key. */
+const GRAPH_DETAILS: TrierarchReportDetails = { ...DETAILS, harnesses: [{ harness: 'claude-code', options: {}, flags: [], mcpServers: ['company-graph'] }], sealingKey: { scheme: 'nacl-sealed-box', publicKey: MAC_KEY } };
+
+/** The fleet's MCP configuration moved on to version 1, and what MAC confirmed it applied. */
+async function confirmed(applied: { version: number; publicKey: string } | null): Promise<void> {
+  await configurations.replace(FLEET_ID, { expectedVersion: 0, configuration: { version: 1, servers: [], secrets: [] }, event: { type: 'McpConfigurationReplaced', fleetId: FLEET_ID, version: 1, actor: { kind: 'operator', accountId: null }, changed: { servers: [], secrets: [] }, at: AT } });
+  if (applied !== null) {
+    await deliveries.recordApplied(FLEET_ID, { trierarchShipId: MAC, applied });
+  }
+}
+
+describe("a pass and the fleet's MCP configuration (the fleet crew MCP design, section 5)", () => {
+  const NAMING_GRAPH = { ...SETTINGS, mcpServers: ['company-graph'] };
+
+  it("places a request naming a server on a trierarch that confirmed the fleet's current version for its key", async () => {
+    aTrierarch(MAC, { details: GRAPH_DETAILS });
+    aRequest(SCOUT, { settings: NAMING_GRAPH });
+    await confirmed({ version: 1, publicKey: MAC_KEY });
+
+    await pass();
+
+    expect(assignedTo(SCOUT)).toBe(MAC);
+  });
+
+  it.each([
+    { label: 'confirmed nothing', applied: null },
+    { label: 'confirmed an older version', applied: { version: 0, publicKey: MAC_KEY } },
+    { label: 'confirmed the version for another key', applied: { version: 1, publicKey: `${'old'.padEnd(43, 'A')}=` } },
+  ])('leaves a request naming a server waiting on a trierarch that $label, with the reason', async ({ applied }) => {
+    aTrierarch(MAC, { details: GRAPH_DETAILS });
+    aRequest(SCOUT, { settings: NAMING_GRAPH });
+    await confirmed(applied);
+
+    await pass();
+
+    expect(assignedTo(SCOUT)).toBeNull();
+    expect(fleet.state.explained).toEqual([{ shipId: SCOUT, reason: 'no trierarch offering claude-code offers MCP server company-graph' }]);
+  });
+
+  it('places a request naming no server on a trierarch that confirmed nothing', async () => {
+    aTrierarch(MAC, { details: GRAPH_DETAILS });
+    aRequest(SCOUT);
+    await confirmed(null);
+
+    await pass();
+
+    expect(assignedTo(SCOUT)).toBe(MAC);
+  });
+});
 
 describe("a pass of the trierarch plugin's assignment", () => {
   it("places by the fleet's enabled models as they are at the pass: a request naming none waits on model not available (model governance, M3, M5)", async () => {
