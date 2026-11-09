@@ -40,7 +40,8 @@ function readPayload<T>(payload: string, schema: z.ZodType<T>): T | undefined {
  * and this plugin ship, and never authorises itself. A confirmation counts
  * only from a crewed trierarch, for the fleet's current version and the key
  * its last attempt was sealed to: it is recorded against that trierarch. A
- * request marks the trierarch so the next pass sends it a new copy. Anything
+ * request, which a trierarch sends when its lease starts, forgets its
+ * confirmation and marks it so the next pass sends it a new copy. Anything
  * else of the contract is ignored, recording nothing, with a reason that
  * holds no payload.
  */

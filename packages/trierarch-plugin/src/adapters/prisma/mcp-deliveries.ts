@@ -57,7 +57,7 @@ export function createPrismaMcpDeliveries(db: Db): McpDeliveries {
       await upsert({ fleetId, trierarchShipId }, { appliedVersion: applied.version, appliedPublicKey: applied.publicKey });
     },
     markRequested: async (fleetId, trierarchShipId) => {
-      await upsert({ fleetId, trierarchShipId }, { isRequested: true });
+      await upsert({ fleetId, trierarchShipId }, { isRequested: true, appliedVersion: null, appliedPublicKey: null });
     },
     forget: async (fleetId, trierarchShipIds) => {
       await db.mcpDelivery.deleteMany({ where: { fleetId, trierarchShipId: { in: [...trierarchShipIds] } } });

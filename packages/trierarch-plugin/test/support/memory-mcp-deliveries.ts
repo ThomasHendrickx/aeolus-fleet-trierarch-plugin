@@ -23,7 +23,7 @@ export function memoryMcpDeliveries(): McpDeliveries & { held: Map<FleetId, Map<
     markSent: (fleetId, sent) =>
       change({ fleetId, trierarchShipId: sent.trierarchShipId }, (delivery) => (delivery.attempt?.idempotencyKey === sent.idempotencyKey ? { ...delivery, attempt: { ...delivery.attempt, sentAt: sent.at } } : delivery)),
     recordApplied: (fleetId, { trierarchShipId, applied }) => change({ fleetId, trierarchShipId }, (delivery) => ({ ...delivery, applied })),
-    markRequested: (fleetId, trierarchShipId) => change({ fleetId, trierarchShipId }, (delivery) => ({ ...delivery, isRequested: true })),
+    markRequested: (fleetId, trierarchShipId) => change({ fleetId, trierarchShipId }, (delivery) => ({ ...delivery, applied: null, isRequested: true })),
     forget: (fleetId, trierarchShipIds) => {
       for (const shipId of trierarchShipIds) {
         of(fleetId).delete(shipId);

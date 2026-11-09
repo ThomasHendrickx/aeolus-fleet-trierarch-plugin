@@ -48,7 +48,11 @@ export interface McpDeliveries {
   /** The fleet took the attempt under this key; a later attempt is left as it is. */
   markSent(fleetId: FleetId, sent: { trierarchShipId: ShipId; idempotencyKey: string; at: Date }): Promise<void>;
   recordApplied(fleetId: FleetId, recorded: { trierarchShipId: ShipId; applied: McpApplied }): Promise<void>;
-  /** The trierarch asked for the set: the next pass sends it a new attempt. */
+  /**
+   * The trierarch asked for the set, as it does when its lease starts: its
+   * confirmation is forgotten at once, so placement waits for the new lease's,
+   * and the next pass sends it a new attempt.
+   */
   markRequested(fleetId: FleetId, trierarchShipId: ShipId): Promise<void>;
   forget(fleetId: FleetId, trierarchShipIds: readonly ShipId[]): Promise<void>;
 }
