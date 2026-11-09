@@ -15,16 +15,16 @@ import type { PluginDelivery, PluginInbox } from './ports.js';
 // ship does (blueprint, "Ping"; aeolus-fleet#1113), and acks what else reaches
 // it: it handles no messages of its own, and the fleet keeps them in its history.
 
-const PING: PluginDelivery = { deliveryId: 'dlv_01m3tbfspe96yf1rnr4ank9png', messageId: 'msg_01m3tbfspe96yf1rnr4ank9png', contentType: 'application/vnd.aeolus.ping', senderShipId: 'shp_01m3tbfspe96yf1rnr4ank9arg', senderType: 'operator', payload: '' };
+const PING: PluginDelivery = { deliveryId: 'dlv_01m3tbfspe96yf1rnr4ank9png', messageId: 'msg_01m3tbfspe96yf1rnr4ank9png', contentType: 'application/vnd.aeolus.ping', senderShipId: 'shp_01m3tbfspe96yf1rnr4ank9arg', senderType: 'operator', senderStatus: 'crewed', payload: '' };
 const USAGE: PluginDelivery = {
   deliveryId: 'dlv_01m3tbfspe96yf1rnr4ank9use',
   messageId: 'msg_01m3tbfspe96yf1rnr4ank9use',
   contentType: TRIERARCH_USAGE_CONTENT_TYPE,
   senderShipId: 'shp_01m3tbfspe96yf1rnr4ank9mac',
-  senderType: 'trierarch',
+  senderType: 'trierarch', senderStatus: 'crewed',
   payload: JSON.stringify({ hours: [], subscriptions: [{ harness: 'codex', readAt: '2026-10-28T09:31:02Z', windows: [{ windowMinutes: 300, usedPercent: 42, resetsAt: '2026-10-28T12:00:00Z' }] }], readAt: '2026-10-28T10:00:40Z' }),
 };
-const ANSWER: PluginDelivery = { deliveryId: 'dlv_01m3tbfspe96yf1rnr4ank9ans', messageId: 'msg_01m3tbfspe96yf1rnr4ank9ans', contentType: 'application/vnd.aeolus.answer+json', senderShipId: 'shp_01m3tbfspe96yf1rnr4ank9chr', senderType: 'agent', payload: '{}' };
+const ANSWER: PluginDelivery = { deliveryId: 'dlv_01m3tbfspe96yf1rnr4ank9ans', messageId: 'msg_01m3tbfspe96yf1rnr4ank9ans', contentType: 'application/vnd.aeolus.answer+json', senderShipId: 'shp_01m3tbfspe96yf1rnr4ank9chr', senderType: 'agent', senderStatus: 'crewed', payload: '{}' };
 
 function anInbox(waiting: PluginDelivery[] | 'refused', onAck: () => void = () => undefined): PluginInbox & { ponged: DeliveryId[]; acked: DeliveryId[] } {
   const ponged: DeliveryId[] = [];
@@ -123,7 +123,7 @@ describe("the trierarch plugin's ship takes what waits for it", () => {
     expect({ acked: inbox.acked, recorded: usage.recorded }).toEqual({ acked: [USAGE.deliveryId], recorded: [] });
   });
 
-  const ASK: PluginDelivery = { deliveryId: 'dlv_01m3tbfspe96yf1rnr4ank9ask', messageId: 'msg_01m3tbfspe96yf1rnr4ank9ask', contentType: ENABLED_MODELS_ASK_CONTENT_TYPE, senderShipId: 'shp_01m3tbfspe96yf1rnr4ank9chr', senderType: 'agent', payload: '{}' };
+  const ASK: PluginDelivery = { deliveryId: 'dlv_01m3tbfspe96yf1rnr4ank9ask', messageId: 'msg_01m3tbfspe96yf1rnr4ank9ask', contentType: ENABLED_MODELS_ASK_CONTENT_TYPE, senderShipId: 'shp_01m3tbfspe96yf1rnr4ank9chr', senderType: 'agent', senderStatus: 'crewed', payload: '{}' };
 
   it('acks an enabled models ask only after its reply is stored', async () => {
     const fleet = fakePluginFleet();

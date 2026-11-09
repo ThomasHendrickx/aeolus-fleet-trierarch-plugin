@@ -41,7 +41,7 @@ function aUsageDelivery(overrides: Partial<PluginDelivery> = {}): PluginDelivery
     messageId: 'msg_01m3tbfspe96yf1rnr4ank9use',
     contentType: TRIERARCH_USAGE_CONTENT_TYPE,
     senderShipId: MACHINE,
-    senderType: 'trierarch',
+    senderType: 'trierarch', senderStatus: 'crewed',
     payload: JSON.stringify(MESSAGE),
     ...overrides,
   };

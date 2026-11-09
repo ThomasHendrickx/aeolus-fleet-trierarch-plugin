@@ -8,7 +8,7 @@ const STUDIO: ShipId = 'shp_01m3tbfspe96yf1rnr4ank9h3a';
 const MAC_KEY = `${'mac'.padEnd(43, 'A')}=`;
 const DELIVERY: DeliveryId = 'dlv_01m3tbfspe96yf1rnr4ank9h5a';
 
-const aDelivery = (contentType: string) => ({ deliveryId: DELIVERY, messageId: 'msg_01m3tbfspe96yf1rnr4ank9del' as const, contentType, senderShipId: MAC, senderType: 'trierarch', payload: '{}' });
+const aDelivery = (contentType: string) => ({ deliveryId: DELIVERY, messageId: 'msg_01m3tbfspe96yf1rnr4ank9del' as const, contentType, senderShipId: MAC, senderType: 'trierarch', senderStatus: 'crewed' as const, payload: '{}' });
 
 describe('a trierarch asking for the secret store again', () => {
   it('forgets what its sender was sent, so the next pass seals the store to it again', () => {

@@ -16,7 +16,7 @@ const ASK: PluginDelivery = {
   messageId: 'msg_01m3tbfspe96yf1rnr4ank9ask',
   contentType: ENABLED_MODELS_ASK_CONTENT_TYPE,
   senderShipId: ASKER,
-  senderType: 'implementer',
+  senderType: 'implementer', senderStatus: 'crewed',
   payload: '{}',
 };
 const CREW: PluginCrew = { fleetId: FLEET_ID, shipId: SHIP_ID, name: 'trierarch-plugin', crewToken: 'aeolus_ct_v1_plugin', crewedAt: AT };
