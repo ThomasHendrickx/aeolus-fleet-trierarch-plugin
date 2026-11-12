@@ -490,8 +490,9 @@ describe('placement and the repositories a request names (ship folder design, po
 
     const [placement] = place([aRequest(SCOUT, { settings: { workspace: repositories('aeolus-fleet', subRepositories) } })], { trierarchs: [first, second], enabledModels: [] });
 
-    expect(placement).toMatchObject({ kind: 'explain', reason: expect.stringMatching(/^no trierarch offering claude-code has repositories aeolus-fleet, sub-repository-0, /) });
-    expect(placement?.kind === 'explain' ? placement.reason.length : 0).toBe(200);
+    const reason = placement?.kind === 'explain' ? placement.reason : '';
+    expect(reason).toMatch(/^no trierarch offering claude-code has repositories aeolus-fleet, sub-repository-0, /);
+    expect(reason).toHaveLength(200);
   });
 
   it('refuses settings naming a sub-repository no trierarch offers in the check, with the field workspace', () => {
