@@ -483,6 +483,17 @@ describe('placement and the repositories a request names (ship folder design, po
     ]);
   });
 
+  it('keeps the reason within the 200 characters a reason may hold, however many repositories it names', () => {
+    const subRepositories = Array.from({ length: 30 }, (_, index) => `sub-repository-${String(index)}`);
+    const first = offering(MAC, ['aeolus-fleet']);
+    const second = offering(LINUX, subRepositories);
+
+    const [placement] = place([aRequest(SCOUT, { settings: { workspace: repositories('aeolus-fleet', subRepositories) } })], { trierarchs: [first, second], enabledModels: [] });
+
+    expect(placement).toMatchObject({ kind: 'explain', reason: expect.stringMatching(/^no trierarch offering claude-code has repositories aeolus-fleet, sub-repository-0, /) });
+    expect(placement?.kind === 'explain' ? placement.reason.length : 0).toBe(200);
+  });
+
   it('refuses settings naming a sub-repository no trierarch offers in the check, with the field workspace', () => {
     expect(checkPlacement({ harness: 'claude-code', workspace: repositories('aeolus-fleet', ['skills']), options: {} }, { trierarchs: [offering(MAC, ['aeolus-fleet'])], enabledModels: [] })).toEqual({
       kind: 'refused',
