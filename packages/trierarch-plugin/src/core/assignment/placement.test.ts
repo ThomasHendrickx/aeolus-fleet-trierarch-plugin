@@ -38,7 +38,7 @@ const MACOS = 'lbv_01m3tbfspe96yf1rnr4ank9h3a';
 const LINUX_OS = 'lbv_01m3tbfspe96yf1rnr4ank9h3b';
 const ARM64 = 'lbv_01m3tbfspe96yf1rnr4ank9h3c';
 
-/** A request for a worktree of aeolus-fleet on Claude Code with opus; `settings` changes some of them. */
+/** A request for aeolus-fleet as its main repository, with no sub-repositories, on Claude Code with opus; `settings` changes some of them. */
 function aRequest(shipId: ShipId, overrides: Partial<Omit<PlacementRequest, 'settings'>> & { settings?: Record<string, unknown> } = {}): PlacementRequest {
   const { settings = {}, ...rest } = overrides;
   return {
@@ -47,7 +47,7 @@ function aRequest(shipId: ShipId, overrides: Partial<Omit<PlacementRequest, 'set
     reason: null,
     givenBack: [],
     ...rest,
-    settings: { harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: { model: 'opus' }, ...settings },
+    settings: { harness: 'claude-code', workspace: { kind: 'repositories', main: { repository: 'aeolus-fleet' }, subRepositories: [] }, options: { model: 'opus' }, ...settings },
   };
 }
 
@@ -102,7 +102,7 @@ describe('placement (docs/trierarch.md, Assignment)', () => {
     {
       label: 'none offering it has the repository',
       trierarchs: [aTrierarch(MAC)],
-      settings: { workspace: { kind: 'worktree', repository: 'hemma' } },
+      settings: { workspace: { kind: 'repositories', main: { repository: 'hemma' }, subRepositories: [] } },
       reason: 'no trierarch offering claude-code has repository hemma',
     },
     {
@@ -156,7 +156,7 @@ describe('placement (docs/trierarch.md, Assignment)', () => {
   it('assigns a request without a harness to a trierarch whose default harness, the first it reports, takes its options (#343)', () => {
     const codexFirst = details({ harnesses: [{ harness: 'codex', options: { type: 'object', properties: { model: { enum: ['gpt-6'] } }, additionalProperties: false }, flags: [] }, ...details().harnesses] });
     const request = aRequest(SCOUT);
-    const withoutHarness = { ...request, settings: { workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: { model: 'opus' } } };
+    const withoutHarness = { ...request, settings: { workspace: { kind: 'repositories', main: { repository: 'aeolus-fleet' }, subRepositories: [] }, options: { model: 'opus' } } };
 
     expect(place([withoutHarness], { trierarchs: [aTrierarch(MAC, { details: codexFirst }), aTrierarch(LINUX, { commissionedAt: LATER })], enabledModels: [] })).toEqual([{ kind: 'assign', shipId: SCOUT, trierarchShipId: LINUX }]);
   });
@@ -236,7 +236,7 @@ describe("placement under the fleet's enabled models (model governance, M3)", ()
   });
 
   it('refuses before a request an enabled model no trierarch offering the harness reports, with the field options', () => {
-    const settings = { harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: { model: 'claude-haiku-5-5' } };
+    const settings = { harness: 'claude-code', workspace: { kind: 'repositories', main: { repository: 'aeolus-fleet' }, subRepositories: [] }, options: { model: 'claude-haiku-5-5' } };
 
     expect(checkPlacement(settings, { trierarchs: [aTrierarch(MAC, { details: offering(OPUS) })], enabledModels: ['claude-haiku-5-5'] })).toEqual({
       kind: 'refused',
@@ -273,7 +273,7 @@ describe("placement under the fleet's enabled models (model governance, M3)", ()
   });
 
   it('names its default harness in the reason for a request naming neither a model nor a harness', () => {
-    const request = { ...namingNone(), settings: { workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: {} } };
+    const request = { ...namingNone(), settings: { workspace: { kind: 'repositories', main: { repository: 'aeolus-fleet' }, subRepositories: [] }, options: {} } };
 
     expect(place([request], { trierarchs: [aTrierarch(MAC, { details: offering(SONNET) })], enabledModels: [OPUS] })).toEqual([
       { kind: 'explain', shipId: SCOUT, reason: 'model not available: no enabled default model for its default harness' },
@@ -290,7 +290,7 @@ describe("placement under the fleet's enabled models (model governance, M3)", ()
   });
 
   it('refuses before a request a named model the fleet did not enable, with the field options and the same reason (M4)', () => {
-    const settings = { harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: { model: OPUS } };
+    const settings = { harness: 'claude-code', workspace: { kind: 'repositories', main: { repository: 'aeolus-fleet' }, subRepositories: [] }, options: { model: OPUS } };
 
     expect(checkPlacement(settings, { trierarchs: [aTrierarch(MAC, { details: offering(OPUS) })], enabledModels: [SONNET] })).toEqual({
       kind: 'refused',
@@ -300,7 +300,7 @@ describe("placement under the fleet's enabled models (model governance, M3)", ()
   });
 
   it('refuses before a request settings naming no model where no trierarch has an enabled default, with the field options and the same reason (M4)', () => {
-    const settings = { harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: {} };
+    const settings = { harness: 'claude-code', workspace: { kind: 'repositories', main: { repository: 'aeolus-fleet' }, subRepositories: [] }, options: {} };
 
     expect(checkPlacement(settings, { trierarchs: [aTrierarch(MAC, { details: offering(SONNET) })], enabledModels: [OPUS] })).toEqual({
       kind: 'refused',
@@ -311,7 +311,7 @@ describe("placement under the fleet's enabled models (model governance, M3)", ()
 });
 
 describe('checking settings before a request (#245)', () => {
-  const settings = (overrides: Record<string, unknown> = {}) => ({ harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: { model: 'opus' }, ...overrides });
+  const settings = (overrides: Record<string, unknown> = {}) => ({ harness: 'claude-code', workspace: { kind: 'repositories', main: { repository: 'aeolus-fleet' }, subRepositories: [] }, options: { model: 'opus' }, ...overrides });
 
   it('fits when a trierarch offers the harness and workspace, takes the options and has room', () => {
     expect(checkPlacement(settings(), { trierarchs: [aTrierarch(MAC)], enabledModels: [] })).toEqual({ kind: 'fits' });
@@ -350,7 +350,7 @@ describe('checking settings before a request (#245)', () => {
   });
 
   it('checks the options of settings without a harness against each trierarch\'s default harness, naming the field (#343)', () => {
-    const withoutHarness = { workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: { model: 'haiku' } };
+    const withoutHarness = { workspace: { kind: 'repositories', main: { repository: 'aeolus-fleet' }, subRepositories: [] }, options: { model: 'haiku' } };
 
     expect(checkPlacement(withoutHarness, { trierarchs: [aTrierarch(MAC)], enabledModels: [] })).toEqual({
       kind: 'refused',
@@ -361,7 +361,7 @@ describe('checking settings before a request (#245)', () => {
   });
 
   it('refuses a request without a harness where no trierarch offers any harness, naming the field (#343)', () => {
-    const withoutHarness = { workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: {} };
+    const withoutHarness = { workspace: { kind: 'repositories', main: { repository: 'aeolus-fleet' }, subRepositories: [] }, options: {} };
 
     expect(checkPlacement(withoutHarness, { trierarchs: [aTrierarch(MAC, { details: details({ harnesses: [] }) })], enabledModels: [] })).toEqual({ kind: 'refused', field: 'harness', reason: 'no trierarch offers a harness' });
   });
@@ -416,7 +416,7 @@ describe('placement and MCP servers (M4)', () => {
   it('checks the servers of the harness the request names, not another harness', () => {
     const codexOnly = aTrierarch(MAC, { details: details({ harnesses: [...details().harnesses, { harness: 'codex', options: {}, flags: [], mcpServers: ['company-graph'] }] }) });
 
-    expect(checkPlacement({ harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: {}, mcpServers: ['company-graph'] }, { trierarchs: [codexOnly], enabledModels: [] })).toEqual({
+    expect(checkPlacement({ harness: 'claude-code', workspace: { kind: 'repositories', main: { repository: 'aeolus-fleet' }, subRepositories: [] }, options: {}, mcpServers: ['company-graph'] }, { trierarchs: [codexOnly], enabledModels: [] })).toEqual({
       kind: 'refused',
       field: 'mcpServers',
       reason: 'no trierarch offering claude-code offers MCP server company-graph',
@@ -444,11 +444,50 @@ describe('placement and MCP servers (M4)', () => {
 
   it('refuses settings naming a server in the check while only a stale trierarch offers it', () => {
     expect(
-      checkPlacement({ harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: {}, mcpServers: ['company-graph'] }, { trierarchs: [withServers(['company-graph'], { isMcpConfigurationCurrent: false })], enabledModels: [] }),
+      checkPlacement({ harness: 'claude-code', workspace: { kind: 'repositories', main: { repository: 'aeolus-fleet' }, subRepositories: [] }, options: {}, mcpServers: ['company-graph'] }, { trierarchs: [withServers(['company-graph'], { isMcpConfigurationCurrent: false })], enabledModels: [] }),
     ).toEqual({ kind: 'refused', field: 'mcpServers', reason: 'no trierarch offering claude-code offers MCP server company-graph' });
   });
 
   it('assigns a request naming no server to a trierarch that offers none', () => {
     expect(place([aRequest(SCOUT)], { trierarchs: [aTrierarch(MAC)], enabledModels: [] })).toEqual([{ kind: 'assign', shipId: SCOUT, trierarchShipId: MAC }]);
+  });
+});
+
+describe('placement and the repositories a request names (ship folder design, point 4)', () => {
+  /** A repositories workspace: the main repository and the sub-repositories, in the request's order. */
+  const repositories = (main: string, subRepositories: readonly string[] = []) => ({ kind: 'repositories', main: { repository: main }, subRepositories: subRepositories.map((repository) => ({ repository })) });
+  const offering = (shipId: ShipId, offered: readonly string[]) => aTrierarch(shipId, { details: details({ workspaces: { repositories: [...offered], folders: [] } }) });
+
+  it('assigns a request only to a trierarch that offers the main repository and every sub-repository', () => {
+    const mainOnly = offering(MAC, ['aeolus-fleet']);
+    const every = offering(LINUX, ['aeolus-fleet', 'skills', 'hemma']);
+
+    expect(place([aRequest(SCOUT, { settings: { workspace: repositories('aeolus-fleet', ['skills', 'hemma']) } })], { trierarchs: [mainOnly, every], enabledModels: [] })).toEqual([{ kind: 'assign', shipId: SCOUT, trierarchShipId: LINUX }]);
+  });
+
+  it.each([
+    { label: 'the main repository', offered: ['skills'], workspace: repositories('aeolus-fleet', ['skills']), reason: 'no trierarch offering claude-code has repository aeolus-fleet' },
+    { label: 'a sub-repository', offered: ['aeolus-fleet'], workspace: repositories('aeolus-fleet', ['skills']), reason: 'no trierarch offering claude-code has repository skills' },
+    { label: 'the first of several', offered: ['aeolus-fleet'], workspace: repositories('aeolus-fleet', ['hemma', 'skills']), reason: 'no trierarch offering claude-code has repository hemma' },
+    { label: 'the main before a sub-repository', offered: [], workspace: repositories('aeolus-fleet', ['skills']), reason: 'no trierarch offering claude-code has repository aeolus-fleet' },
+  ])('leaves a request unassigned naming $label when no trierarch offers it', ({ offered, workspace, reason }) => {
+    expect(place([aRequest(SCOUT, { settings: { workspace } })], { trierarchs: [offering(MAC, offered)], enabledModels: [] })).toEqual([{ kind: 'explain', shipId: SCOUT, reason }]);
+  });
+
+  it('leaves a request unassigned when each repository is offered but no trierarch offers them all', () => {
+    const first = offering(MAC, ['aeolus-fleet']);
+    const second = offering(LINUX, ['skills']);
+
+    expect(place([aRequest(SCOUT, { settings: { workspace: repositories('aeolus-fleet', ['skills']) } })], { trierarchs: [first, second], enabledModels: [] })).toEqual([
+      { kind: 'explain', shipId: SCOUT, reason: 'no trierarch offering claude-code has repositories aeolus-fleet, skills together' },
+    ]);
+  });
+
+  it('refuses settings naming a sub-repository no trierarch offers in the check, with the field workspace', () => {
+    expect(checkPlacement({ harness: 'claude-code', workspace: repositories('aeolus-fleet', ['skills']), options: {} }, { trierarchs: [offering(MAC, ['aeolus-fleet'])], enabledModels: [] })).toEqual({
+      kind: 'refused',
+      field: 'workspace',
+      reason: 'no trierarch offering claude-code has repository skills',
+    });
   });
 });

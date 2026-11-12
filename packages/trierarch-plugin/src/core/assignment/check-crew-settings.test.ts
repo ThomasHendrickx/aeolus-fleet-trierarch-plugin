@@ -23,7 +23,7 @@ const DETAILS: TrierarchReportDetails = {
   orphans: [],
   version: '0.19.0',
 };
-const SETTINGS = { harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: {} };
+const SETTINGS = { harness: 'claude-code', workspace: { kind: 'repositories', main: { repository: 'aeolus-fleet' }, subRepositories: [] }, options: {} };
 
 let fleet: ReturnType<typeof fakePluginFleet>;
 let connections: ReturnType<typeof memoryConnectionStore>;
