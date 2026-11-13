@@ -254,7 +254,7 @@ describe('assignment against a real fleet', () => {
     const machineShipId = z.templateLiteral(['shp_', z.string()]).parse(joined.shipId);
     await reportAsTrierarch(fleetUrl, { shipId: machineShipId, secret: joined.secret, setup: { caps: { ships: 4, running: 2 }, flags: [], version: '0.19.0' } });
     const scout = unwrap(await useCases.commissionShip(argo, { idempotencyKey: newKey(), name: 'scout', type: 'implementer' }));
-    unwrap(await useCases.requestCrew(argo, { shipId: scout.shipId, settings: { harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: {} } }));
+    unwrap(await useCases.requestCrew(argo, { shipId: scout.shipId, settings: { harness: 'claude-code', workspace: { kind: 'repositories', main: { repository: 'aeolus-fleet' }, subRepositories: [] }, options: {} } }));
     // A second process on the same database, crewing the same ship with the kept crew token.
     const second = await started();
 
@@ -284,7 +284,7 @@ describe("the fleet's enabled models against a real fleet (model governance)", (
     const machineShipId = z.templateLiteral(['shp_', z.string()]).parse(joined.shipId);
     await reportAsTrierarch(fleetUrl, { shipId: machineShipId, secret: joined.secret, setup: { caps: { ships: 4, running: 2 }, flags: [], version: '0.19.0' } });
     const scout = unwrap(await useCases.commissionShip(argo, { idempotencyKey: newKey(), name: 'scout', type: 'implementer' }));
-    unwrap(await useCases.requestCrew(argo, { shipId: scout.shipId, settings: { harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: { model: 'claude-opus-5-5' } } }));
+    unwrap(await useCases.requestCrew(argo, { shipId: scout.shipId, settings: { harness: 'claude-code', workspace: { kind: 'repositories', main: { repository: 'aeolus-fleet' }, subRepositories: [] }, options: { model: 'claude-opus-5-5' } } }));
 
     const enabled = await mutate(address, { procedure: 'models.enable', cookie, body: { model: 'claude-sonnet-5-5' } });
     expect(await enabled.json()).toEqual({ result: { data: ['claude-sonnet-5-5'] } });
@@ -306,7 +306,7 @@ describe('telling the requester why its crew request waits, against a real fleet
     const machineShipId = z.templateLiteral(['shp_', z.string()]).parse(joined.shipId);
     await reportAsTrierarch(fleetUrl, { shipId: machineShipId, secret: joined.secret, setup: { caps: { ships: 4, running: 2 }, flags: [], version: '0.19.0' } });
     const scout = unwrap(await useCases.commissionShip(argo, { idempotencyKey: newKey(), name: 'scout', type: 'implementer' }));
-    unwrap(await useCases.requestCrew(argo, { shipId: scout.shipId, settings: { harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: { model: 'claude-opus-5-5' } } }));
+    unwrap(await useCases.requestCrew(argo, { shipId: scout.shipId, settings: { harness: 'claude-code', workspace: { kind: 'repositories', main: { repository: 'aeolus-fleet' }, subRepositories: [] }, options: { model: 'claude-opus-5-5' } } }));
     await mutate(address, { procedure: 'models.enable', cookie, body: { model: 'claude-sonnet-5-5' } });
 
     await apps[0]?.assignOnce();
@@ -328,7 +328,7 @@ describe('telling the requester why its crew request waits, against a real fleet
     const orchestrator = unwrap(await useCases.commissionShip(argo, { idempotencyKey: newKey(), name: 'orchestrator', type: 'orchestrator', scopes: ['fleet:manage'] }));
     const scout = unwrap(await useCases.commissionShip(argo, { idempotencyKey: newKey(), name: 'scout', type: 'implementer' }));
     const asOrchestrator = { shipId: orchestrator.shipId, fleetId: argo.fleetId, kind: 'agent' as const, scopes: ['fleet:manage' as const] };
-    unwrap(await useCases.requestCrew(asOrchestrator, { shipId: scout.shipId, settings: { harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: { model: 'claude-opus-5-5' } } }));
+    unwrap(await useCases.requestCrew(asOrchestrator, { shipId: scout.shipId, settings: { harness: 'claude-code', workspace: { kind: 'repositories', main: { repository: 'aeolus-fleet' }, subRepositories: [] }, options: { model: 'claude-opus-5-5' } } }));
     unwrap(await useCases.retireShip(argo, { shipId: orchestrator.shipId }));
     await mutate(address, { procedure: 'models.enable', cookie, body: { model: 'claude-sonnet-5-5' } });
 
@@ -363,7 +363,7 @@ describe('machine labels against a real fleet (#102)', () => {
     expect(machine?.labels.map((label) => `${label.key}=${label.value}`)).toEqual(['arch=arm64', 'os=macos', 'trierarch=machine']);
 
     const valueOf = async (key: string, value: string) => unwrap(await useCases.findLabelValue(argo, { key, value })).valueId;
-    const settings = { harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: {} } as const;
+    const settings = { harness: 'claude-code', workspace: { kind: 'repositories', main: { repository: 'aeolus-fleet' }, subRepositories: [] }, options: {} };
     const scout = unwrap(await useCases.commissionShip(argo, { idempotencyKey: newKey(), name: 'scout', type: 'implementer' }));
     unwrap(await useCases.requestCrew(argo, { shipId: scout.shipId, settings: { ...settings, machineLabels: [await valueOf('os', 'linux')] } }));
     const lookout = unwrap(await useCases.commissionShip(argo, { idempotencyKey: newKey(), name: 'lookout', type: 'implementer' }));
@@ -384,7 +384,7 @@ describe('checking crew settings before a request (#245)', () => {
     const joined = joinedSchema.parse(await (await mutate(address, { procedure: 'machines.join', cookie, body: { name: 'mac-studio' } })).json()).result.data;
     const machineShipId = z.templateLiteral(['shp_', z.string()]).parse(joined.shipId);
     await reportAsTrierarch(fleetUrl, { shipId: machineShipId, secret: joined.secret, setup: { caps: { ships: 4, running: 2 }, flags: [], version: '0.19.0' } });
-    const settings = { harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: {} };
+    const settings = { harness: 'claude-code', workspace: { kind: 'repositories', main: { repository: 'aeolus-fleet' }, subRepositories: [] }, options: {} };
 
     const fits = checkSchema.parse(await (await query(address, { procedure: 'requests.check', cookie, input: { settings } })).json()).result.data;
     const refused = checkSchema.parse(await (await query(address, { procedure: 'requests.check', cookie, input: { settings: { ...settings, harness: 'codex' } } })).json()).result.data;
@@ -420,7 +420,7 @@ describe('a request given back (#382)', () => {
     const crewToken = registered.isOk ? registered.value.crewToken : '';
     const machine = unwrap(await useCases.commissionShip(argo, { idempotencyKey: newKey(), name: 'mac-studio', type: 'trierarch', scopes: ['crew:run'] }));
     const scout = unwrap(await useCases.commissionShip(argo, { idempotencyKey: newKey(), name: 'scout', type: 'implementer' }));
-    unwrap(await useCases.requestCrew(argo, { shipId: scout.shipId, settings: { workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: {} } }));
+    unwrap(await useCases.requestCrew(argo, { shipId: scout.shipId, settings: { workspace: { kind: 'repositories', main: { repository: 'aeolus-fleet' }, subRepositories: [] }, options: {} } }));
     await door.assignCrew(crewToken, { shipId: scout.shipId, trierarchShipId: machine.shipId });
     const machineCaller = { fleetId: argo.fleetId, shipId: machine.shipId, kind: 'agent' as const, scopes: ['messages:send' as const, 'messages:receive' as const, 'crew:run' as const] };
     unwrap(await useCases.giveBackCrewRequest(machineCaller, { shipId: scout.shipId, settingsVersion: 1, reason: 'mac-studio: claude-code 2.1.293 refused claude-opus-5-5' }));
@@ -625,7 +625,7 @@ describe("a fleet's MCP configuration against a real fleet (the fleet crew MCP d
     await trierarch.report(key.details);
     await replace(address, WITH_GRAPH);
     const scout = unwrap(await useCases.commissionShip(argo, { idempotencyKey: newKey(), name: 'scout', type: 'implementer' }));
-    unwrap(await useCases.requestCrew(argo, { shipId: scout.shipId, settings: { harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options: {}, mcpServers: ['company-graph'] } }));
+    unwrap(await useCases.requestCrew(argo, { shipId: scout.shipId, settings: { harness: 'claude-code', workspace: { kind: 'repositories', main: { repository: 'aeolus-fleet' }, subRepositories: [] }, options: {}, mcpServers: ['company-graph'] } }));
 
     await app.assignOnce();
     await expect(fleetDatabase.crewRequest.findUniqueOrThrow({ where: { shipId: scout.shipId } })).resolves.toMatchObject({ assignedTo: null, reason: 'no trierarch offering claude-code offers MCP server company-graph' });

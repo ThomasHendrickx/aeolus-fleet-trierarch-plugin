@@ -51,7 +51,7 @@
     "postpack": "rm LICENSE"
   },
   "dependencies": {
-    "@aeolus-fleet/common": "^0.38.4",
+    "@aeolus-fleet/common": "^0.39.0",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
     "@trpc/server": "^11.19.0",
@@ -61,7 +61,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@aeolus-fleet/core": "^0.38.4",
+    "@aeolus-fleet/core": "^0.39.0",
     "@testcontainers/postgresql": "^12.2.0",
     "@types/libsodium-wrappers": "^0.8.2"
   }

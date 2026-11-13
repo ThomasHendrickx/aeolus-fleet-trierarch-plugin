@@ -33,7 +33,7 @@ function aCrewedShip(at: { stated?: { id: string; statedAt: Date } | null; reque
     labels: [],
   });
   const options = at.requested === undefined ? { model: 'claude-opus-5-5' } : { model: at.requested };
-  fleet.state.settings.set(SCOUT, { harness: 'claude-code', workspace: { kind: 'worktree', repository: 'aeolus-fleet' }, options });
+  fleet.state.settings.set(SCOUT, { harness: 'claude-code', workspace: { kind: 'repositories', main: { repository: 'aeolus-fleet' }, subRepositories: [] }, options });
 }
 
 const tellWith = (checked: Set<string>) => createTellModelMismatches({ door: fleet.door, connections, checked });

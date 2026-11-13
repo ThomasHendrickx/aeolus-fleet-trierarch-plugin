@@ -83,12 +83,29 @@ function optionsRefusal(schema: TrierarchReportDetails['harnesses'][number]['opt
   return issue === undefined ? undefined : lineOf(issue, ['options']);
 }
 
-function offersWorkspace(details: TrierarchReportDetails, workspace: CrewSettings['workspace']): boolean {
-  return workspace.kind === 'worktree' ? details.workspaces.repositories.includes(workspace.repository) : details.workspaces.folders.includes(workspace.name);
+/** The repositories a workspace names, the main repository first, then each sub-repository in the request's order. */
+function namedRepositories(workspace: Extract<CrewSettings['workspace'], { kind: 'repositories' }>): readonly string[] {
+  return [workspace.main.repository, ...workspace.subRepositories.map(({ repository }) => repository)];
 }
 
-function workspaceName(workspace: CrewSettings['workspace']): string {
-  return workspace.kind === 'worktree' ? `repository ${workspace.repository}` : `folder ${workspace.name}`;
+/** Whether the trierarch offers the folder, or every repository the workspace names, configured or trusted (ship folder design, point 4). */
+function offersWorkspace(details: TrierarchReportDetails, workspace: CrewSettings['workspace']): boolean {
+  return workspace.kind === 'repositories' ? namedRepositories(workspace).every((name) => details.workspaces.repositories.includes(name)) : details.workspaces.folders.includes(workspace.name);
+}
+
+/**
+ * Why no trierarch offering the harness offers the workspace: the folder; the
+ * first repository none offers; else the repositories no single one offers
+ * together.
+ */
+function workspaceRefusal(offering: readonly { trierarch: PlacementTrierarch }[], request: { workspace: CrewSettings['workspace']; harnessWords: string }): string {
+  const { workspace, harnessWords } = request;
+  if (workspace.kind === 'folder') {
+    return `no trierarch offering ${harnessWords} has folder ${workspace.name}`;
+  }
+  const named = namedRepositories(workspace);
+  const missing = named.find((name) => offering.every(({ trierarch }) => !trierarch.details.workspaces.repositories.includes(name)));
+  return missing === undefined ? `no trierarch offering ${harnessWords} has repositories ${named.join(', ')} together` : `no trierarch offering ${harnessWords} has repository ${missing}`;
 }
 
 /**
@@ -208,7 +225,7 @@ function fit(settings: CrewSettings, { trierarchs, enabledModels, givenBack }: P
   const withServers = offering.filter((offer) => (settings.mcpServers ?? []).every((name) => offeredServers(offer).includes(name)));
   const withWorkspace = withServers.filter(({ trierarch }) => offersWorkspace(trierarch.details, settings.workspace));
   if (withWorkspace.length === 0) {
-    return { reason: `no trierarch offering ${harnessWords} has ${workspaceName(settings.workspace)}`, field: 'workspace' };
+    return { reason: workspaceRefusal(withServers, { workspace: settings.workspace, harnessWords }).slice(0, CREW_REQUEST_REASON_MAX_LENGTH), field: 'workspace' };
   }
   const refusals = withWorkspace.map(({ trierarch, harness }) => ({ trierarch, harness, refusal: optionsRefusal(harness.options, settings.options) }));
   const taking = refusals.filter(({ refusal }) => refusal === undefined);
@@ -255,7 +272,7 @@ export function checkPlacement(settings: unknown, fleet: PlacementFleet): Placem
  * "Assignment"). Oldest request first; in a fleet that enabled models, only
  * a request whose model is enabled, or that names none and runs on an enabled
  * default (model governance, M3). Each to a trierarch whose ship
- * carries every machine label it names, that offers its harness and workspace, takes its options against the schema it reports for
+ * carries every machine label it names, that offers its harness and its folder or every repository it names, takes its options against the schema it reports for
  * that harness, did not give it back (#382), and has room (its cap above the requests assigned to it);
  * of those, the most room as a share of its cap, then the oldest. What it
  * assigns counts against the room of later requests in the same pass. A
