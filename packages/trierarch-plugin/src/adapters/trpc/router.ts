@@ -24,6 +24,7 @@ import type { IsServed } from '../../core/installation/served.js';
 import type { SetFleetEnabled } from '../../core/installation/set-fleet-enabled.js';
 import type { CheckCrewSettings } from '../../core/assignment/check-crew-settings.js';
 import type { JoinMachine } from '../../core/machines/join-machine.js';
+import { SETUP_HARNESSES } from '../../core/machines/setup-line.js';
 import type { MakeNewSetupLine } from '../../core/machines/new-setup-line.js';
 import type { ListMachines } from '../../core/machines/list-machines.js';
 import type { ReadMcpConfiguration } from '../../core/mcp-configuration/read-mcp-configuration.js';
@@ -229,6 +230,34 @@ export const checkedSettingsOutputSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('noRoom'), reason: z.string() }),
 ]);
 
+/** The most paths or git URLs one join names, and the longest one. */
+const JOIN_REPOSITORIES_MAX = 100;
+const JOIN_REPOSITORY_MAX_LENGTH = 2048;
+
+/**
+ * One path or git URL of a join. The trierarch splits `--repositories` at a
+ * comma or semicolon and a NUL ends a word, so a value holding one could not
+ * be told as it was given: refused. Any other character is shell-quoted in the line.
+ */
+const joinRepositorySchema = z
+  .string()
+  .max(JOIN_REPOSITORY_MAX_LENGTH)
+  .refine((value) => !/[,;\0]/.test(value), 'A path or git URL holds no comma, semicolon or NUL');
+
+/** What a join takes: the machine's name, and the optional harness and repository options that become the line's flags. */
+export const joinMachineInputSchema = z.strictObject({
+  name: shipHandleSchema,
+  harnesses: z.array(z.enum(SETUP_HARNESSES)).max(SETUP_HARNESSES.length).optional(),
+  unattended: z.array(z.enum(SETUP_HARNESSES)).max(SETUP_HARNESSES.length).optional(),
+  repositories: z
+    .discriminatedUnion('kind', [
+      z.strictObject({ kind: z.literal('list'), entries: z.array(joinRepositorySchema).max(JOIN_REPOSITORIES_MAX) }),
+      z.strictObject({ kind: z.literal('folder'), path: joinRepositorySchema.min(1) }),
+      z.strictObject({ kind: z.literal('none') }),
+    ])
+    .optional(),
+});
+
 /** A joined machine: its trierarch's ship, its starting prompt (decision 0019) and its setup line, each shown once. */
 export const joinedMachineOutputSchema = z.object({
   shipId: idSchema('ship'),
@@ -356,10 +385,10 @@ export const trierarchPluginRouter = t.router({
   machines: t.router({
     /** Brings a machine into the fleet: commissions its trierarch's ship and answers its starting prompt and setup line, once. */
     join: connectedProcedure
-      .input(z.strictObject({ name: shipHandleSchema }))
+      .input(joinMachineInputSchema)
       .output(joinedMachineOutputSchema)
       .mutation(async ({ ctx, input }) => {
-        const joined = await ctx.joinMachine({ fleetId: ctx.fleetId, name: input.name, actor: { kind: ctx.kind, scopes: ctx.scopes } });
+        const joined = await ctx.joinMachine({ fleetId: ctx.fleetId, name: input.name, actor: { kind: ctx.kind, scopes: ctx.scopes }, options: { harnesses: input.harnesses, unattended: input.unattended, repositories: input.repositories } });
         if (!joined.isOk) {
           throw new TRPCError({ code: JOIN_CODES[joined.error.kind], message: joined.error.message });
         }
