@@ -251,7 +251,7 @@ export function replaceMcpConfiguration(
   }
   for (const server of servers.value) {
     if (server.credential !== undefined && !replacement.secrets.includes(server.credential.secret)) {
-      return invalid(`${server.name}: its credential names the secret ${server.credential.secret}, which the replacement does not retain`);
+      return invalid(`${server.name}: its credential names a secret the replacement does not retain`);
     }
   }
   const configuration: McpConfiguration = { version: current.version + 1, servers: servers.value, secrets: secrets.value };
