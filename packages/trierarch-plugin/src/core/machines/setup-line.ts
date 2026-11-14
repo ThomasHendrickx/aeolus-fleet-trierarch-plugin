@@ -1,5 +1,8 @@
 import type { ShipId } from '@aeolus-fleet/common';
 
+import { refuse, type DomainError } from '../shared/errors.js';
+import { ok, type Result } from '../shared/result.js';
+
 /** The trierarch's install script: it installs the binary, then runs `aeolus-trierarch init` with the flags it is given. */
 const INSTALL_SCRIPT_URL = 'https://raw.githubusercontent.com/ThomasHendrickx/aeolus-fleet-trierarch/main/install.sh';
 
@@ -16,6 +19,31 @@ export interface SetupOptions {
   /** Harnesses that run without permission questions: only those picked in `harnesses` are carried. */
   unattended?: readonly SetupHarness[];
   repositories?: RepositoriesChoice;
+}
+
+export type SetupOptionsRefusal = DomainError<'INVALID_SETUP_OPTION'>;
+
+/**
+ * The trierarch reads `--repositories` as one value split at a comma or a
+ * semicolon (aeolus-fleet-trierarch, repositoryselection.go), and a repeated
+ * flag keeps only its last value: an entry holding either delimiter could not
+ * be told as given, so it is refused. `--repositories-in` is one path and is
+ * not split: it takes any character. A NUL ends a shell word, so none is taken.
+ */
+export function checkedSetupOptions(options: SetupOptions): Result<SetupOptions, SetupOptionsRefusal> {
+  const choice = options.repositories;
+  const values = choice?.kind === 'list' ? choice.entries : choice?.kind === 'folder' ? [choice.path] : [];
+  if (values.some((value) => value.includes('\0'))) {
+    return refuse('INVALID_SETUP_OPTION', 'A repository path or git URL holds no NUL');
+  }
+  if (choice?.kind === 'list') {
+    for (const [delimiter, name] of [[',', 'comma'], [';', 'semicolon']] as const) {
+      if (choice.entries.some((entry) => entry.includes(delimiter))) {
+        return refuse('INVALID_SETUP_OPTION', `A repository path or git URL holds no ${name}: the trierarch splits the list there`);
+      }
+    }
+  }
+  return ok(options);
 }
 
 /** One shell word that holds the value as it is: single quotes, a single quote inside closed, escaped and opened again. */
@@ -51,9 +79,14 @@ function optionFlagsOf(options: SetupOptions): string[] {
  * type proves nothing. It holds the secret, so it is shown once, never kept.
  * Each option filled becomes its flag, so a line with all of them asks
  * nothing; each one left out is asked on the machine. A path or git URL is
- * shell-quoted, so no value can break out of the line.
+ * shell-quoted, so no value can break out of the line; a list entry the
+ * trierarch would split is refused (checkedSetupOptions).
  */
-export function setupLineOf(parts: { fleetUrl: string; shipId: ShipId; pluginShipId: ShipId; secret: string }, options: SetupOptions = {}): string {
+export function setupLineOf(parts: { fleetUrl: string; shipId: ShipId; pluginShipId: ShipId; secret: string }, options: SetupOptions = {}): Result<string, SetupOptionsRefusal> {
+  const checked = checkedSetupOptions(options);
+  if (!checked.isOk) {
+    return checked;
+  }
   const base = `curl -fsSL ${INSTALL_SCRIPT_URL} | sh -s -- --fleet-url ${parts.fleetUrl} --ship-id ${parts.shipId} --plugin-ship-id ${parts.pluginShipId} --secret ${parts.secret}`;
-  return [base, ...optionFlagsOf(options)].join(' ');
+  return ok([base, ...optionFlagsOf(checked.value)].join(' '));
 }

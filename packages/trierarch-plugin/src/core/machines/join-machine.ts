@@ -5,7 +5,7 @@ import { refuse, type DomainError } from '../shared/errors.js';
 import { ok, type Result } from '../shared/result.js';
 import { JOIN_SCOPE } from '../scopes/plugin-scopes.js';
 import type { IdempotencyKeys } from './ports.js';
-import { setupLineOf, type SetupOptions } from './setup-line.js';
+import { checkedSetupOptions, setupLineOf, type SetupOptions } from './setup-line.js';
 
 /** The type of every machine's ship: its trierarch's. */
 export const TRIERARCH_TYPE = 'trierarch';
@@ -13,7 +13,7 @@ export const TRIERARCH_TYPE = 'trierarch';
 /** What a trierarch may do beyond sending and receiving: crew the ships assigned to it (decision 0030). */
 const TRIERARCH_SCOPES = ['crew:run'];
 
-export type JoinRefusal = DomainError<'NEEDS_SCOPE' | 'NOT_CONNECTED' | 'NAME_TAKEN' | 'FLEET_UNAVAILABLE'>;
+export type JoinRefusal = DomainError<'NEEDS_SCOPE' | 'NOT_CONNECTED' | 'NAME_TAKEN' | 'FLEET_UNAVAILABLE' | 'INVALID_SETUP_OPTION'>;
 
 /** Who asks to join a machine, as the fleet answers its session: its kind and its ship's scopes. */
 export interface JoiningActor {
@@ -56,6 +56,10 @@ export function createJoinMachine(deps: { door: FleetDoor; connections: Connecti
     if (actor.kind !== 'operator' && !actor.scopes.includes(JOIN_SCOPE)) {
       return refuse('NEEDS_SCOPE', `Adding a computer needs ${JOIN_SCOPE}`);
     }
+    const checked = checkedSetupOptions(options ?? {});
+    if (!checked.isOk) {
+      return checked;
+    }
     const crew = await deps.connections.find(fleetId);
     if (!crew) {
       return refuse('NOT_CONNECTED', 'The trierarch plugin is not connected to this fleet: connect it in the console');
@@ -67,7 +71,7 @@ export function createJoinMachine(deps: { door: FleetDoor; connections: Connecti
         : refuse('FLEET_UNAVAILABLE', `The fleet did not commission the machine's ship: ${commissioned.error.message}`);
     }
     const { shipId, prompt, crewLines, secret } = commissioned.value;
-    const setupLine = setupLineOf({ fleetUrl: deps.fleetUrl, shipId, pluginShipId: crew.shipId, secret }, options);
-    return ok({ shipId, name, prompt, crewLines, secret, setupLine });
+    const setupLine = setupLineOf({ fleetUrl: deps.fleetUrl, shipId, pluginShipId: crew.shipId, secret }, checked.value);
+    return setupLine.isOk ? ok({ shipId, name, prompt, crewLines, secret, setupLine: setupLine.value }) : setupLine;
   };
 }

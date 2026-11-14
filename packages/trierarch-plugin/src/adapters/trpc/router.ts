@@ -169,6 +169,7 @@ const JOIN_CODES = {
   NOT_CONNECTED: 'PRECONDITION_FAILED',
   NAME_TAKEN: 'CONFLICT',
   FLEET_UNAVAILABLE: 'BAD_GATEWAY',
+  INVALID_SETUP_OPTION: 'BAD_REQUEST',
 } as const satisfies Record<string, TRPCError['code']>;
 
 /** The refusals of a new setup line, as the API states them: the fleet's refusal of the operator is theirs to read. */
@@ -177,6 +178,7 @@ const NEW_SETUP_LINE_CODES = {
   NOT_A_MACHINE: 'NOT_FOUND',
   FLEET_REFUSED: 'FORBIDDEN',
   FLEET_UNAVAILABLE: 'BAD_GATEWAY',
+  INVALID_SETUP_OPTION: 'BAD_REQUEST',
 } as const satisfies Record<string, TRPCError['code']>;
 
 /** The refusals of reading the fleet (listing the machines, checking settings), as the API states them. */
@@ -234,15 +236,8 @@ export const checkedSettingsOutputSchema = z.discriminatedUnion('kind', [
 const JOIN_REPOSITORIES_MAX = 100;
 const JOIN_REPOSITORY_MAX_LENGTH = 2048;
 
-/**
- * One path or git URL of a join. The trierarch splits `--repositories` at a
- * comma or semicolon and a NUL ends a word, so a value holding one could not
- * be told as it was given: refused. Any other character is shell-quoted in the line.
- */
-const joinRepositorySchema = z
-  .string()
-  .max(JOIN_REPOSITORY_MAX_LENGTH)
-  .refine((value) => !/[,;\0]/.test(value), 'A path or git URL holds no comma, semicolon or NUL');
+/** One path or git URL of a join: its length only. What the trierarch can read is the domain's rule (checkedSetupOptions). */
+const joinRepositorySchema = z.string().max(JOIN_REPOSITORY_MAX_LENGTH);
 
 /** What a join takes: the machine's name, and the optional harness and repository options that become the line's flags. */
 export const joinMachineInputSchema = z.strictObject({

@@ -10,10 +10,8 @@ const resultOf = (options?: Parameters<typeof setupLineOf>[1]) =>
 /** The line of options the domain accepts. */
 const line = (options?: Parameters<typeof setupLineOf>[1]) => {
   const made = resultOf(options);
-  if (!made.isOk) {
-    throw new Error(`refused: ${made.error.message}`);
-  }
-  return made.value;
+  expect(made.isOk).toBe(true);
+  return made.isOk ? made.value : '';
 };
 
 describe('the setup line of a machine', () => {
