@@ -100,6 +100,17 @@ describe("a fleet's MCP configuration", () => {
     });
   });
 
+  it('never tells a value put in a credential in place of its secret name', () => {
+    const swapped = 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
+    const refused = replace(aReplacement({ servers: [{ ...GRAPH, credential: { secret: swapped, header: 'Authorization' } }], secrets: ['graph-token'], secretValues: { 'graph-token': VALUE } }));
+
+    expect(refused).toEqual({
+      isOk: false,
+      error: { kind: 'INVALID_CONFIGURATION', message: 'company-graph: its credential names a secret the replacement does not retain' },
+    });
+    expect(JSON.stringify(refused)).not.toContain(swapped);
+  });
+
   it('refuses a retained secret that neither exists nor gets a value', () => {
     expect(replace(aReplacement({ secrets: ['graph-token'] }))).toEqual({
       isOk: false,
