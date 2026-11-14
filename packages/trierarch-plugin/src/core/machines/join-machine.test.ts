@@ -113,4 +113,12 @@ describe('a machine joining', () => {
 
     await expect(join()).resolves.toMatchObject({ isOk: false, error: { kind: 'FLEET_UNAVAILABLE' } });
   });
+
+  it('refuses a list entry holding a comma before commissioning a ship, so none is left without a line', async () => {
+    const joined = await joinWith({ options: { repositories: { kind: 'list', entries: ['/a,b'] } } });
+
+    expect(joined.isOk).toBe(false);
+    expect(!joined.isOk && joined.error.kind).toBe('INVALID_SETUP_OPTION');
+    expect(fleet.state.commissioned).toEqual([]);
+  });
 });

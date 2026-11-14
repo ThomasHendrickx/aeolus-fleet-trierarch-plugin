@@ -6,6 +6,7 @@ import { FLEET_ID, SHIP_ID, fakePluginFleet, memoryConnectionStore } from '../..
 import { memoryMcpConfigurations } from '../../../test/support/memory-mcp-configurations.js';
 import { memoryEnabledModels } from '../../../test/support/memory-models.js';
 import { cannedUsageHistory } from '../../../test/support/memory-usage.js';
+import { createJoinMachine } from '../../core/machines/join-machine.js';
 import { createReadMcpConfiguration } from '../../core/mcp-configuration/read-mcp-configuration.js';
 import { createReplaceMcpConfiguration } from '../../core/mcp-configuration/replace-mcp-configuration.js';
 import { createListEnabledModels } from '../../core/models/list-enabled-models.js';
@@ -85,7 +86,7 @@ beforeEach(async () => {
 });
 
 /** The router as the console's server calls it, for a session of the given scopes, on a fleet served and connected unless it says otherwise. */
-function caller(session: { kind?: 'operator' | 'viewer'; scopes: readonly ScopeName[]; isServed?: boolean; isConnected?: boolean; origin?: string }) {
+function caller(session: { kind?: 'operator' | 'viewer'; scopes: readonly ScopeName[]; isServed?: boolean; isConnected?: boolean; origin?: string; joinMachine?: Context['joinMachine'] }) {
   const context: Context = {
     cookie: 'aeolus_session=a-session',
     origin: session.origin,
@@ -101,7 +102,7 @@ function caller(session: { kind?: 'operator' | 'viewer'; scopes: readonly ScopeN
     deleteFleet: notReached,
     readConnection: notReached,
     connect: notReached,
-    joinMachine: notReached,
+    joinMachine: session.joinMachine ?? notReached,
     newSetupLine: notReached,
     listMachines: notReached,
     checkCrewSettings: notReached,
@@ -338,15 +339,48 @@ describe('the options of a join over the API (join design, decision 12)', () => 
     expect(parsed({ name: 'mac', harnesses: ['claude-code', 'codex', 'copilot'], unattended: ['codex'], repositories: { kind: 'list', entries: ['~/a', '', 'https://h/x.git'] } })).toBe(true);
     expect(parsed({ name: 'mac', repositories: { kind: 'folder', path: '~/code' } })).toBe(true);
     expect(parsed({ name: 'mac', repositories: { kind: 'none' } })).toBe(true);
+    expect(parsed({ name: 'mac', repositories: { kind: 'folder', path: '/a,b;c' } })).toBe(true);
   });
 
   it.each([
     ['a harness without an adapter', { name: 'mac', harnesses: ['cursor'] }],
     ['a clone folder', { name: 'mac', cloneInto: '/x' }],
-    ['a path holding a comma', { name: 'mac', repositories: { kind: 'list', entries: ['/a,b'] } }],
-    ['a path holding a semicolon', { name: 'mac', repositories: { kind: 'folder', path: '/a;b' } }],
     ['an empty folder', { name: 'mac', repositories: { kind: 'folder', path: '' } }],
   ])('refuses %s', (_what, input) => {
     expect(parsed(input)).toBe(false);
+  });
+});
+
+describe('the repositories of a join, through the real use case', () => {
+  async function joinCaller() {
+    const fleet = fakePluginFleet();
+    const connections = memoryConnectionStore();
+    fleet.state.liveTokens.add('aeolus_ct_v1_plugin');
+    await connections.save({ fleetId: FLEET_ID, shipId: SHIP_ID, name: 'trierarch-plugin', crewToken: 'aeolus_ct_v1_plugin', crewedAt: new Date('2026-10-06T22:00:00.000Z') });
+    const joinMachine = createJoinMachine({ door: fleet.door, connections, keys: { next: () => 'join-key' }, fleetUrl: 'https://fleet.example' });
+    return { fleet, caller: caller({ scopes: OPERATOR, joinMachine }) };
+  }
+
+  it('answers a hostile folder path with a semicolon and quotes as one quoted word, written out literally', async () => {
+    const { caller: api } = await joinCaller();
+
+    const joined = await api.machines.join({ name: 'mac', repositories: { kind: 'folder', path: `/x'; rm -rf ~ #"` } });
+
+    expect(joined.setupLine.endsWith(` --repositories-in '/x'\\''; rm -rf ~ #"'`)).toBe(true);
+  });
+
+  it('answers a folder path holding a comma and a semicolon', async () => {
+    const { caller: api } = await joinCaller();
+
+    const joined = await api.machines.join({ name: 'mac', repositories: { kind: 'folder', path: '/srv/a,b;c' } });
+
+    expect(joined.setupLine.endsWith(" --repositories-in '/srv/a,b;c'")).toBe(true);
+  });
+
+  it('refuses a list entry holding a comma as a bad request, and commissions no ship', async () => {
+    const { fleet, caller: api } = await joinCaller();
+
+    await expect(refusalOf(api.machines.join({ name: 'mac', repositories: { kind: 'list', entries: ['/a,b'] } }))).resolves.toBe('BAD_REQUEST');
+    expect(fleet.state.commissioned).toEqual([]);
   });
 });
