@@ -15,7 +15,7 @@ import { createReadSubscriptionWindows } from '../../core/usage/read-subscriptio
 import { createReadUsageValues } from '../../core/usage/read-usage-values.js';
 import type { TokenUsage } from '../../core/usage/token-usage.js';
 import { ok } from '../../core/shared/result.js';
-import { trierarchPluginRouter, type Context } from './router.js';
+import { joinMachineInputSchema, trierarchPluginRouter, type Context } from './router.js';
 
 // The models procedures (model governance, M6): reading the fleet's enabled
 // models is every signed-in session's, viewer included; enabling and disabling
@@ -327,5 +327,26 @@ describe("a fleet's MCP configuration over the API (the fleet crew MCP design, s
 
     expect(refused instanceof TRPCError && refused.code).toBe('INTERNAL_SERVER_ERROR');
     expect(refused instanceof TRPCError && refused.cause).toBeUndefined();
+  });
+});
+
+describe('the options of a join over the API (join design, decision 12)', () => {
+  const parsed = (input: unknown) => joinMachineInputSchema.safeParse(input).success;
+
+  it('takes a name alone, or with harnesses, the ones run without asking, and repositories as a list, a folder or none', () => {
+    expect(parsed({ name: 'mac' })).toBe(true);
+    expect(parsed({ name: 'mac', harnesses: ['claude-code', 'codex', 'copilot'], unattended: ['codex'], repositories: { kind: 'list', entries: ['~/a', '', 'https://h/x.git'] } })).toBe(true);
+    expect(parsed({ name: 'mac', repositories: { kind: 'folder', path: '~/code' } })).toBe(true);
+    expect(parsed({ name: 'mac', repositories: { kind: 'none' } })).toBe(true);
+  });
+
+  it.each([
+    ['a harness without an adapter', { name: 'mac', harnesses: ['cursor'] }],
+    ['a clone folder', { name: 'mac', cloneInto: '/x' }],
+    ['a path holding a comma', { name: 'mac', repositories: { kind: 'list', entries: ['/a,b'] } }],
+    ['a path holding a semicolon', { name: 'mac', repositories: { kind: 'folder', path: '/a;b' } }],
+    ['an empty folder', { name: 'mac', repositories: { kind: 'folder', path: '' } }],
+  ])('refuses %s', (_what, input) => {
+    expect(parsed(input)).toBe(false);
   });
 });

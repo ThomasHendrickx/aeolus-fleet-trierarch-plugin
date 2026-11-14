@@ -1,4 +1,3 @@
-import type { ShipId } from '@aeolus-fleet/common';
 import { describe, expect, it } from 'vitest';
 
 import { setupLineOf } from './setup-line.js';
@@ -6,7 +5,7 @@ import { setupLineOf } from './setup-line.js';
 const BASE = 'curl -fsSL https://raw.githubusercontent.com/ThomasHendrickx/aeolus-fleet-trierarch/main/install.sh | sh -s -- --fleet-url https://fleet.example --ship-id shp_machine --plugin-ship-id shp_plugin --secret aeolus_sk_v1_machine';
 
 const line = (options?: Parameters<typeof setupLineOf>[1]) =>
-  setupLineOf({ fleetUrl: 'https://fleet.example', shipId: 'shp_machine' as ShipId, pluginShipId: 'shp_plugin' as ShipId, secret: 'aeolus_sk_v1_machine' }, options);
+  setupLineOf({ fleetUrl: 'https://fleet.example', shipId: 'shp_machine', pluginShipId: 'shp_plugin', secret: 'aeolus_sk_v1_machine' }, options);
 
 describe('the setup line of a machine', () => {
   it('carries no option flag when no option is filled, so the machine asks for each', () => {

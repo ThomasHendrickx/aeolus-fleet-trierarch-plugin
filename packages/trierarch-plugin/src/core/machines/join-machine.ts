@@ -5,7 +5,7 @@ import { refuse, type DomainError } from '../shared/errors.js';
 import { ok, type Result } from '../shared/result.js';
 import { JOIN_SCOPE } from '../scopes/plugin-scopes.js';
 import type { IdempotencyKeys } from './ports.js';
-import { setupLineOf } from './setup-line.js';
+import { setupLineOf, type SetupOptions } from './setup-line.js';
 
 /** The type of every machine's ship: its trierarch's. */
 export const TRIERARCH_TYPE = 'trierarch';
@@ -35,7 +35,7 @@ export interface JoinedMachine {
   setupLine: string;
 }
 
-export type JoinMachine = (input: { fleetId: FleetId; name: string; actor: JoiningActor }) => Promise<Result<JoinedMachine, JoinRefusal>>;
+export type JoinMachine = (input: { fleetId: FleetId; name: string; actor: JoiningActor; options?: SetupOptions }) => Promise<Result<JoinedMachine, JoinRefusal>>;
 
 /**
  * Use case: an actor brings a machine into the fleet (decision 0055). It
@@ -47,11 +47,12 @@ export type JoinMachine = (input: { fleetId: FleetId; name: string; actor: Joini
  * key, and answers its starting prompt with one ready-to-run setup line built
  * from the fleet's URL, the ship's id and secret, and the trierarch plugin's
  * own ship: `aeolus-trierarch init`
- * takes them as flags and never parses a prompt. The secret is never kept or
+ * takes them as flags and never parses a prompt. The harness and repository
+ * options become the line's flags too, so the console builds no line. The secret is never kept or
  * logged.
  */
 export function createJoinMachine(deps: { door: FleetDoor; connections: ConnectionStore; keys: IdempotencyKeys; fleetUrl: string }): JoinMachine {
-  return async ({ fleetId, name, actor }) => {
+  return async ({ fleetId, name, actor, options }) => {
     if (actor.kind !== 'operator' && !actor.scopes.includes(JOIN_SCOPE)) {
       return refuse('NEEDS_SCOPE', `Adding a computer needs ${JOIN_SCOPE}`);
     }
@@ -66,7 +67,7 @@ export function createJoinMachine(deps: { door: FleetDoor; connections: Connecti
         : refuse('FLEET_UNAVAILABLE', `The fleet did not commission the machine's ship: ${commissioned.error.message}`);
     }
     const { shipId, prompt, crewLines, secret } = commissioned.value;
-    const setupLine = setupLineOf({ fleetUrl: deps.fleetUrl, shipId, pluginShipId: crew.shipId, secret });
+    const setupLine = setupLineOf({ fleetUrl: deps.fleetUrl, shipId, pluginShipId: crew.shipId, secret }, options);
     return ok({ shipId, name, prompt, crewLines, secret, setupLine });
   };
 }
