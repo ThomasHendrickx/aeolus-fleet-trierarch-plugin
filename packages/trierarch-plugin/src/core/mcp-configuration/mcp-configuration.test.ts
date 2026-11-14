@@ -96,7 +96,7 @@ describe("a fleet's MCP configuration", () => {
 
     expect(replace(aReplacement({ expectedVersion: 1, servers: [WITH_TOKEN] }), first)).toEqual({
       isOk: false,
-      error: { kind: 'INVALID_CONFIGURATION', message: 'company-graph: its credential names the secret graph-token, which the replacement does not retain' },
+      error: { kind: 'INVALID_CONFIGURATION', message: 'company-graph: its credential names a secret the replacement does not retain' },
     });
   });
 
