@@ -7,7 +7,7 @@ import { ok, type Err, type Result } from '../shared/result.js';
 import { TRIERARCH_TYPE } from './join-machine.js';
 import { setupLineOf } from './setup-line.js';
 
-export type NewSetupLineRefusal = DomainError<'NOT_CONNECTED' | 'NOT_A_MACHINE' | 'FLEET_REFUSED' | 'FLEET_UNAVAILABLE'>;
+export type NewSetupLineRefusal = DomainError<'NOT_CONNECTED' | 'NOT_A_MACHINE' | 'FLEET_REFUSED' | 'FLEET_UNAVAILABLE' | 'INVALID_SETUP_OPTION'>;
 
 /** A machine's new setup line, shown once like the secret it holds. */
 export interface NewSetupLine {
@@ -55,6 +55,7 @@ export function createNewSetupLine(deps: { door: FleetDoor; connections: Connect
     if (!issued.isOk) {
       return refusedBy(issued.error);
     }
-    return ok({ shipId, setupLine: setupLineOf({ fleetUrl: deps.fleetUrl, shipId, pluginShipId: crew.shipId, secret: issued.value.secret }) });
+    const setupLine = setupLineOf({ fleetUrl: deps.fleetUrl, shipId, pluginShipId: crew.shipId, secret: issued.value.secret });
+    return setupLine.isOk ? ok({ shipId, setupLine: setupLine.value }) : setupLine;
   };
 }
