@@ -42,8 +42,8 @@ export type JoinMachine = (input: { fleetId: FleetId; name: string; actor: Joini
  * needs trierarch:join, which the trierarch plugin declares and
  * enforces; argo holds every scope, though the fleet lists only core's for
  * it, so argo always may. The trierarch
- * plugin commissions its trierarch's ship, of type trierarch with crew:run
- * beside the send and receive every agent ship has, under a new idempotency
+ * plugin commissions its trierarch's ship, of kind and type trierarch with crew:run
+ * beside the send and receive every ship has, under a new idempotency
  * key, and answers its starting prompt with one ready-to-run setup line built
  * from the fleet's URL, the ship's id and secret, and the trierarch plugin's
  * own ship: `aeolus-trierarch init`
@@ -64,7 +64,7 @@ export function createJoinMachine(deps: { door: FleetDoor; connections: Connecti
     if (!crew) {
       return refuse('NOT_CONNECTED', 'The trierarch plugin is not connected to this fleet: connect it in the console');
     }
-    const commissioned = await deps.door.commission(crew.crewToken, { name, type: TRIERARCH_TYPE, scopes: TRIERARCH_SCOPES, idempotencyKey: deps.keys.next() });
+    const commissioned = await deps.door.commission(crew.crewToken, { name, kind: 'trierarch', type: TRIERARCH_TYPE, scopes: TRIERARCH_SCOPES, idempotencyKey: deps.keys.next() });
     if (!commissioned.isOk) {
       return commissioned.error.code === 'CONFLICT'
         ? refuse('NAME_TAKEN', commissioned.error.message)
