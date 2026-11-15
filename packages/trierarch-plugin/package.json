@@ -61,7 +61,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@aeolus-fleet/core": "^0.39.0",
+    "@aeolus-fleet/core": "^0.39.1",
     "@testcontainers/postgresql": "^12.2.0",
     "@types/libsodium-wrappers": "^0.8.2"
   }
