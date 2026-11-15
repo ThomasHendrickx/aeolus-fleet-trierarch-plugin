@@ -36,10 +36,10 @@ const joinWith = (input: { name?: string; actor?: Parameters<JoinMachine>[0]['ac
 const join = (name = 'mac-studio', actor: Parameters<JoinMachine>[0]['actor'] = ARGO) => joinWith({ name, actor });
 
 describe('a machine joining', () => {
-  it('commissions a ship of type trierarch with exactly crew:run beside send and receive, named as the operator asked', async () => {
+  it('commissions a ship of kind and type trierarch with exactly crew:run, named as the operator asked', async () => {
     await join();
 
-    expect(fleet.state.commissioned).toEqual([{ name: 'mac-studio', type: 'trierarch', scopes: ['crew:run'], idempotencyKey: 'join-1' }]);
+    expect(fleet.state.commissioned).toEqual([{ name: 'mac-studio', kind: 'trierarch', type: 'trierarch', scopes: ['crew:run'], idempotencyKey: 'join-1' }]);
   });
 
   it("answers its starting prompt as the fleet issued it, and a setup line for the machine built from its fields, naming the trierarch plugin's ship the trusted repositories come from", async () => {
