@@ -1,7 +1,7 @@
 import { ENABLED_MODELS_ASK_CONTENT_TYPE, TRIERARCH_USAGE_CONTENT_TYPE, type DeliveryId } from '@aeolus-fleet/common';
 import { describe, expect, it } from 'vitest';
 
-import { fakePluginFleet, FLEET_ID, memoryConnectionStore, SHIP_ID } from '../../../test/support/connection-fakes.js';
+import { fakePluginFleet, FLEET_ID, memoryConnectionStore, OTHER_FLEET_ID, SHIP_ID } from '../../../test/support/connection-fakes.js';
 import { memoryEnabledModels } from '../../../test/support/memory-models.js';
 import { recordingUsageHistory } from '../../../test/support/memory-usage.js';
 import { err, ok } from '../shared/result.js';
@@ -176,5 +176,24 @@ describe("the trierarch plugin's ship takes what waits for it", () => {
     await models.enable(FLEET_ID, 'claude-opus-5-5');
     await expect(round()).resolves.toEqual({ ponged: 0, acked: [], keptUsage: 0, notHandled: [], refused: 0 });
     expect({ acked, replies: fleet.state.sent.map(({ payload }) => payload) }).toEqual({ acked: [ASK.deliveryId], replies: ['{"models":["gpt-5.5"]}'] });
+  });
+});
+
+
+describe('a wake in one fleet', () => {
+  it('receives only for the fleet that woke', async () => {
+    const connections = await connected();
+    const inbox = anInbox([PING]);
+    await answerPings({ connections, inbox })(OTHER_FLEET_ID);
+    expect(inbox.ponged).toEqual([]);
+    await answerPings({ connections, inbox })(FLEET_ID);
+    expect(inbox.ponged).toEqual([PING.deliveryId]);
+  });
+
+  it('forgets a lease when receive says LEASE_ENDED', async () => {
+    const connections = await connected();
+    const inbox = { ...anInbox([]), receive: () => Promise.resolve(err({ code: 'LEASE_ENDED', message: 'ended' })) };
+    await answerPings({ connections, inbox })(FLEET_ID);
+    expect(await connections.find(FLEET_ID)).toBeUndefined();
   });
 });
