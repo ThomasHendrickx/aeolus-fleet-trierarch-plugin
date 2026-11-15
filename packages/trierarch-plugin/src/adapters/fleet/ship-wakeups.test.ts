@@ -9,8 +9,8 @@ function aStream() {
   const body = new ReadableStream<Uint8Array>({ start(controller) { writer = controller; } });
   return {
     response: new Response(body, { headers: { 'content-type': 'text/event-stream' } }),
-    write: (text: string) => writer.enqueue(encoder.encode(text)),
-    close: () => writer.close(),
+    write: (text: string) => { writer.enqueue(encoder.encode(text)); },
+    close: () => { writer.close(); },
   };
 }
 
