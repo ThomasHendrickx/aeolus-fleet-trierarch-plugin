@@ -68,6 +68,10 @@ jobs:
   integration:
     name: Integration tests (Postgres in Testcontainers)
     runs-on: ubuntu-latest
+    env:
+      # No reaper, as often on rootless Podman: core's global teardown and its
+      # sweeper must remove every container, and the last step checks they did.
+      TESTCONTAINERS_RYUK_DISABLED: 'true'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -78,6 +82,9 @@ jobs:
       # The images Testcontainers starts, from the Actions cache.
       - uses: ./.github/actions/test-images
       - run: npm run test:integration
+      - name: The run left no container and no volume behind
+        if: ${{ !cancelled() }}
+        run: node scripts/check-test-run-leftovers.ts
 
   publish-dry-run:
     name: Publish dry run
