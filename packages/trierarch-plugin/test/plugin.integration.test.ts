@@ -140,7 +140,7 @@ describe('connecting the trierarch plugin', () => {
 });
 
 describe('a machine joining', () => {
-  it('commissions a ship of type trierarch with exactly send, receive and crew:run, and answers its starting prompt and setup line', async () => {
+  it('commissions a ship of kind and type trierarch with exactly send, receive and crew:run, and answers its starting prompt and setup line', async () => {
     const address = await connected();
 
     const answer = await mutate(address, { procedure: 'machines.join', cookie, body: { name: 'mac-studio' } });
@@ -148,7 +148,7 @@ describe('a machine joining', () => {
     expect(answer.status, await answer.clone().text()).toBe(200);
     const joined = joinedSchema.parse(await answer.json()).result.data;
     const ship = await fleetDatabase.ship.findUniqueOrThrow({ where: { id: joined.shipId } });
-    expect({ name: ship.name, type: ship.type, scopes: [...ship.scopes].sort() }).toEqual({ name: 'mac-studio', type: 'trierarch', scopes: ['crew:run', 'messages:receive', 'messages:send'] });
+    expect({ name: ship.name, kind: ship.kind, type: ship.type, scopes: [...ship.scopes].sort() }).toEqual({ name: 'mac-studio', kind: 'trierarch', type: 'trierarch', scopes: ['crew:run', 'messages:receive', 'messages:send'] });
     expect(joined.prompt).toContain(joined.secret);
     expect(joined.crewLines.map((line) => line.harness)).toContain('claude-code');
     expect(joined.setupLine).toBe(`curl -fsSL https://raw.githubusercontent.com/ThomasHendrickx/aeolus-fleet-trierarch/main/install.sh | sh -s -- --fleet-url ${fleetUrl} --ship-id ${joined.shipId} --plugin-ship-id ${shipId} --secret ${joined.secret}`);
@@ -852,6 +852,7 @@ describe("a trierarch's usage, sent to the trierarch plugin's ship (the usage de
     await trierarch.send({ shipId, contentType: TRIERARCH_USAGE_CONTENT_TYPE, payload: aUsageMessage(scout.shipId) });
     await trierarch.send({ shipId, contentType: TRIERARCH_USAGE_CONTENT_TYPE, payload: aUsageMessage(scout.shipId) });
 
+    await expect(fleetDatabase.ship.findUniqueOrThrow({ where: { id: machineId } })).resolves.toMatchObject({ model: null });
     await expect.poll(isInboxEmpty, { timeout: 15_000, interval: 500 }).toBe(true);
     await expect(tokensIn(address)).resolves.toEqual({ input: 1200, output: 300, cacheRead: 40_000, cacheWrite: 2000 });
   });
