@@ -2,7 +2,7 @@ import { CREW_REQUEST_REASON_CONTENT_TYPE, isInReadReach, TRIERARCH_USAGE_CONTEN
 import type { ShipId } from '@aeolus-fleet/common';
 import type { FastifyInstance } from 'fastify';
 import sodium from 'libsodium-wrappers';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import { createApp, createMigratedDatabase, createPrismaClient, createUseCases, FLEET_URL, newKey, operatorCaller, secretOf, unwrap, type PrismaClient } from '@aeolus-fleet/core/testing';
@@ -878,4 +878,33 @@ describe("the fleet's retention, read as the trierarch plugin prunes usage by it
     await fleetDatabase.fleet.update({ where: { id: argo.fleetId }, data: { retentionSet: true, retentionDays: 30 } });
     await expect(door.limits(crewToken)).resolves.toEqual({ isOk: true, value: { retentionDays: 30 } });
   });
+});
+
+
+it('onClose aborts the fleet wake stream and prevents reopening', async () => {
+  const originalFetch = globalThis.fetch;
+  const signals: (AbortSignal | null | undefined)[] = [];
+  vi.stubGlobal('fetch', ((input, init) => {
+    if ((input instanceof Request ? input.url : input.toString()).endsWith('/api/v1/ship/wakeups')) {
+      signals.push(init?.signal);
+      return Promise.resolve(new Response(new ReadableStream<Uint8Array>()));
+    }
+    return originalFetch(input, init);
+  }) satisfies typeof fetch);
+  try {
+    await connected();
+    await expect.poll(() => signals.length).toBe(1);
+    expect(signals[0]?.aborted).toBe(false);
+    const app = apps.at(-1);
+    expect(app).toBeDefined();
+    // Closing the server directly exercises the registered hook, rather than the app wrapper.
+    await app?.server.close();
+    expect(signals[0]?.aborted).toBe(true);
+    vi.useFakeTimers();
+    await vi.advanceTimersByTimeAsync(600_000);
+    expect(signals).toHaveLength(1);
+  } finally {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  }
 });
