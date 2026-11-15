@@ -18,13 +18,13 @@ export const TEST_RUN_LABEL = 'aeolus-fleet.test-run';
 const SWEEP_WAIT_MS = 30_000;
 
 interface RunContainer {
-  Id: string;
-  Image: string;
-  State: string;
-  Labels: Record<string, string>;
+  readonly Id: string;
+  readonly Image: string;
+  readonly State: string;
+  readonly Labels: Readonly<Record<string, string>>;
 }
 
-export function leftoversOf(containers: RunContainer[], unusedVolumes: { Name: string }[]): string[] {
+export function leftoversOf(containers: readonly RunContainer[], unusedVolumes: readonly { readonly Name: string }[]): string[] {
   return [
     ...containers.map((container) => `container ${container.Id} (${container.Image}, ${container.State}) of test run ${container.Labels[TEST_RUN_LABEL] ?? ''}`),
     ...unusedVolumes.map((volume) => `volume ${volume.Name}, used by no container`),
