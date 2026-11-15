@@ -197,3 +197,17 @@ describe('a wake in one fleet', () => {
     expect(await connections.find(FLEET_ID)).toBeUndefined();
   });
 });
+
+
+it('keeps a replacement lease when the old receive returns LEASE_ENDED', async () => {
+  const connections = await connected();
+  const taken = Promise.withResolvers<Awaited<ReturnType<PluginInbox['receive']>>>();
+  const receiving = Promise.withResolvers<undefined>();
+  const inbox: PluginInbox = { ...anInbox([]), receive: () => { receiving.resolve(undefined); return taken.promise; } };
+  const round = answerPings({ connections, inbox })(FLEET_ID);
+  await receiving.promise;
+  await connections.save({ fleetId: FLEET_ID, shipId: SHIP_ID, name: 'plugin', crewToken: 'replacement', crewedAt: new Date(0) });
+  taken.resolve(err({ code: 'LEASE_ENDED', message: 'old lease ended' }));
+  await round;
+  expect((await connections.find(FLEET_ID))?.crewToken).toBe('replacement');
+});

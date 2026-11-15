@@ -68,3 +68,22 @@ describe('watching served fleet inboxes', () => {
     expect(running.stopped).toEqual([FLEET_ID, OTHER_FLEET_ID]);
   });
 });
+
+
+it('ignores a look from a lease that has been replaced before reconciliation', async () => {
+  const running = await aWatcher();
+  try {
+    await running.connections.save({ fleetId: FLEET_ID, shipId: SHIP_ID, name: 'plugin', crewToken: 'replacement', crewedAt: new Date(0) });
+    await running.streams.get(FLEET_ID)?.look();
+    expect(running.answered).toEqual([]);
+  } finally { running.watcher.close(); }
+});
+
+it('ignores a look after the fleet stops being served before reconciliation', async () => {
+  const running = await aWatcher();
+  try {
+    running.disabled.add(FLEET_ID);
+    await running.streams.get(FLEET_ID)?.look();
+    expect(running.answered).toEqual([]);
+  } finally { running.watcher.close(); }
+});
