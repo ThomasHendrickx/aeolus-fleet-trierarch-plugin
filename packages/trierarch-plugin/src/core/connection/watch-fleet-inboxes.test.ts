@@ -51,9 +51,7 @@ describe('watching served fleet inboxes', () => {
   it('replaces a changed lease and never drops its replacement on the old stream ending', async () => {
     const running = await aWatcher();
     const old = running.streams.get(FLEET_ID);
-    const crew = await running.connections.find(FLEET_ID);
-    if (crew === undefined) { throw new Error('fixture crew missing'); }
-    await running.connections.save({ ...crew, crewToken: 'replacement' });
+    await running.connections.save({ fleetId: FLEET_ID, shipId: SHIP_ID, name: 'plugin', crewToken: 'replacement', crewedAt: new Date(0) });
     await running.watcher.reconcile();
     await old?.ended();
     expect((await running.connections.find(FLEET_ID))?.crewToken).toBe('replacement');

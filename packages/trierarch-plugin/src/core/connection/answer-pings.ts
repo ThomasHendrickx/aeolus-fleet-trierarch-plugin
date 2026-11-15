@@ -1,4 +1,4 @@
-import { isPingContentType, RECEIVE_MAX_UPPER_BOUND } from '@aeolus-fleet/common';
+import { isPingContentType, RECEIVE_MAX_UPPER_BOUND, type FleetId } from '@aeolus-fleet/common';
 
 import type { KeepUsage } from '../usage/keep-usage.js';
 import type { ConnectionStore, PluginCrew, PluginDelivery, PluginInbox } from './ports.js';
@@ -21,7 +21,7 @@ export type AnsweredAsk = { readonly kind: 'notAsk' } | { readonly kind: 'answer
 
 export type AnswerAsk = (crew: PluginCrew, delivery: PluginDelivery) => Promise<AnsweredAsk>;
 
-export type AnswerPings = () => Promise<PingRound>;
+export type AnswerPings = (fleetId?: FleetId) => Promise<PingRound>;
 
 /**
  * Use case: the trierarch plugin's own ship takes what waits for it in each
@@ -31,11 +31,15 @@ export type AnswerPings = () => Promise<PingRound>;
  * usage design); anything else is acked, and the fleet keeps it in its history.
  */
 export function createAnswerPings(deps: { connections: ConnectionStore; inbox: PluginInbox; keepUsage: KeepUsage; answerAsk: AnswerAsk }): AnswerPings {
-  return async () => {
+  return async (fleetId) => {
     const round: PingRound = { ponged: 0, acked: [], keptUsage: 0, notHandled: [], refused: 0 };
     for (const crew of await deps.connections.connected()) {
+      if (fleetId !== undefined && crew.fleetId !== fleetId) { continue; }
       const taken = await deps.inbox.receive(crew.crewToken, RECEIVE_MAX_UPPER_BOUND);
       if (!taken.isOk) {
+        if (taken.error.code === 'LEASE_ENDED' && (await deps.connections.find(crew.fleetId))?.crewToken === crew.crewToken) {
+          await deps.connections.drop(crew.fleetId);
+        }
         round.refused += 1;
         continue;
       }

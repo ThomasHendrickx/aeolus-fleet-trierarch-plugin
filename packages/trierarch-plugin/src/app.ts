@@ -7,6 +7,8 @@ import { sha256RequestHasher } from './adapters/crypto/request-hasher.js';
 import { sealedBoxSealer } from './adapters/crypto/sealed-box-sealer.js';
 import { createFleetConsoleSessions } from './adapters/fleet/console-sessions.js';
 import { createOperatorFleet } from './adapters/fleet/operator-fleet.js';
+import { createShipWakeups } from './adapters/fleet/ship-wakeups.js';
+import { createWatchFleetInboxes } from './core/connection/watch-fleet-inboxes.js';
 import { createRestFleetDoor } from './adapters/fleet/rest-fleet-door.js';
 import { runningVersion } from './adapters/http/version.js';
 import { checkDatabase, createPrismaClient } from './adapters/prisma/client.js';
@@ -57,8 +59,8 @@ import { DEFAULT_SILENT_AFTER_MS } from './core/machines/silent.js';
 import { createAuthenticateOperator } from './core/operator/authenticate-operator.js';
 import type { Clock } from './core/shared/clock.js';
 
-/** Between rounds of the plugin's ship taking what waits for it: a ping is answered within about this long. */
-const PING_ROUND_MS = 1000;
+/** Reconciles the locally kept served fleets and leases; inboxes are read only on wake or safety look. */
+const CONNECTION_ROUND_MS = 1000;
 
 /** Between passes pruning each fleet's usage by its retention (the usage design, "Scale and retention"). */
 const PRUNE_USAGE_INTERVAL_MS = 60 * 60_000;
@@ -354,8 +356,8 @@ export function createTrierarchPluginApp(options: {
       }),
   });
   /** Answers argo's ping, keeps the trierarchs' usage and acks what else reaches the plugin's ship in each fleet (aeolus-fleet#1113); logged, never thrown. */
-  const answerOnce = async (): Promise<void> => {
-    const { acked, notHandled, refused } = await answerPings();
+  const answerOnce = async (fleetId: FleetId): Promise<void> => {
+    const { acked, notHandled, refused } = await answerPings(fleetId);
     for (const { delivery, reason } of notHandled) {
       server.log.warn({ contentType: delivery.contentType, senderShipId: delivery.senderShipId, reason }, "the trierarch plugin's ship acked usage it does not handle");
     }
@@ -371,21 +373,31 @@ export function createTrierarchPluginApp(options: {
       server.log.debug({ refused }, "the fleet refused some calls of the trierarch plugin's ship's inbox");
     }
   };
-  // One round at a time, as the assignment pass: a round that outlasts the interval makes the next one wait.
+  const inboxes = createWatchFleetInboxes({
+    connections,
+    isServed,
+    answer: answerOnce,
+    start: (crewToken, events) => createShipWakeups({
+      fleetUrl: options.fleetUrl,
+      ...events,
+      failed: (error) => { server.log.error({ err: error }, 'fleet wake stream failed; the next wake or reopen tries again'); },
+    })(crewToken),
+  });
+  // Reconcile locally kept connections only; a slow receive never blocks another fleet's stream.
   let isAnswering = false;
   const answering = setInterval(() => {
     if (isAnswering) {
       return;
     }
     isAnswering = true;
-    answerOnce()
+    inboxes.reconcile()
       .catch((error: unknown) => {
         server.log.error({ err: error }, 'ping round failed; the next round tries again');
       })
       .finally(() => {
         isAnswering = false;
       });
-  }, PING_ROUND_MS);
+  }, CONNECTION_ROUND_MS);
 
   const pruneUsage = createPruneUsage({ door, connections, usage, isServed, clock });
   // One pass at a time; a fleet that refused its limits is pruned on the next pass.
@@ -454,6 +466,7 @@ export function createTrierarchPluginApp(options: {
   server.addHook('onClose', async () => {
     clearInterval(assigning);
     clearInterval(answering);
+    inboxes.close();
     clearInterval(pruning);
     await prisma.$disconnect();
   });
