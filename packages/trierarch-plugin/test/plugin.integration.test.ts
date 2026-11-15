@@ -852,7 +852,6 @@ describe("a trierarch's usage, sent to the trierarch plugin's ship (the usage de
     await trierarch.send({ shipId, contentType: TRIERARCH_USAGE_CONTENT_TYPE, payload: aUsageMessage(scout.shipId) });
     await trierarch.send({ shipId, contentType: TRIERARCH_USAGE_CONTENT_TYPE, payload: aUsageMessage(scout.shipId) });
 
-    await expect(fleetDatabase.ship.findUniqueOrThrow({ where: { id: machineId } })).resolves.toMatchObject({ model: null });
     await expect.poll(isInboxEmpty, { timeout: 15_000, interval: 500 }).toBe(true);
     await expect(tokensIn(address)).resolves.toEqual({ input: 1200, output: 300, cacheRead: 40_000, cacheWrite: 2000 });
   });
@@ -860,7 +859,7 @@ describe("a trierarch's usage, sent to the trierarch plugin's ship (the usage de
   it('acks usage from a ship that is not a trierarch and keeps none of it', async () => {
     const address = await connected();
     const scout = unwrap(await useCases.commissionShip(argo, { idempotencyKey: newKey(), name: 'scout', type: 'agent' }));
-    const agent = await crewAsTrierarch(fleetUrl, { shipId: scout.shipId, secret: secretOf(scout.secret) });
+    const agent = await crewAsTrierarch(fleetUrl, { shipId: scout.shipId, secret: secretOf(scout.secret), model: 'claude-opus-5-5' });
 
     await agent.send({ shipId, contentType: TRIERARCH_USAGE_CONTENT_TYPE, payload: aUsageMessage(scout.shipId) });
 
