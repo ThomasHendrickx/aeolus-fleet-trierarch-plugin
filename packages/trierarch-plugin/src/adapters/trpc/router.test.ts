@@ -332,6 +332,14 @@ describe("a fleet's MCP configuration over the API (the fleet crew MCP design, s
 });
 
 describe('the options of a join over the API (join design, decision 12)', () => {
+  it('accepts service consent, folders and limits, refusing invalid flag inputs', () => {
+    expect(joinMachineInputSchema.safeParse({ name: 'mac', service: 'yes', maxShips: 4, maxRunning: 2, folders: { kind: 'list', entries: [{ name: 'shared', path: '/srv/shared' }] } }).success).toBe(true);
+    expect(joinMachineInputSchema.safeParse({ name: 'mac', service: 'no', folders: { kind: 'none' } }).success).toBe(true);
+    for (const options of [{ service: 'maybe' }, { maxShips: 0 }, { maxRunning: 1.5 }, { folders: { kind: 'list', entries: [{ name: 'shared', path: '' }] } }]) {
+      expect(joinMachineInputSchema.safeParse({ name: 'mac', ...options }).success).toBe(false);
+    }
+  });
+
   const parsed = (input: unknown) => joinMachineInputSchema.safeParse(input).success;
 
   it('takes a name alone, or with harnesses, the ones run without asking, and repositories as a list, a folder or none', () => {
@@ -360,6 +368,13 @@ describe('the repositories of a join, through the real use case', () => {
     const joinMachine = createJoinMachine({ door: fleet.door, connections, keys: { next: () => 'join-key' }, fleetUrl: 'https://fleet.example' });
     return { fleet, caller: caller({ scopes: OPERATOR, joinMachine }) };
   }
+
+
+  it('forwards service, folders and limits through the join API into the generated setup line', async () => {
+    const { caller: api } = await joinCaller();
+    const joined = await api.machines.join({ name: 'mac', service: 'yes', maxShips: 4, maxRunning: 2, folders: { kind: 'list', entries: [{ name: 'shared', path: '/srv/shared' }] } });
+    expect(joined.setupLine.endsWith(" --folder 'shared' '/srv/shared' --max-ships 4 --max-running 2 --service yes")).toBe(true);
+  });
 
   it('answers a hostile folder path with a semicolon and quotes as one quoted word, written out literally', async () => {
     const { caller: api } = await joinCaller();
