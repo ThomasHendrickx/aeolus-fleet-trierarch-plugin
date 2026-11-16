@@ -19,6 +19,10 @@ export interface SetupOptions {
   /** Harnesses that run without permission questions: only those picked in `harnesses` are carried. */
   unattended?: readonly SetupHarness[];
   repositories?: RepositoriesChoice;
+  folders?: { kind: 'list'; entries: readonly { name: string; path: string }[] } | { kind: 'none' };
+  maxShips?: number;
+  maxRunning?: number;
+  service?: 'yes' | 'no';
 }
 
 export type SetupOptionsRefusal = DomainError<'INVALID_SETUP_OPTION'>;
@@ -31,6 +35,13 @@ export type SetupOptionsRefusal = DomainError<'INVALID_SETUP_OPTION'>;
  * not split: it takes any character. A NUL ends a shell word, so none is taken.
  */
 export function checkedSetupOptions(options: SetupOptions): Result<SetupOptions, SetupOptionsRefusal> {
+  const folders = options.folders?.kind === 'list' ? options.folders.entries : [];
+  if (folders.some(({ name, path }) => name.includes('\0') || path.includes('\0'))) {
+    return refuse('INVALID_SETUP_OPTION', 'A folder name or path holds no NUL');
+  }
+  if ([options.maxShips, options.maxRunning].some((limit) => limit !== undefined && (!Number.isSafeInteger(limit) || limit <= 0))) {
+    return refuse('INVALID_SETUP_OPTION', 'Ship and session limits are whole numbers greater than zero');
+  }
   const choice = options.repositories;
   const values = choice?.kind === 'list' ? choice.entries : choice?.kind === 'folder' ? [choice.path] : [];
   if (values.some((value) => value.includes('\0'))) {
@@ -68,6 +79,11 @@ function optionFlagsOf(options: SetupOptions): string[] {
     ...(entries.length > 0 ? [`--repositories ${shellQuoted(entries.join(','))}`] : []),
     ...(choice?.kind === 'folder' ? [`--repositories-in ${shellQuoted(choice.path)}`] : []),
     ...(choice?.kind === 'none' ? ['--no-repositories'] : []),
+    ...(options.folders?.kind === 'list' ? options.folders.entries.map(({ name, path }) => `--folder ${shellQuoted(name)} ${shellQuoted(path)}`) : []),
+    ...(options.folders?.kind === 'none' ? ['--no-folders'] : []),
+    ...(options.maxShips !== undefined ? [`--max-ships ${options.maxShips}`] : []),
+    ...(options.maxRunning !== undefined ? [`--max-running ${options.maxRunning}`] : []),
+    ...(options.service !== undefined ? [`--service ${options.service}`] : []),
   ];
 }
 
