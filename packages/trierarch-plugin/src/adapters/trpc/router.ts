@@ -242,6 +242,13 @@ const joinRepositorySchema = z.string().max(JOIN_REPOSITORY_MAX_LENGTH);
 /** What a join takes: the machine's name, and the optional harness and repository options that become the line's flags. */
 export const joinMachineInputSchema = z.strictObject({
   name: shipHandleSchema,
+  service: z.enum(['yes', 'no']).optional(),
+  maxShips: z.number().int().positive().optional(),
+  maxRunning: z.number().int().positive().optional(),
+  folders: z.discriminatedUnion('kind', [
+    z.strictObject({ kind: z.literal('list'), entries: z.array(z.strictObject({ name: z.string().min(1), path: joinRepositorySchema.min(1) })).max(JOIN_REPOSITORIES_MAX) }),
+    z.strictObject({ kind: z.literal('none') }),
+  ]).optional(),
   harnesses: z.array(z.enum(SETUP_HARNESSES)).max(SETUP_HARNESSES.length).optional(),
   unattended: z.array(z.enum(SETUP_HARNESSES)).max(SETUP_HARNESSES.length).optional(),
   repositories: z
@@ -383,7 +390,7 @@ export const trierarchPluginRouter = t.router({
       .input(joinMachineInputSchema)
       .output(joinedMachineOutputSchema)
       .mutation(async ({ ctx, input }) => {
-        const joined = await ctx.joinMachine({ fleetId: ctx.fleetId, name: input.name, actor: { kind: ctx.kind, scopes: ctx.scopes }, options: { harnesses: input.harnesses, unattended: input.unattended, repositories: input.repositories } });
+        const joined = await ctx.joinMachine({ fleetId: ctx.fleetId, name: input.name, actor: { kind: ctx.kind, scopes: ctx.scopes }, options: { harnesses: input.harnesses, unattended: input.unattended, repositories: input.repositories, folders: input.folders, maxShips: input.maxShips, maxRunning: input.maxRunning, service: input.service } });
         if (!joined.isOk) {
           throw new TRPCError({ code: JOIN_CODES[joined.error.kind], message: joined.error.message });
         }

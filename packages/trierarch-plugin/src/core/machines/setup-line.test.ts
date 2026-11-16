@@ -15,6 +15,46 @@ const line = (options?: Parameters<typeof setupLineOf>[1]) => {
 };
 
 describe('the setup line of a machine', () => {
+  it.each(['', '-shared', 'Shared', 'a b', 'a'.repeat(101)])('refuses a folder name the trierarch cannot use: %s', (name) => {
+    expect(resultOf({ folders: { kind: 'list', entries: [{ name, path: '/srv/shared' }] } }).isOk).toBe(false);
+  });
+
+  it('accepts the existing folder name format at its length boundary', () => {
+    expect(resultOf({ folders: { kind: 'list', entries: [{ name: 'a'.repeat(100), path: '/srv/shared' }, { name: 'a.b_c-1', path: '/notes' }] } }).isOk).toBe(true);
+  });
+
+  it('refuses an empty folder path and duplicate folder names before commissioning', () => {
+    expect(resultOf({ folders: { kind: 'list', entries: [{ name: 'shared', path: '' }] } }).isOk).toBe(false);
+    expect(resultOf({ folders: { kind: 'list', entries: [{ name: 'shared', path: '/a' }, { name: 'shared', path: '/b' }] } }).isOk).toBe(false);
+  });
+
+  it('carries service consent, both limits and repeated folders as separate quoted words', () => {
+    expect(line({
+      service: 'yes', maxShips: 4, maxRunning: 2,
+      folders: { kind: 'list', entries: [{ name: 'shared', path: "/srv/it's shared;$(id)" }, { name: 'notes', path: '~/notes' }] },
+    })).toBe(`${BASE} --folder 'shared' '/srv/it'\\''s shared;$(id)' --folder 'notes' '~/notes' --max-ships 4 --max-running 2 --service yes`);
+  });
+
+  it('carries explicit no folders and declined service without changing their meaning', () => {
+    expect(line({ folders: { kind: 'none' }, service: 'no' })).toBe(`${BASE} --no-folders --service no`);
+    expect(line({ folders: { kind: 'list', entries: [] } })).toBe(BASE);
+  });
+
+  it.each([0, -1, 1.5, NaN, Infinity])('refuses an invalid ship or session limit %s', (limit) => {
+    expect(resultOf({ maxShips: limit }).isOk).toBe(false);
+    expect(resultOf({ maxRunning: limit }).isOk).toBe(false);
+  });
+
+  it('accepts independently chosen positive limits including one session and more sessions than ships', () => {
+    expect(line({ maxShips: 1, maxRunning: 2 })).toBe(`${BASE} --max-ships 1 --max-running 2`);
+    expect(line({ maxRunning: 1 })).toBe(`${BASE} --max-running 1`);
+  });
+
+  it('refuses NUL in a folder name or path before generating a shell word', () => {
+    expect(resultOf({ folders: { kind: 'list', entries: [{ name: 'a\0b', path: '/ok' }] } }).isOk).toBe(false);
+    expect(resultOf({ folders: { kind: 'list', entries: [{ name: 'ok', path: '/a\0b' }] } }).isOk).toBe(false);
+  });
+
   it('carries no option flag when no option is filled, so the machine asks for each', () => {
     expect(line()).toBe(BASE);
     expect(line({})).toBe(BASE);
