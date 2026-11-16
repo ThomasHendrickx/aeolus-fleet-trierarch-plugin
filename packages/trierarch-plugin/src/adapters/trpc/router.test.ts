@@ -370,6 +370,14 @@ describe('the repositories of a join, through the real use case', () => {
   }
 
 
+  it('refuses invalid folder choices before commissioning a ship', async () => {
+    const { fleet, caller: api } = await joinCaller();
+    for (const entries of [[{ name: 'Shared', path: '/a' }], [{ name: 'shared', path: '/a' }, { name: 'shared', path: '/b' }], [{ name: 'shared', path: '/a\0b' }]]) {
+      await expect(refusalOf(api.machines.join({ name: 'mac', folders: { kind: 'list', entries } }))).resolves.toBe('BAD_REQUEST');
+    }
+    expect(fleet.state.commissioned).toEqual([]);
+  });
+
   it('forwards service, folders and limits through the join API into the generated setup line', async () => {
     const { caller: api } = await joinCaller();
     const joined = await api.machines.join({ name: 'mac', service: 'yes', maxShips: 4, maxRunning: 2, folders: { kind: 'list', entries: [{ name: 'shared', path: '/srv/shared' }] } });

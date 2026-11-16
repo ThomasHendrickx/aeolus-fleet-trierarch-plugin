@@ -15,6 +15,19 @@ const line = (options?: Parameters<typeof setupLineOf>[1]) => {
 };
 
 describe('the setup line of a machine', () => {
+  it.each(['', '-shared', 'Shared', 'a b', 'a'.repeat(101)])('refuses a folder name the trierarch cannot use: %s', (name) => {
+    expect(resultOf({ folders: { kind: 'list', entries: [{ name, path: '/srv/shared' }] } }).isOk).toBe(false);
+  });
+
+  it('accepts the existing folder name format at its length boundary', () => {
+    expect(resultOf({ folders: { kind: 'list', entries: [{ name: 'a'.repeat(100), path: '/srv/shared' }, { name: 'a.b_c-1', path: '/notes' }] } }).isOk).toBe(true);
+  });
+
+  it('refuses an empty folder path and duplicate folder names before commissioning', () => {
+    expect(resultOf({ folders: { kind: 'list', entries: [{ name: 'shared', path: '' }] } }).isOk).toBe(false);
+    expect(resultOf({ folders: { kind: 'list', entries: [{ name: 'shared', path: '/a' }, { name: 'shared', path: '/b' }] } }).isOk).toBe(false);
+  });
+
   it('carries service consent, both limits and repeated folders as separate quoted words', () => {
     expect(line({
       service: 'yes', maxShips: 4, maxRunning: 2,
