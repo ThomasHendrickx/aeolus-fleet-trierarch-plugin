@@ -13,6 +13,9 @@ export type SetupHarness = (typeof SETUP_HARNESSES)[number];
 /** Where a machine's repositories come from: paths or git URLs, a folder of repositories, or none. Left out, the machine asks. */
 export type RepositoriesChoice = { kind: 'list'; entries: readonly string[] } | { kind: 'folder'; path: string } | { kind: 'none' };
 
+/** The trierarch's existing workspace name limit (go/internal/cli/commands.go). */
+const FOLDER_NAME_MAX_LENGTH = 100;
+
 /** The options the setup line may carry; each left out is asked on the machine. */
 export interface SetupOptions {
   harnesses?: readonly SetupHarness[];
@@ -36,6 +39,15 @@ export type SetupOptionsRefusal = DomainError<'INVALID_SETUP_OPTION'>;
  */
 export function checkedSetupOptions(options: SetupOptions): Result<SetupOptions, SetupOptionsRefusal> {
   const folders = options.folders?.kind === 'list' ? options.folders.entries : [];
+  if (folders.some(({ name }) => !/^[a-z0-9][a-z0-9._-]*$/.test(name) || name.length > FOLDER_NAME_MAX_LENGTH)) {
+    return refuse('INVALID_SETUP_OPTION', 'A folder name uses lowercase letters, digits, dots, underscores or hyphens, starts with a letter or digit, and has at most 100 characters');
+  }
+  if (folders.some(({ path }) => path.length === 0)) {
+    return refuse('INVALID_SETUP_OPTION', 'A folder path is not empty');
+  }
+  if (new Set(folders.map(({ name }) => name)).size !== folders.length) {
+    return refuse('INVALID_SETUP_OPTION', 'Each folder has a different name');
+  }
   if (folders.some(({ name, path }) => name.includes('\0') || path.includes('\0'))) {
     return refuse('INVALID_SETUP_OPTION', 'A folder name or path holds no NUL');
   }
