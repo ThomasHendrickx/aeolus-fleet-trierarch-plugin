@@ -15,6 +15,9 @@ interface DispatchOptions {
 export function createPluginDispatch(options: DispatchOptions) {
   return async (body: unknown, secret: string | undefined) => {
     const parsed = pluginCallContextSchema.safeParse(body);
+    const preliminary = createPluginBoundary({ ...options, pluginShipId: parsed.success ? parsed.data.pluginShipId : 'shp_invalid', serves: () => Promise.resolve(false) });
+    const checked = await preliminary({ body, secret, isInternal: true, isPublic: false });
+    if ('error' in checked && checked.error.data.code !== 'PRECONDITION_FAILED') return checked;
     if (!parsed.success) return { error: { data: { code: 'BAD_REQUEST' as const } } };
     const pluginShipId = await options.connected(parsed.data.fleetId);
     if (pluginShipId === undefined) return { error: { data: { code: 'PRECONDITION_FAILED' as const } } };
