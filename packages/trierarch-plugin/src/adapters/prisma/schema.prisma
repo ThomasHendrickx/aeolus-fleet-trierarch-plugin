@@ -232,3 +232,15 @@ model RepositoryEvent {
   @@id([fleetId, version])
   @@map("repository_events")
 }
+
+/// Each admitted dispatch remains reserved until its deadline.
+model PluginDispatchReservation {
+  fleetId      String   @map("fleet_id")
+  pluginShipId String   @map("plugin_ship_id")
+  requestId    String   @map("request_id")
+  expiresAt    DateTime @map("expires_at") @db.Timestamptz(3)
+
+  @@id([fleetId, pluginShipId, requestId])
+  @@index([expiresAt])
+  @@map("plugin_dispatch_reservations")
+}
