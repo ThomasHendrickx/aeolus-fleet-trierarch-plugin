@@ -115,7 +115,7 @@ export interface FleetDoor {
   /** Declares the network rules its ship needs on the labels it owns, its whole list; an empty one withdraws them (labels:define, decision 0037). */
   declareNetworkRules(crewToken: string, declaration: { rules: NetworkRule[] }): Promise<Result<{ rules: number }, FleetRefusal>>;
   /** Every scope namespace of the fleet, with the ship that declared it, null for core's (fleet:read, decision 0046). */
-  listScopes(crewToken: string): Promise<Result<{ namespace: string; declaredBy: ShipId | null }[], FleetRefusal>>;
+  listScopes(crewToken: string): Promise<Result<{ namespace: string; declaredBy: ShipId | null; scopes: { scope: string; description: string }[] }[], FleetRefusal>>;
   /** Takes up its ship's one plugin namespace with its whole list of scopes (scopes:declare, decision 0046). */
   declareScopes(crewToken: string, declaration: { namespace: string; scopes: { scope: string; description: string }[] }): Promise<Result<undefined, FleetRefusal>>;
   /** Sends argo, the operator, plain text, stored once under its idempotency key. */

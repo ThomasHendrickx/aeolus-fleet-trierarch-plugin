@@ -296,7 +296,7 @@ export function fakePluginFleet() {
       if (!state.liveTokens.has(crewToken)) {
         return released();
       }
-      return Promise.resolve(ok(state.namespaces.map(({ namespace, declaredBy }) => ({ namespace, declaredBy }))));
+      return Promise.resolve(ok(state.namespaces.map(({ namespace, declaredBy, scopes }) => ({ namespace, declaredBy, scopes }))));
     },
     declareScopes: (crewToken, declaration) => {
       if (!state.isAnswering) {

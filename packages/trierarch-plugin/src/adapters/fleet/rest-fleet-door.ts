@@ -209,7 +209,7 @@ export function createRestFleetDoor(fleetUrl: string, options: { busyWaitsMs?: r
       call({ path: '/fleet/declareNetworkRules', method: 'POST', crewToken, body: declaration, answers: declareNetworkRulesOutputSchema }),
     listScopes: async (crewToken) => {
       const listed = await call({ path: '/fleet/scopes', method: 'GET', crewToken, answers: scopesOutputSchema });
-      return listed.isOk ? ok(listed.value.map(({ namespace, declaredBy }) => ({ namespace, declaredBy: declaredBy?.id ?? null }))) : listed;
+      return listed.isOk ? ok(listed.value.map(({ namespace, declaredBy, scopes }) => ({ namespace, declaredBy: declaredBy?.id ?? null, scopes }))) : listed;
     },
     declareScopes: async (crewToken, declaration) => {
       const declared = await call({ path: '/fleet/declareScopes', method: 'POST', crewToken, body: declaration, answers: declareScopesOutputSchema });

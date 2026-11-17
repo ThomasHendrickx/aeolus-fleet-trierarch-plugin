@@ -25,10 +25,10 @@ export function createDeclareScopes(deps: { door: FleetDoor; connections: Pick<C
       return refuse('FLEET_UNAVAILABLE', `The fleet did not answer its namespaces: ${listed.error.message}`);
     }
     const held = listed.value.find((each) => each.namespace === PLUGIN_NAMESPACE);
-    if (held?.declaredBy === crew.shipId) {
+    if (held?.declaredBy === crew.shipId && PLUGIN_SCOPES.every((scope) => held.scopes.some((existing) => existing.scope === scope.scope && existing.description === scope.description))) {
       return ok({ isDeclared: false });
     }
-    if (held) {
+    if (held && held.declaredBy !== crew.shipId) {
       const told = await deps.door.tellArgo(crew.crewToken, {
         text: argoMessage({
           headline: `The trierarch plugin cannot declare its scopes: another ship holds ${PLUGIN_NAMESPACE}`,
