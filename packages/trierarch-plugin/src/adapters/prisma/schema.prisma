@@ -210,3 +210,25 @@ model McpDelivery {
   @@id([fleetId, trierarchShipId])
   @@map("mcp_deliveries")
 }
+
+/// The current trusted repository list for one fleet, guarded by its version.
+model RepositoryList {
+  fleetId      String @id @map("fleet_id")
+  version      Int
+  repositories Json
+
+  @@map("repository_lists")
+}
+
+/// Each actual change and its authenticated requester.
+model RepositoryEvent {
+  fleetId   String @map("fleet_id")
+  version   Int
+  actor     Json
+  operation String
+  name      String
+  requestId String @map("request_id")
+
+  @@id([fleetId, version])
+  @@map("repository_events")
+}
