@@ -19,6 +19,7 @@ export function createPluginDispatch(options: DispatchOptions) {
     const checked = await preliminary({ body, secret, isInternal: true, isPublic: false });
     if ('error' in checked && checked.error.data.code !== 'PRECONDITION_FAILED') return checked;
     if (!parsed.success) return { error: { data: { code: 'BAD_REQUEST' as const } } };
+    if (!(await options.isServed(parsed.data.fleetId))) return { error: { data: { code: 'FORBIDDEN' as const } } };
     const pluginShipId = await options.connected(parsed.data.fleetId);
     if (pluginShipId === undefined) return { error: { data: { code: 'PRECONDITION_FAILED' as const } } };
     const boundary = createPluginBoundary({ ...options, pluginShipId, serves: (fleetId) => options.isServed(fleetId) });
