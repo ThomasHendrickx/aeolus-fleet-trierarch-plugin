@@ -2,6 +2,7 @@ import type { FleetId, PluginCallContext } from '@aeolus-fleet/common';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createPrismaClient, type PrismaClient } from '../src/adapters/prisma/client.js';
+import { createPrismaFleetForgetter } from '../src/adapters/prisma/fleet-forgetter.js';
 import { createPrismaRepositories } from '../src/adapters/prisma/repositories.js';
 import { createManageRepositories } from '../src/core/repositories/manage-repositories.js';
 import { createPluginDatabase } from '../src/testing/database.js';
@@ -30,6 +31,16 @@ describe('repository lists in Postgres', () => {
     await expect(restarted.list({ ...context, fleetId: OTHER })).resolves.toEqual({ isOk: true, value: { version: 0, repositories: [] } });
     const events = await db.$queryRaw<{ actor: unknown; request_id: string }[]>`SELECT actor, request_id FROM repository_events WHERE fleet_id = ${FLEET}`;
     expect(events).toEqual([{ actor, request_id: context.requestId }]);
+  });
+
+  it('forgets the list and its events when the fleet is deleted', async () => {
+    const db = client();
+    const manage = createManageRepositories(createPrismaRepositories(db));
+    await manage.change(context, { kind: 'add', name: 'main', url: 'https://example.com/a.git', expectedVersion: 0 });
+    await createPrismaFleetForgetter(db).forget(FLEET);
+    await expect(manage.list(context)).resolves.toEqual({ isOk: true, value: { version: 0, repositories: [] } });
+    const events = await db.$queryRaw<{ count: bigint }[]>`SELECT count(*) FROM repository_events WHERE fleet_id = ${FLEET}`;
+    expect(events[0]?.count).toBe(0n);
   });
 
   it('commits one competing first writer and one event', async () => {
