@@ -2,6 +2,7 @@ import type { PluginCallContext } from '@aeolus-fleet/common';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createPrismaClient, type PrismaClient } from '../src/adapters/prisma/client.js';
+import { createPrismaFleetForgetter } from '../src/adapters/prisma/fleet-forgetter.js';
 import { createPrismaPluginReservations } from '../src/adapters/prisma/plugin-reservations.js';
 import { createPluginDatabase } from '../src/testing/database.js';
 
@@ -20,6 +21,14 @@ describe('plugin dispatch reservations', () => {
     await reservations.prune(context.fleetId, new Date('2026-11-18T12:00:00.000Z'));
     await expect(reservations.reserve(context)).resolves.toBe(false);
     await expect(reservations.reserve({ ...context, requestId: '2c9d988f-b8ab-410d-80cf-b11b0c9f5fb4' })).resolves.toBe(true);
+  });
+
+  it('forgets reservations when its fleet is forgotten', async () => {
+    const db = client();
+    const reservations = createPrismaPluginReservations(db);
+    await reservations.reserve(context);
+    await createPrismaFleetForgetter(db).forget(context.fleetId);
+    await expect(db.pluginDispatchReservation.count({ where: { fleetId: context.fleetId } })).resolves.toBe(0);
   });
 
   it('admits one concurrent dispatch and refuses reuse after restart', async () => {
