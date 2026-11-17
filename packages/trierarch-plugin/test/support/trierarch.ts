@@ -77,7 +77,7 @@ export async function receiveAsTrierarch(fleetUrl: string, machine: { shipId: Sh
  * A joined machine's trierarch registered with the secret the join answered:
  * it receives and acks what waits for it, and sends as its own ship.
  */
-export async function crewAsTrierarch(fleetUrl: string, machine: { shipId: ShipId; secret: string }) {
+export async function crewAsTrierarch(fleetUrl: string, machine: { shipId: ShipId; secret: string; model?: string }) {
   const registered = await shipCall(fleetUrl, {
     path: '/ship/register',
     body: { shipId: machine.shipId, secret: machine.secret, location: { kind: 'DEVICE' }, harness: 'aeolus-trierarch' },
@@ -100,7 +100,7 @@ export async function crewAsTrierarch(fleetUrl: string, machine: { shipId: ShipI
       await shipCall(fleetUrl, {
         path: '/ship/send',
         crewToken,
-        body: { selector: { kind: 'ship', shipId: message.shipId }, contentType: message.contentType, payload: message.payload, idempotencyKey: crypto.randomUUID(), model: 'claude-opus-5-5' },
+        body: { selector: { kind: 'ship', shipId: message.shipId }, contentType: message.contentType, payload: message.payload, idempotencyKey: crypto.randomUUID(), ...(machine.model === undefined ? {} : { model: machine.model }) },
       });
     },
   };

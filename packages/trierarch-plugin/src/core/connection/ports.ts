@@ -90,11 +90,11 @@ export interface FleetDoor {
   /**
    * Commissions a ship as the crew token's ship (fleet:commission) under a new
    * idempotency key, with the fleet scopes given beside the send and receive
-   * every agent ship has: its id and its starting prompt, issued once.
+   * every ship has: its id and its starting prompt, issued once.
    */
   commission(
     crewToken: string,
-    ship: { name: string; type: string; scopes: string[]; idempotencyKey: string },
+    ship: { name: string; kind: 'trierarch'; type: string; scopes: string[]; idempotencyKey: string },
   ): Promise<Result<{ shipId: ShipId } & IssuedPrompt, FleetRefusal>>;
   /** The days the fleet keeps its finished history, null for kept for good (fleet:read; decision 0066). */
   limits(crewToken: string): Promise<Result<{ retentionDays: number | null }, FleetRefusal>>;

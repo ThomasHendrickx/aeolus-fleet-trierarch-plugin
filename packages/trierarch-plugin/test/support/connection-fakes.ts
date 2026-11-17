@@ -29,6 +29,7 @@ export const COMMISSIONED_SHIP_ID: ShipId = 'shp_01m3tbfspe96yf1rnr4ank9h2b';
 /** A ship the fake fleet commissioned: what the trierarch plugin asked for. */
 export interface CommissionedShip {
   name: string;
+  kind: 'trierarch';
   type: string;
   scopes: string[];
   idempotencyKey: string;

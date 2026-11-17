@@ -48,8 +48,7 @@ beforeEach(async () => {
   );
   shipId = commissioned.shipId;
   secret = secretOf(commissioned.secret);
-  // A receive answers within 100 ms when nothing waits, so a test that receives nothing does not wait out the long poll.
-  fleet = createApp({ databaseUrl: fleetDatabaseUrl, publicUrl: FLEET_URL, logger: false, receiveWaitMs: 100 });
+  fleet = createApp({ databaseUrl: fleetDatabaseUrl, publicUrl: FLEET_URL, logger: false });
   fleetUrl = await fleet.listen({ host: '127.0.0.1', port: 0 });
   cookie = await signIn(fleetUrl, unwrap(await useCases.issueSignInLink({ fleetId: argo.fleetId })).ticket);
   pluginDatabaseUrl = await createPluginDatabase();
@@ -140,7 +139,7 @@ describe('connecting the trierarch plugin', () => {
 });
 
 describe('a machine joining', () => {
-  it('commissions a ship of type trierarch with exactly send, receive and crew:run, and answers its starting prompt and setup line', async () => {
+  it('commissions a ship of kind and type trierarch with exactly send, receive and crew:run, and answers its starting prompt and setup line', async () => {
     const address = await connected();
 
     const answer = await mutate(address, { procedure: 'machines.join', cookie, body: { name: 'mac-studio' } });
@@ -148,7 +147,7 @@ describe('a machine joining', () => {
     expect(answer.status, await answer.clone().text()).toBe(200);
     const joined = joinedSchema.parse(await answer.json()).result.data;
     const ship = await fleetDatabase.ship.findUniqueOrThrow({ where: { id: joined.shipId } });
-    expect({ name: ship.name, type: ship.type, scopes: [...ship.scopes].sort() }).toEqual({ name: 'mac-studio', type: 'trierarch', scopes: ['crew:run', 'messages:receive', 'messages:send'] });
+    expect({ name: ship.name, kind: ship.kind, type: ship.type, scopes: [...ship.scopes].sort() }).toEqual({ name: 'mac-studio', kind: 'trierarch', type: 'trierarch', scopes: ['crew:run', 'messages:receive', 'messages:send'] });
     expect(joined.prompt).toContain(joined.secret);
     expect(joined.crewLines.map((line) => line.harness)).toContain('claude-code');
     expect(joined.setupLine).toBe(`curl -fsSL https://raw.githubusercontent.com/ThomasHendrickx/aeolus-fleet-trierarch/main/install.sh | sh -s -- --fleet-url ${fleetUrl} --ship-id ${joined.shipId} --plugin-ship-id ${shipId} --secret ${joined.secret}`);
@@ -859,7 +858,7 @@ describe("a trierarch's usage, sent to the trierarch plugin's ship (the usage de
   it('acks usage from a ship that is not a trierarch and keeps none of it', async () => {
     const address = await connected();
     const scout = unwrap(await useCases.commissionShip(argo, { idempotencyKey: newKey(), name: 'scout', type: 'agent' }));
-    const agent = await crewAsTrierarch(fleetUrl, { shipId: scout.shipId, secret: secretOf(scout.secret) });
+    const agent = await crewAsTrierarch(fleetUrl, { shipId: scout.shipId, secret: secretOf(scout.secret), model: 'claude-opus-5-5' });
 
     await agent.send({ shipId, contentType: TRIERARCH_USAGE_CONTENT_TYPE, payload: aUsageMessage(scout.shipId) });
 
