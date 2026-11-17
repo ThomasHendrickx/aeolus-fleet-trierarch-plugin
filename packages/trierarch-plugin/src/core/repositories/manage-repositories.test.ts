@@ -3,17 +3,17 @@ import { describe, expect, it } from 'vitest';
 import { FLEET_ID } from '../../../test/support/connection-fakes.js';
 import { createManageRepositories, type RepositoryStore } from './manage-repositories.js';
 
-function memoryStore(): RepositoryStore {
-  let current = { version: 0, repositories: [] as { name: string; url: string }[] };
+function memoryStore(): RepositoryStore & { events: unknown[] } {
+  let current: { version: number; repositories: readonly { name: string; url: string }[] } = { version: 0, repositories: [] };
   const events: unknown[] = [];
   return {
     events,
-    read: async () => current,
-    save: async (_fleetId, expectedVersion, next, event) => {
-      if (current.version !== expectedVersion) return false;
+    read: () => Promise.resolve(current),
+    save: (_fleetId, { expectedVersion, next, event }) => {
+      if (current.version !== expectedVersion) return Promise.resolve(false);
       current = { version: next.version, repositories: [...next.repositories] };
       events.push(event);
-      return true;
+      return Promise.resolve(true);
     },
   };
 }
