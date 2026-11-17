@@ -17,6 +17,9 @@ describe('loadConfig', () => {
       port: 4200,
       logLevel: 'info',
       installationToken: undefined,
+      pluginSecrets: [],
+      pluginInternalHost: '127.0.0.1',
+      pluginInternalPort: 4201,
       silentAfterMs: 300_000,
       passIntervalMs: 10_000,
       trustedRepositories: { repositories: [] },
@@ -52,6 +55,19 @@ describe('loadConfig', () => {
 
   it('reads the silent threshold and the pass interval in seconds', () => {
     expect(loadConfig({ ...environment, TRIERARCH_SILENT_AFTER_SECONDS: '60', TRIERARCH_PASS_INTERVAL_SECONDS: '2' })).toMatchObject({ silentAfterMs: 60_000, passIntervalMs: 2_000 });
+  });
+
+  it('reads current and next dispatch secrets and a private listener', () => {
+    const configured = loadConfig({ ...environment, PLUGIN_SECRET: 'a'.repeat(32), PLUGIN_NEXT_SECRET: 'b'.repeat(32), PLUGIN_INTERNAL_HOST: '10.2.3.4', PLUGIN_INTERNAL_PORT: '4301' });
+    expect(configured.pluginSecrets).toEqual(['a'.repeat(32), 'b'.repeat(32)]);
+    expect(configured.pluginInternalHost).toBe('10.2.3.4');
+    expect(configured.pluginInternalPort).toBe(4301);
+  });
+
+  it('refuses public listener addresses and short dispatch secrets', () => {
+    expect(() => loadConfig({ ...environment, PLUGIN_INTERNAL_HOST: '0.0.0.0' })).toThrow(ConfigError);
+    expect(() => loadConfig({ ...environment, PLUGIN_SECRET: 'short' })).toThrow(ConfigError);
+    expect(() => loadConfig({ ...environment, PLUGIN_NEXT_SECRET: 'b'.repeat(32) })).toThrow(ConfigError);
   });
 
   it('reads the installation token, which turns on the installation procedures', () => {
