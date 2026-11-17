@@ -27,8 +27,15 @@ describe('the trierarch plugin declaring its scopes', () => {
     await expect(declare()).resolves.toEqual({ isOk: true, value: { isDeclared: true } });
 
     expect(fleet.state.namespaces).toEqual([
-      { namespace: 'trierarch', declaredBy: SHIP_ID, scopes: [{ scope: 'trierarch:join', description: 'Add a computer: join its trierarch to the fleet' }] },
+      { namespace: 'trierarch', declaredBy: SHIP_ID, scopes: [{ scope: 'trierarch:join', description: 'Add a computer: join its trierarch to the fleet' }, { scope: 'trierarch:repositories', description: 'Manage trusted repositories' }] },
     ]);
+  });
+
+  it('updates its existing namespace when the repository scope is missing', async () => {
+    fleet.state.namespaces.push({ namespace: 'trierarch', declaredBy: SHIP_ID, scopes: [{ scope: 'trierarch:join', description: 'Add a computer: join its trierarch to the fleet' }] });
+
+    await expect(declare()).resolves.toEqual({ isOk: true, value: { isDeclared: true } });
+    expect(fleet.state.namespaces[0]?.scopes.map(({ scope }) => scope)).toContain('trierarch:repositories');
   });
 
   it('declares nothing once its own ship holds the namespace', async () => {
