@@ -21,6 +21,7 @@ async function start(): Promise<void> {
   const app = createTrierarchPluginApp({
     databaseUrl: config.databaseUrl,
     fleetUrl: config.fleetUrl,
+    pluginSecrets: config.pluginSecrets,
     consoleOrigin: config.consoleOrigin,
     logger: { level: config.logLevel },
     silentAfterMs: config.silentAfterMs,
@@ -43,6 +44,7 @@ async function start(): Promise<void> {
     });
   }
   await app.server.listen({ host: config.host, port: config.port });
+  if (config.pluginSecrets.length > 0) await app.pluginServer.listen({ host: config.pluginInternalHost, port: config.pluginInternalPort });
 }
 
 try {
