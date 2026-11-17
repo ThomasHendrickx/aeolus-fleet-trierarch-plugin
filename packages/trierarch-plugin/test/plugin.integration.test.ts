@@ -48,8 +48,7 @@ beforeEach(async () => {
   );
   shipId = commissioned.shipId;
   secret = secretOf(commissioned.secret);
-  // A receive answers within 100 ms when nothing waits, so a test that receives nothing does not wait out the long poll.
-  fleet = createApp({ databaseUrl: fleetDatabaseUrl, publicUrl: FLEET_URL, logger: false, receiveWaitMs: 100 });
+  fleet = createApp({ databaseUrl: fleetDatabaseUrl, publicUrl: FLEET_URL, logger: false });
   fleetUrl = await fleet.listen({ host: '127.0.0.1', port: 0 });
   cookie = await signIn(fleetUrl, unwrap(await useCases.issueSignInLink({ fleetId: argo.fleetId })).ticket);
   pluginDatabaseUrl = await createPluginDatabase();
