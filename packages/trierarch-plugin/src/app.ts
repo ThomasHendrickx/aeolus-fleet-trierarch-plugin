@@ -145,7 +145,7 @@ export function createTrierarchPluginApp(options: {
   const dispatch = createPluginDispatch({
     secrets: options.pluginSecrets ?? [], now: () => clock.now(),
     connected: async (fleetId) => (await connections.find(fleetId))?.shipId,
-    isServed: (fleetId) => isServed(fleetId), reservations: createPrismaPluginReservations(prisma),
+    isServed: (fleetId) => isServed(fleetId), reservations: createPrismaPluginReservations(prisma, () => clock.now()),
     procedures: {
       'repositories.list': async (context) => pluginCallAnswerSchema.parse(await procedures['repositories.list'](context)),
       'repositories.add': async (context) => pluginCallAnswerSchema.parse(await procedures['repositories.add'](context)),

@@ -241,6 +241,6 @@ model PluginDispatchReservation {
   expiresAt    DateTime @map("expires_at") @db.Timestamptz(3)
 
   @@id([fleetId, pluginShipId, requestId])
-  @@index([expiresAt])
+  @@index([fleetId, expiresAt])
   @@map("plugin_dispatch_reservations")
 }
