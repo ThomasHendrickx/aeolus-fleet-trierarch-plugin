@@ -5,9 +5,9 @@ import { createPluginDispatch } from './plugin-dispatch.js';
 
 const context: PluginCallContext = { fleetId: 'flt_01m3tb1zgr5h2ffee12xnch8sv', pluginShipId: 'shp_01m3tbfspe96yf1rnr4ank9h4a', requestId: '8c9d988f-b8ab-410d-80cf-b11b0c9f5fb4', actor: { kind: 'installation' }, scopes: [], procedure: 'example', input: {}, expiresAt: '2026-11-18T12:00:20.000Z' };
 const secret = 'a-long-enough-example-secret-for-test';
-function dispatch() {
+function dispatch(isConnected = true) {
   const reserved = new Set<string>();
-  return createPluginDispatch({ secrets: [secret, 'another-long-example-secret-for-test'], now: () => new Date('2026-11-18T12:00:00.000Z'), connected: () => Promise.resolve(context.pluginShipId), isServed: () => Promise.resolve(true), reservations: { reserve: ({ requestId }) => { if (reserved.has(requestId)) return Promise.resolve(false); reserved.add(requestId); return Promise.resolve(true); } }, procedures: { example: () => Promise.resolve({ result: { data: 'ok' } }) } });
+  return createPluginDispatch({ secrets: [secret, 'another-long-example-secret-for-test'], now: () => new Date('2026-11-18T12:00:00.000Z'), connected: () => Promise.resolve(isConnected ? context.pluginShipId : undefined), isServed: () => Promise.resolve(true), reservations: { reserve: ({ requestId }) => { if (reserved.has(requestId)) return Promise.resolve(false); reserved.add(requestId); return Promise.resolve(true); } }, procedures: { example: () => Promise.resolve({ result: { data: 'ok' } }) } });
 }
 
 describe('internal plugin dispatch', () => {
@@ -19,6 +19,10 @@ describe('internal plugin dispatch', () => {
   it('refuses a missing or wrong secret', async () => {
     await expect(dispatch()(context, undefined)).resolves.toEqual({ error: { data: { code: 'UNAUTHORIZED' } } });
     await expect(dispatch()(context, 'wrong')).resolves.toEqual({ error: { data: { code: 'UNAUTHORIZED' } } });
+  });
+  it('checks the secret before revealing whether a fleet is connected', async () => {
+    await expect(dispatch(false)(context, 'wrong')).resolves.toEqual({ error: { data: { code: 'UNAUTHORIZED' } } });
+    await expect(dispatch()(null, 'wrong')).resolves.toEqual({ error: { data: { code: 'UNAUTHORIZED' } } });
   });
   it('refuses an unknown destination and an expired context', async () => {
     await expect(dispatch()({ ...context, pluginShipId: 'shp_01m3tbfspe96yf1rnr4ank9h4b' }, secret)).resolves.toEqual({ error: { data: { code: 'UNAUTHORIZED' } } });
