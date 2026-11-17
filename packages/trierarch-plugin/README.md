@@ -14,7 +14,7 @@ Assignment runs as a pass for every fleet it serves and is connected to. Each pa
 
 ## Running
 
-1. Give it its own database and set its environment. No ship and no secret: the operator connects it.
+1. Give it its own database and set its environment. The operator connects its ship.
 
 | Variable | Required | What |
 | --- | --- | --- |
@@ -23,6 +23,9 @@ Assignment runs as a pass for every fleet it serves and is connected to. Each pa
 | `CONSOLE_ORIGIN` | no | The console's origin, such as `https://console.example.com`: `mcp.replace` takes a change only with this exact `Origin`. The origin of `FLEET_URL` by default |
 | `HOST`, `PORT` | no | Where it listens; `127.0.0.1:4200` by default |
 | `LOG_LEVEL` | no | `info` by default |
+| `PLUGIN_SECRET` | no | Shared secret for core dispatch, at least 32 characters. Unset: the internal listener does not start |
+| `PLUGIN_NEXT_SECRET` | no | A second shared secret accepted during rotation, at least 32 characters; requires `PLUGIN_SECRET` |
+| `PLUGIN_INTERNAL_HOST`, `PLUGIN_INTERNAL_PORT` | no | Private dispatch listener, `127.0.0.1:4201` by default. The host must be loopback or a private IPv4 address |
 | `INSTALLATION_TOKEN` | no | The token a hosting service presents to its installation procedures, at least 32 characters (decision 0021). Unset: they do not exist and every fleet is served, as a self-hosted install needs |
 | `TRIERARCH_SILENT_AFTER_SECONDS` | no | A trierarch whose last seen is older than this is silent: it gets no new requests. `300` by default |
 | `TRIERARCH_PASS_INTERVAL_SECONDS` | no | How often assignment runs a pass for each fleet. `10` by default |
@@ -30,6 +33,10 @@ Assignment runs as a pass for every fleet it serves and is connected to. Each pa
 
 2. `aeolus-trierarch-plugin start` migrates the database, serves, and runs an assignment pass every interval. Every fleet it serves whose kept crew token its fleet still takes is connected again; any other fleet is not connected. `aeolus-trierarch-plugin migrate` migrates alone.
 3. Each fleet's operator connects it: commission its ship with `fleet:read`, `fleet:commission`, `crew:assign`, `crew:run`, `labels:define` and `labels:assign`, and hand the ship's secret to `connection.connect`, server to server. It registers as a server and keeps only the crew token; the secret is never stored or logged.
+
+The dispatch listener serves `POST /dispatch` on the internal network only. Keep it inaccessible from public networks, and configure core's `PLUGIN_TARGETS` with its complete URL and the same secret. Rotate without interruption by adding `PLUGIN_NEXT_SECRET`, restarting the plugin, switching core to that secret, then removing the old one and restarting again. Secrets belong in server configuration, never in fleet messages or client sessions.
+
+The authenticated `repositories.list`, `repositories.add` and `repositories.remove` calls use `fleet.callPlugin`, require `trierarch:repositories`, and keep one versioned list per fleet. Their changes are not distributed or used for placement yet; the existing `TRUSTED_REPOSITORIES` setting still supplies the current distribution until the later cutover.
 
 ## API
 
