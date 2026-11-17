@@ -31,6 +31,19 @@ describe('repository actor calls over the internal listener', () => {
     const events = await db.$queryRaw<{ actor: unknown }[]>`SELECT actor FROM repository_events WHERE fleet_id = ${fleetId}`;
     expect(events).toEqual([{ actor: { kind: 'account', accountId: 'acc_test', throughShipId: null } }]);
   });
+  it('refuses a caller without the scope and does not create an event', async () => {
+    const payload = { ...context('3c9d988f-b8ab-410d-80cf-b11b0c9f5fb4', { procedure: 'repositories.add', input: { name: 'main', url: 'https://example.com/a.git', expectedVersion: 0 } }), scopes: ['fleet:manage', 'trierarch:join'] };
+    const response = await app.pluginServer.inject({ method: 'POST', url: '/dispatch', headers: { 'aeolus-plugin-secret': secret }, payload });
+    expect(response.json()).toEqual({ error: { data: { code: 'FORBIDDEN' } } });
+    expect(await db.repositoryEvent.count({ where: { fleetId } })).toBe(0);
+  });
+  it('lets an account remove an entry and records both changes', async () => {
+    const call = (payload: ReturnType<typeof context>) => app.pluginServer.inject({ method: 'POST', url: '/dispatch', headers: { 'aeolus-plugin-secret': secret }, payload });
+    await call(context('4c9d988f-b8ab-410d-80cf-b11b0c9f5fb4', { procedure: 'repositories.add', input: { name: 'main', url: 'https://example.com/a.git', expectedVersion: 0 } }));
+    const removed = await call(context('5c9d988f-b8ab-410d-80cf-b11b0c9f5fb4', { procedure: 'repositories.remove', input: { name: 'main', expectedVersion: 1 } }));
+    expect(removed.json()).toEqual({ result: { data: { version: 2, repositories: [] } } });
+    expect(await db.repositoryEvent.count({ where: { fleetId } })).toBe(2);
+  });
   it('refuses the shared secret on the public listener', async () => {
     const response = await app.server.inject({ method: 'POST', url: '/trpc/connection.status', headers: { 'aeolus-plugin-secret': secret }, payload: {} });
     expect(response.statusCode).toBe(401);

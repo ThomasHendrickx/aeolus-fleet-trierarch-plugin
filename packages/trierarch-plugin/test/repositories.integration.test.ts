@@ -43,6 +43,14 @@ describe('repository lists in Postgres', () => {
     expect(events[0]?.count).toBe(0n);
   });
 
+  it('rolls back the list if its event cannot be written', async () => {
+    const db = client();
+    await db.$executeRaw`INSERT INTO repository_events (fleet_id, version, actor, operation, name, request_id) VALUES (${FLEET}, 1, '{}'::jsonb, 'add', 'occupied', 'test')`;
+    const manage = createManageRepositories(createPrismaRepositories(db));
+    await expect(manage.change(context, { kind: 'add', name: 'main', url: 'https://example.com/a.git', expectedVersion: 0 })).rejects.toThrow();
+    await expect(manage.list(context)).resolves.toEqual({ isOk: true, value: { version: 0, repositories: [] } });
+  });
+
   it('commits one competing first writer and one event', async () => {
     const first = createManageRepositories(createPrismaRepositories(client()));
     const second = createManageRepositories(createPrismaRepositories(client()));
