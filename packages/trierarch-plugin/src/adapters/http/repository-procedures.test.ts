@@ -1,4 +1,4 @@
-import type { PluginCallContext } from '@aeolus-fleet/common';
+import { accountIdSchema, type PluginCallContext } from '@aeolus-fleet/common';
 import { describe, expect, it } from 'vitest';
 
 import { createRepositoryProcedures } from './repository-procedures.js';
@@ -22,7 +22,7 @@ describe('repository procedures', () => {
     await expect(procedures()['repositories.list'](context)).resolves.toEqual({ result: { data: { version: 0, repositories: [] } } });
   });
   it('refuses an account without the repository scope', async () => {
-    await expect(procedures()['repositories.list']({ ...context, actor: { kind: 'account', accountId: 'acc_test', throughShipId: null }, scopes: [] })).resolves.toEqual({ error: { data: { code: 'FORBIDDEN' } } });
+    await expect(procedures()['repositories.list']({ ...context, actor: { kind: 'account', accountId: accountIdSchema.parse('acc_test'), throughShipId: null }, scopes: [] })).resolves.toEqual({ error: { data: { code: 'FORBIDDEN' } } });
   });
   it('refuses forged context in operation input', async () => {
     await expect(procedures()['repositories.list']({ ...context, input: { scopes: ['trierarch:repositories'] } })).resolves.toEqual({ error: { data: { code: 'BAD_REQUEST' } } });
