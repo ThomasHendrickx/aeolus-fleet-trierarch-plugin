@@ -13,6 +13,15 @@ beforeEach(async () => { databaseUrl = await createPluginDatabase(); });
 afterEach(async () => { await Promise.all(clients.splice(0).map((db) => db.$disconnect())); });
 
 describe('plugin dispatch reservations', () => {
+  it('prunes only reservations whose deadline has passed', async () => {
+    const reservations = createPrismaPluginReservations(client());
+    await reservations.reserve(context);
+    await reservations.reserve({ ...context, requestId: '2c9d988f-b8ab-410d-80cf-b11b0c9f5fb4', expiresAt: '2020-01-01T00:00:00.000Z' });
+    await reservations.prune(context.fleetId, new Date('2026-11-18T12:00:00.000Z'));
+    await expect(reservations.reserve(context)).resolves.toBe(false);
+    await expect(reservations.reserve({ ...context, requestId: '2c9d988f-b8ab-410d-80cf-b11b0c9f5fb4' })).resolves.toBe(true);
+  });
+
   it('admits one concurrent dispatch and refuses reuse after restart', async () => {
     const first = createPrismaPluginReservations(client());
     const second = createPrismaPluginReservations(client());
