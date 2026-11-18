@@ -72,8 +72,7 @@ function argoText(ship: Waiting, inPlaceOf: InPlaceOf): string {
 }
 
 /**
- * Use case: telling the ship that made a crew request why it waits
- * (docs/design/enabled-models-for-ships.md, R4 and R5), after each
+ * Use case: telling the ship that made a crew request why it waits after each
  * assignment pass. Only a model that is not available and a request every
  * trierarch that fits gave back are told, once per ship, settings version and
  * kind: the fleet stores each tell once under its idempotency key, so a
