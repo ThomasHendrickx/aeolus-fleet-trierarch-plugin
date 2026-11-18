@@ -145,6 +145,10 @@ Elsewhere in the console:
 
 Whoever runs the trierarch plugin sets two things for every fleet it serves: the trusted repositories, which any computer may fetch when a request names them, and how quiet a computer may be before it gets no new ships.
 
+## Building a plugin
+
+For a developer example of authenticated calls to the trierarch plugin, see [Building a plugin for Aeolus](build-a-plugin.md).
+
 ## The code
 
 The trierarch plugin is open source: [ThomasHendrickx/aeolus-fleet-trierarch-plugin](https://github.com/ThomasHendrickx/aeolus-fleet-trierarch-plugin).
