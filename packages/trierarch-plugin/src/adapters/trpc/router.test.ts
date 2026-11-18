@@ -97,6 +97,7 @@ function caller(session: { kind?: 'operator' | 'viewer'; scopes: readonly ScopeN
     heldConnection: notReached,
     installationTokenSent: undefined,
     installation: { mode: 'open', token: undefined },
+    installationConnect: notReached,
     setFleetEnabled: notReached,
     readFleet: notReached,
     deleteFleet: notReached,

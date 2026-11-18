@@ -30,6 +30,7 @@ import { trierarchPluginRouter, type TrierarchPluginRouter } from './adapters/tr
 import { createAnswerPings } from './core/connection/answer-pings.js';
 import { createConnect } from './core/connection/connect.js';
 import { createReadConnection, type ReadConnection } from './core/connection/read-connection.js';
+import { createInstallationConnect } from './core/installation/installation-connect.js';
 import { createDeleteFleet } from './core/installation/delete-fleet.js';
 import type { InstallationMode } from './core/installation/ports.js';
 import { createReadFleet } from './core/installation/read-fleet.js';
@@ -213,6 +214,7 @@ export function createTrierarchPluginApp(options: {
   };
   const declareScopes = createDeclareScopes({ door, connections });
   const connect = createConnect({ door, store: connections, clock, declareScopes });
+  const installationConnect = createInstallationConnect({ requests, hasher: sha256RequestHasher, clock, isServed, connect });
   /** The fleets whose namespace was last refused, so a ship that cannot declare (no scopes:declare) is logged once, not every pass. */
   const refusedScopes = new Set<FleetId>();
   /** Declares the trierarch plugin's namespace with trierarch:join (decision 0055); a refusal is logged once and the next pass tries again. */
@@ -465,6 +467,7 @@ export function createTrierarchPluginApp(options: {
         heldConnection,
         installationTokenSent: typeof req.headers['x-aeolus-installation-token'] === 'string' ? req.headers['x-aeolus-installation-token'] : undefined,
         installation: { mode: installation, token: options.installationToken },
+        installationConnect,
         setFleetEnabled,
         readFleet,
         deleteFleet,

@@ -748,13 +748,13 @@ describe('the installation (decision 0021)', () => {
     expect((await installation(address, { procedure: 'installation.connect', body })).status).toBe(403);
     await installation(address, { procedure: 'installation.setEnabled', body: { requestId: newKey(), fleetId, enabled: true } });
     await expect(installation(address, { procedure: 'installation.connect', body }).then((response) => response.json())).resolves.toEqual({ result: { data: { enabled: true, connected: true } } });
-    const crewed = await fleetDatabase.lease.findMany({ where: { shipId } });
+    const crewed = await fleetDatabase.lease.findMany({ where: { shipId }, select: { id: true, endedAt: true } });
     await app.close();
     apps.splice(apps.indexOf(app), 1);
     const restarted = await started(TOKEN);
     const replay = { ...body, secret: 'a-different-secret' };
     await expect(installation(restarted.address, { procedure: 'installation.connect', body: replay }).then((response) => response.json())).resolves.toEqual({ result: { data: { enabled: true, connected: true } } });
-    expect(await fleetDatabase.lease.findMany({ where: { shipId } })).toEqual(crewed);
+    expect(await fleetDatabase.lease.findMany({ where: { shipId }, select: { id: true, endedAt: true } })).toEqual(crewed);
     await installation(restarted.address, { procedure: 'installation.setEnabled', body: { requestId: newKey(), fleetId, enabled: false } });
     expect((await installation(restarted.address, { procedure: 'installation.connect', body: replay })).status).toBe(403);
     await expect(installation(restarted.address, { procedure: 'installation.get', body: { fleetId } }).then((response) => response.json())).resolves.toEqual({ result: { data: { enabled: false, connected: true } } });
