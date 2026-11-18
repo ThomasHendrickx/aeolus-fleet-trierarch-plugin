@@ -102,7 +102,7 @@ function optionFlagsOf(options: SetupOptions): string[] {
 /**
  * The one ready-to-run line that sets a machine up: the install script runs
  * `aeolus-trierarch init`, which takes the fleet's URL, the machine's ship and its secret, and the trierarch
- * plugin's own ship as flags and never parses a prompt. The trierarch takes
+ * plugin's own ship as flags and reads its secret from stdin. The trierarch takes
  * the trusted repositories only from that ship (aeolus-fleet#384): a ship's
  * type proves nothing. It holds the secret, so it is shown once, never kept.
  * Each option filled becomes its flag, so a line with all of them asks
@@ -115,6 +115,6 @@ export function setupLineOf(parts: { fleetUrl: string; shipId: ShipId; pluginShi
   if (!checked.isOk) {
     return checked;
   }
-  const base = `curl -fsSL ${INSTALL_SCRIPT_URL} | sh -s -- --fleet-url ${parts.fleetUrl} --ship-id ${parts.shipId} --plugin-ship-id ${parts.pluginShipId} --secret ${parts.secret}`;
-  return ok([base, ...optionFlagsOf(checked.value)].join(' '));
+  const base = `bash <(curl -fsSL ${INSTALL_SCRIPT_URL}) --fleet-url ${parts.fleetUrl} --ship-id ${parts.shipId} --plugin-ship-id ${parts.pluginShipId} --secret-stdin`;
+  return ok([base, ...optionFlagsOf(checked.value), `<<< ${shellQuoted(parts.secret)}`].join(' '));
 }

