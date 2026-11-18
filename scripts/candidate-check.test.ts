@@ -1,3 +1,9 @@
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import { type CandidateRun, candidateRefusal, type PackedTarball } from './candidate-check.ts';
@@ -69,5 +75,29 @@ describe('the candidate a release publishes', () => {
   it('refuses a tarball the download lacks', () => {
     const withoutTarball = {};
     expect(refusal({ downloaded: withoutTarball })).toBe('The download has no aeolus-fleet-trierarch-plugin-0.29.0.tgz');
+  });
+});
+
+// SHA-512 of the fixed bytes "abc", encoded as npm's SRI digest.
+const ABC_INTEGRITY = 'sha512-3a81oZNherrMQXNJriBBMRLm+k6JqX6iCp7u5ktV05ohkpkqJ0/BqDa6PCOj/uu9RU1EI2Q86A4qmslPpUyknw==';
+
+describe('the downloaded candidate bytes', () => {
+  it.each([
+    { bytes: 'abc', status: 0 },
+    { bytes: 'changed after packing', status: 1 },
+  ])('checks SHA-512 before publishing: $bytes', ({ bytes, status }) => {
+    const folder = mkdtempSync(join(tmpdir(), 'walked-candidate-'));
+    try {
+      const tarball = aTarball('trierarch-plugin', { integrity: ABC_INTEGRITY });
+      writeFileSync(join(folder, 'integrity.json'), JSON.stringify([tarball]));
+      writeFileSync(join(folder, tarball.filename), bytes);
+      const result = spawnSync(process.execPath, [fileURLToPath(new URL('./candidate-check.ts', import.meta.url)), VERSION, SHA, folder], {
+        input: JSON.stringify(aRun()), encoding: 'utf8',
+      });
+      expect(result.status, result.stderr).toBe(status);
+      if (status === 1) expect(result.stderr).toContain('its integrity differs');
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
   });
 });
