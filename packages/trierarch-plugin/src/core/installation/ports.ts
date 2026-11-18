@@ -22,7 +22,7 @@ export interface FleetSwitches {
  */
 export interface InstallationRequest {
   requestId: string;
-  kind: 'setEnabled' | 'deleteFleet';
+  kind: 'setEnabled' | 'deleteFleet' | 'connect';
   requestHash: string;
   fleetId: FleetId | null;
   isEnabled: boolean | null;

@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { InstallationRequests } from '../../core/installation/ports.js';
 import type { Db } from './client.js';
 
-const kindSchema = z.enum(['setEnabled', 'deleteFleet']);
+const kindSchema = z.enum(['setEnabled', 'deleteFleet', 'connect']);
 
 /** The installation's requests, by request id. */
 export function createPrismaInstallationRequests(db: Db): InstallationRequests {
