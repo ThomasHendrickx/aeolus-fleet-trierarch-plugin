@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { setupLineOf } from './setup-line.js';
 
-const BASE = 'curl -fsSL https://raw.githubusercontent.com/ThomasHendrickx/aeolus-fleet-trierarch/main/install.sh | sh -s -- --fleet-url https://fleet.example --ship-id shp_machine --plugin-ship-id shp_plugin --secret aeolus_sk_v1_machine';
+const BASE = 'bash <(curl -fsSL https://raw.githubusercontent.com/ThomasHendrickx/aeolus-fleet-trierarch/main/install.sh) --fleet-url https://fleet.example --ship-id shp_machine --plugin-ship-id shp_plugin --secret-stdin';
+const SECRET = " <<< 'aeolus_sk_v1_machine'";
 
 const resultOf = (options?: Parameters<typeof setupLineOf>[1]) =>
   setupLineOf({ fleetUrl: 'https://fleet.example', shipId: 'shp_machine', pluginShipId: 'shp_plugin', secret: 'aeolus_sk_v1_machine' }, options);
@@ -11,7 +12,7 @@ const resultOf = (options?: Parameters<typeof setupLineOf>[1]) =>
 const line = (options?: Parameters<typeof setupLineOf>[1]) => {
   const made = resultOf(options);
   expect(made.isOk).toBe(true);
-  return made.isOk ? made.value : '';
+  return made.isOk ? made.value.replace(SECRET, '') : '';
 };
 
 describe('the setup line of a machine', () => {
@@ -53,6 +54,11 @@ describe('the setup line of a machine', () => {
   it('refuses NUL in a folder name or path before generating a shell word', () => {
     expect(resultOf({ folders: { kind: 'list', entries: [{ name: 'a\0b', path: '/ok' }] } }).isOk).toBe(false);
     expect(resultOf({ folders: { kind: 'list', entries: [{ name: 'ok', path: '/a\0b' }] } }).isOk).toBe(false);
+  });
+
+  it('passes the secret on stdin after all options', () => {
+    const made = resultOf({ service: 'yes' });
+    expect(made.isOk && made.value).toBe(`${BASE} --service yes${SECRET}`);
   });
 
   it('carries no option flag when no option is filled, so the machine asks for each', () => {

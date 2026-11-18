@@ -150,7 +150,7 @@ describe('a machine joining', () => {
     expect({ name: ship.name, kind: ship.kind, type: ship.type, scopes: [...ship.scopes].sort() }).toEqual({ name: 'mac-studio', kind: 'trierarch', type: 'trierarch', scopes: ['crew:run', 'messages:receive', 'messages:send'] });
     expect(joined.prompt).toContain(joined.secret);
     expect(joined.crewLines.map((line) => line.harness)).toContain('claude-code');
-    expect(joined.setupLine).toBe(`curl -fsSL https://raw.githubusercontent.com/ThomasHendrickx/aeolus-fleet-trierarch/main/install.sh | sh -s -- --fleet-url ${fleetUrl} --ship-id ${joined.shipId} --plugin-ship-id ${shipId} --secret ${joined.secret}`);
+    expect(joined.setupLine).toBe(`bash <(curl -fsSL https://raw.githubusercontent.com/ThomasHendrickx/aeolus-fleet-trierarch/main/install.sh) --fleet-url ${fleetUrl} --ship-id ${joined.shipId} --plugin-ship-id ${shipId} --secret-stdin <<< '${joined.secret}'`);
   });
 
   it('is refused for a name an active ship holds', async () => {
@@ -173,7 +173,7 @@ const CONSOLE_ORIGIN = new URL(FLEET_URL).origin;
 
 /** The secret a setup line carries, its last flag. */
 function secretInLine(setupLine: string): string {
-  return z.string().parse(setupLine.split('--secret ')[1]);
+  return z.string().parse(setupLine.split("<<< '")[1]?.slice(0, -1));
 }
 
 describe('a new setup line for a machine (aeolus-fleet#1239)', () => {
@@ -188,7 +188,7 @@ describe('a new setup line for a machine (aeolus-fleet#1239)', () => {
     expect(answer.status, await answer.clone().text()).toBe(200);
     const { setupLine } = newSetupLineSchema.parse(await answer.json()).result.data;
     const newSecret = secretInLine(setupLine);
-    expect(setupLine).toBe(`curl -fsSL https://raw.githubusercontent.com/ThomasHendrickx/aeolus-fleet-trierarch/main/install.sh | sh -s -- --fleet-url ${fleetUrl} --ship-id ${machineId} --plugin-ship-id ${shipId} --secret ${newSecret}`);
+    expect(setupLine).toBe(`bash <(curl -fsSL https://raw.githubusercontent.com/ThomasHendrickx/aeolus-fleet-trierarch/main/install.sh) --fleet-url ${fleetUrl} --ship-id ${machineId} --plugin-ship-id ${shipId} --secret-stdin <<< '${newSecret}'`);
     await expect(crewAsTrierarch(fleetUrl, { shipId: machineId, secret: joined.secret })).rejects.toThrow();
     await expect(crewAsTrierarch(fleetUrl, { shipId: machineId, secret: newSecret })).resolves.toBeDefined();
   });
