@@ -1,4 +1,4 @@
-import type { FleetId, ShipId } from '@aeolus-fleet/common';
+import { pluginCallAnswerSchema, type FleetId, type ShipId } from '@aeolus-fleet/common';
 import { fastifyTRPCPlugin, type FastifyTRPCPluginOptions } from '@trpc/server/adapters/fastify';
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 
@@ -11,6 +11,12 @@ import { createShipWakeups } from './adapters/fleet/ship-wakeups.js';
 import { createWatchFleetInboxes } from './core/connection/watch-fleet-inboxes.js';
 import { createRestFleetDoor } from './adapters/fleet/rest-fleet-door.js';
 import { runningVersion } from './adapters/http/version.js';
+import { createPluginDispatch } from './adapters/http/plugin-dispatch.js';
+import { createPluginServer } from './adapters/http/plugin-server.js';
+import { createRepositoryProcedures } from './adapters/http/repository-procedures.js';
+import { createPrismaPluginReservations } from './adapters/prisma/plugin-reservations.js';
+import { createPrismaRepositories } from './adapters/prisma/repositories.js';
+import { createManageRepositories } from './core/repositories/manage-repositories.js';
 import { checkDatabase, createPrismaClient } from './adapters/prisma/client.js';
 import { createPrismaConnectionStore } from './adapters/prisma/connection-store.js';
 import { createPrismaEnabledModels } from './adapters/prisma/enabled-models.js';
@@ -70,6 +76,7 @@ export const systemClock: Clock = { now: () => new Date() };
 export interface TrierarchPluginApp {
   /** The HTTP server: `/api/health` and `/api/version` for whoever operates the installation. */
   server: FastifyInstance;
+  pluginServer: FastifyInstance;
   /**
    * At start: reads every served fleet's kept connection, dropping a crew
    * token its fleet no longer takes; answers each fleet still connected, as
@@ -96,6 +103,7 @@ export interface TrierarchPluginApp {
 export function createTrierarchPluginApp(options: {
   databaseUrl: string;
   fleetUrl: string;
+  pluginSecrets?: readonly string[];
   /** The console's origin, the only Origin a change of a fleet's MCP configuration comes from; the origin of fleetUrl unless given. */
   consoleOrigin?: string;
   clock?: Clock;
@@ -129,7 +137,22 @@ export function createTrierarchPluginApp(options: {
     }
   });
 
+  server.addHook('onRequest', async (request, reply) => {
+    if (request.headers['aeolus-plugin-secret'] !== undefined) await reply.code(401).send({ error: 'UNAUTHORIZED' });
+  });
   const clock = options.clock ?? systemClock;
+  const procedures = createRepositoryProcedures(createManageRepositories(createPrismaRepositories(prisma)));
+  const dispatch = createPluginDispatch({
+    secrets: options.pluginSecrets ?? [], now: () => clock.now(),
+    connected: async (fleetId) => (await connections.find(fleetId))?.shipId,
+    isServed: (fleetId) => isServed(fleetId), reservations: createPrismaPluginReservations(prisma, () => clock.now()),
+    procedures: {
+      'repositories.list': async (context) => pluginCallAnswerSchema.parse(await procedures['repositories.list'](context)),
+      'repositories.add': async (context) => pluginCallAnswerSchema.parse(await procedures['repositories.add'](context)),
+      'repositories.remove': async (context) => pluginCallAnswerSchema.parse(await procedures['repositories.remove'](context)),
+    },
+  });
+  const pluginServer = createPluginServer(dispatch);
   const door = createRestFleetDoor(options.fleetUrl);
   const readConnection = createReadConnection({ door, store: connections });
   // A fleet's connection as the trierarch plugin holds it, asking the fleet nothing: what a fleet that is off reads.
@@ -468,11 +491,13 @@ export function createTrierarchPluginApp(options: {
     clearInterval(answering);
     inboxes.close();
     clearInterval(pruning);
+    await pluginServer.close();
     await prisma.$disconnect();
   });
 
   return {
     server,
+    pluginServer,
     restoreConnections: async () => {
       const restored: { fleetId: FleetId; ship: string }[] = [];
       for (const crew of await connections.connected()) {

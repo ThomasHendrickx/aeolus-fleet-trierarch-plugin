@@ -296,7 +296,7 @@ export function fakePluginFleet() {
       if (!state.liveTokens.has(crewToken)) {
         return released();
       }
-      return Promise.resolve(ok(state.namespaces.map(({ namespace, declaredBy }) => ({ namespace, declaredBy }))));
+      return Promise.resolve(ok(state.namespaces.map(({ namespace, declaredBy, scopes }) => ({ namespace, declaredBy, scopes }))));
     },
     declareScopes: (crewToken, declaration) => {
       if (!state.isAnswering) {
@@ -308,6 +308,8 @@ export function fakePluginFleet() {
       if (!state.scopes.includes('scopes:declare')) {
         return forbidden('scopes:declare');
       }
+      const previous = state.namespaces.findIndex((entry) => entry.namespace === declaration.namespace);
+      if (previous !== -1) state.namespaces.splice(previous, 1);
       state.namespaces.push({ namespace: declaration.namespace, declaredBy: SHIP_ID, scopes: declaration.scopes.map((each) => ({ ...each })) });
       return Promise.resolve(ok(undefined));
     },

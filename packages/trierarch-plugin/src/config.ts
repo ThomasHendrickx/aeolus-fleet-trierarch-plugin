@@ -1,3 +1,5 @@
+import { isIP } from 'node:net';
+
 import { z } from 'zod';
 
 import { DEFAULT_SILENT_AFTER_MS } from './core/machines/silent.js';
@@ -11,6 +13,13 @@ const DEFAULT_PASS_INTERVAL_SECONDS = 10;
 
 const MS_PER_SECOND = 1000;
 
+function isPrivateListener(host: string): boolean {
+  if (host === 'localhost' || host === '::1') return true;
+  if (isIP(host) !== 4) return false;
+  const [first, second] = host.split('.').map(Number);
+  return first === 127 || first === 10 || (first === 172 && second !== undefined && second >= 16 && second <= 31) || (first === 192 && second === 168);
+}
+
 const environmentSchema = z.object({
   DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/, error: 'must be a postgres:// or postgresql:// URL' }),
   FLEET_URL: z.url({ protocol: /^https?$/, error: 'must be an http:// or https:// URL' }),
@@ -22,6 +31,10 @@ const environmentSchema = z.object({
   PORT: z.coerce.number().int().min(0).max(65_535).default(4200),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   INSTALLATION_TOKEN: z.string().min(INSTALLATION_TOKEN_MIN_LENGTH, { error: `must hold at least ${String(INSTALLATION_TOKEN_MIN_LENGTH)} characters` }).optional(),
+  PLUGIN_SECRET: z.string().min(32).optional(),
+  PLUGIN_NEXT_SECRET: z.string().min(32).optional(),
+  PLUGIN_INTERNAL_HOST: z.string().refine(isPrivateListener, { error: 'must be a loopback or private IPv4 address' }).default('127.0.0.1'),
+  PLUGIN_INTERNAL_PORT: z.coerce.number().int().min(1).max(65_535).default(4201),
   TRIERARCH_SILENT_AFTER_SECONDS: z.coerce.number().int().positive().default(DEFAULT_SILENT_AFTER_MS / MS_PER_SECOND),
   TRIERARCH_PASS_INTERVAL_SECONDS: z.coerce.number().int().positive().default(DEFAULT_PASS_INTERVAL_SECONDS),
   TRUSTED_REPOSITORIES: z.string().default('{}'),
@@ -56,6 +69,9 @@ export interface Config {
    * a self-hosted trierarch plugin needs; set, a fleet is served once switched on.
    */
   installationToken: string | undefined;
+  pluginSecrets: string[];
+  pluginInternalHost: string;
+  pluginInternalPort: number;
   /** A trierarch whose last seen is older than this is silent: it gets no new requests, and keeps those it holds. */
   silentAfterMs: number;
   /** How often the assignment runs a pass for each fleet it serves and is connected to. */
@@ -94,6 +110,7 @@ function trustedRepositories(text: string): TrustedRepositories {
 /** The configuration from the environment; throws a ConfigError naming every variable that is wrong. */
 export function loadConfig(environment: Record<string, string | undefined>): Config {
   const variables = parsed(environmentSchema, environment);
+  if (variables.PLUGIN_NEXT_SECRET !== undefined && variables.PLUGIN_SECRET === undefined) throw new ConfigError('PLUGIN_NEXT_SECRET requires PLUGIN_SECRET');
   return {
     databaseUrl: variables.DATABASE_URL,
     fleetUrl: variables.FLEET_URL.replace(/\/$/, ''),
@@ -102,6 +119,9 @@ export function loadConfig(environment: Record<string, string | undefined>): Con
     port: variables.PORT,
     logLevel: variables.LOG_LEVEL,
     installationToken: variables.INSTALLATION_TOKEN,
+    pluginSecrets: [variables.PLUGIN_SECRET, variables.PLUGIN_NEXT_SECRET].filter((secret) => secret !== undefined),
+    pluginInternalHost: variables.PLUGIN_INTERNAL_HOST,
+    pluginInternalPort: variables.PLUGIN_INTERNAL_PORT,
     silentAfterMs: variables.TRIERARCH_SILENT_AFTER_SECONDS * MS_PER_SECOND,
     passIntervalMs: variables.TRIERARCH_PASS_INTERVAL_SECONDS * MS_PER_SECOND,
     trustedRepositories: trustedRepositories(variables.TRUSTED_REPOSITORIES),

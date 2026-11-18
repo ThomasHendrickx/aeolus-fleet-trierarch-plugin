@@ -695,7 +695,7 @@ describe("a fleet's MCP configuration against a real fleet (the fleet crew MCP d
 });
 
 describe('the trierarch plugin\'s scopes against a real fleet (decision 0055)', () => {
-  it('a pass declares the namespace trierarch with trierarch:join, once', async () => {
+  it('a pass declares the namespace trierarch with trierarch:join and trierarch:repositories, once', async () => {
     await connected();
 
     await apps[0]?.assignOnce();
@@ -706,7 +706,10 @@ describe('the trierarch plugin\'s scopes against a real fleet (decision 0055)', 
       kind: 'plugin',
       namespace: 'trierarch',
       declaredBy: { id: shipId, name: 'trierarch-plugin' },
-      scopes: [{ scope: 'trierarch:join', description: 'Add a computer: join its trierarch to the fleet' }],
+      scopes: [
+        { scope: 'trierarch:join', description: 'Add a computer: join its trierarch to the fleet' },
+        { scope: 'trierarch:repositories', description: 'Manage trusted repositories' },
+      ],
     });
     await expect(fleetDatabase.event.count({ where: { type: 'ScopesDeclared' } })).resolves.toBe(1);
   });

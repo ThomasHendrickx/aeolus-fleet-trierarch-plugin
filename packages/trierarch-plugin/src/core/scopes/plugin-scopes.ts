@@ -4,5 +4,7 @@ export const PLUGIN_NAMESPACE = 'trierarch';
 /** Adding a computer: joining a machine's trierarch to the fleet (decision 0055). */
 export const JOIN_SCOPE = 'trierarch:join';
 
+export const REPOSITORIES_SCOPE = 'trierarch:repositories';
+
 /** The namespace's whole list, each with the one line `fleet.scopes` shows. */
-export const PLUGIN_SCOPES: readonly { scope: string; description: string }[] = [{ scope: JOIN_SCOPE, description: 'Add a computer: join its trierarch to the fleet' }];
+export const PLUGIN_SCOPES: readonly { scope: string; description: string }[] = [{ scope: JOIN_SCOPE, description: 'Add a computer: join its trierarch to the fleet' }, { scope: REPOSITORIES_SCOPE, description: 'Manage trusted repositories' }];
