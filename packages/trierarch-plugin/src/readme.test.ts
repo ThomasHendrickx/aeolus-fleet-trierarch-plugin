@@ -20,7 +20,7 @@ describe('the README table of procedures', () => {
 
   it('names the setup line with its pipe escaped', () => {
     expect(README).toContain(
-      'curl -fsSL https://raw.githubusercontent.com/ThomasHendrickx/aeolus-fleet-trierarch/main/install.sh \\| sh -s -- --fleet-url <url>',
+      'bash <(curl -fsSL https://raw.githubusercontent.com/ThomasHendrickx/aeolus-fleet-trierarch/main/install.sh) --fleet-url <url>',
     );
   });
 });

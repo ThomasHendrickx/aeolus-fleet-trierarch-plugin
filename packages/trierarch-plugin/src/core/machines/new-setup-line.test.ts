@@ -44,7 +44,7 @@ describe('a new setup line for a machine', () => {
       isOk: true,
       value: {
         shipId: MACHINE,
-        setupLine: `curl -fsSL https://raw.githubusercontent.com/ThomasHendrickx/aeolus-fleet-trierarch/main/install.sh | sh -s -- --fleet-url ${FLEET_URL} --ship-id ${MACHINE} --plugin-ship-id ${SHIP_ID} --secret aeolus_sk_v1_new_1`,
+        setupLine: `bash <(curl -fsSL https://raw.githubusercontent.com/ThomasHendrickx/aeolus-fleet-trierarch/main/install.sh) --fleet-url ${FLEET_URL} --ship-id ${MACHINE} --plugin-ship-id ${SHIP_ID} --secret-stdin <<< 'aeolus_sk_v1_new_1'`,
       },
     });
   });
