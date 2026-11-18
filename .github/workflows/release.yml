@@ -1,4 +1,4 @@
-# Publishes @aeolus-fleet/trierarch-plugin to npm and tags v<version> the
+# Publishes the verified, walked candidate tarball of @aeolus-fleet/trierarch-plugin to npm and tags v<version> the
 # released commit, so a version on npm always matches a tag in git. Then
 # creates the GitHub Release for the tag, with notes from the merged pull
 # requests carrying the label <version>.
@@ -15,6 +15,10 @@ on:
         description: Version for the trierarch plugin, MAJOR.MINOR.PATCH
         required: true
         type: string
+      candidate_run_id:
+        description: Candidate run walked on staging to publish
+        required: true
+        type: string
 
 permissions:
   id-token: write
@@ -24,6 +28,7 @@ permissions:
   pull-requests: read
   # To read CI's result for the released commit.
   actions: read
+  statuses: read
   # To read the release's milestone and close it.
   issues: write
 
@@ -82,7 +87,7 @@ jobs:
       - run: npm ci
 
       # No second test run (decision 0011): CI's own result for this exact commit on
-      # the release branch is the gate, read before anything is built or published.
+      # the release branch is the gate, read before anything is published.
       - name: Check the commit is on a release branch and passed CI
         env:
           GH_TOKEN: ${{ github.token }}
@@ -90,12 +95,25 @@ jobs:
           gh run list --workflow ci.yml --commit "$GITHUB_SHA" --branch "$GITHUB_REF_NAME" --event push --json status,conclusion,url \
             | node scripts/release-gate.ts "$GITHUB_REF" "$GITHUB_SHA"
 
-      - name: Set the version on the trierarch plugin
+      - name: Check the staging walk passed on the candidate run
         env:
+          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ inputs.version }}
-        run: npm run set-version -- "$VERSION"
+          RUN_ID: ${{ inputs.candidate_run_id }}
+        run: |
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/statuses?per_page=100" \
+            | jq 'add' \
+            | node scripts/staging-walk-gate.ts "$GITHUB_SHA" "$VERSION" "$RUN_ID"
 
-      - run: npm run build
+      - name: Download and verify the candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.candidate_run_id }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          gh run download "$RUN_ID" --name "$VERSION-${GITHUB_SHA::7}" --dir "$RUNNER_TEMP/candidate"
+          gh run view "$RUN_ID" --json workflowName,conclusion,headSha \
+            | node scripts/candidate-check.ts "$VERSION" "$GITHUB_SHA" "$RUNNER_TEMP/candidate"
 
       # The milestone "trierarch-plugin <version>" is the release's scope: open issues in it
       # stop the run before anything is published. A hotfix without one goes on.
@@ -133,7 +151,7 @@ jobs:
           if [[ "$(npm view "$PACKAGE@$VERSION" version 2>/dev/null)" == "$VERSION" ]]; then
             echo "$PACKAGE@$VERSION is on npm already: skipped"
           else
-            npm publish --dry-run --access public --workspace "$PACKAGE"
+            npm publish --dry-run --access public "$RUNNER_TEMP/candidate/aeolus-fleet-trierarch-plugin-$VERSION.tgz"
           fi
 
       # Skips a version on npm already, so releasing a version again after it
@@ -147,7 +165,7 @@ jobs:
           if [[ "$(npm view "$PACKAGE@$VERSION" version 2>/dev/null)" == "$VERSION" ]]; then
             echo "$PACKAGE@$VERSION is on npm already: skipped"
           else
-            npm publish --access public --workspace "$PACKAGE"
+            npm publish --access public "$RUNNER_TEMP/candidate/aeolus-fleet-trierarch-plugin-$VERSION.tgz"
           fi
 
       # After the package is on npm. If this step fails, push the tag by hand:
