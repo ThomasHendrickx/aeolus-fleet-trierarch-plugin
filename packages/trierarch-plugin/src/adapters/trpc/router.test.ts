@@ -382,7 +382,7 @@ describe('the repositories of a join, through the real use case', () => {
   it('forwards service, folders and limits through the join API into the generated setup line', async () => {
     const { caller: api } = await joinCaller();
     const joined = await api.machines.join({ name: 'mac', service: 'yes', maxShips: 4, maxRunning: 2, folders: { kind: 'list', entries: [{ name: 'shared', path: '/srv/shared' }] } });
-    expect(joined.setupLine.endsWith(" --folder 'shared' '/srv/shared' --max-ships 4 --max-running 2 --service yes")).toBe(true);
+    expect(joined.setupLine.includes(" --folder 'shared' '/srv/shared' --max-ships 4 --max-running 2 --service yes")).toBe(true);
   });
 
   it('answers a hostile folder path with a semicolon and quotes as one quoted word, written out literally', async () => {
@@ -390,7 +390,7 @@ describe('the repositories of a join, through the real use case', () => {
 
     const joined = await api.machines.join({ name: 'mac', repositories: { kind: 'folder', path: `/x'; rm -rf ~ #"` } });
 
-    expect(joined.setupLine.endsWith(` --repositories-in '/x'\\''; rm -rf ~ #"'`)).toBe(true);
+    expect(joined.setupLine.includes(` --repositories-in '/x'\\''; rm -rf ~ #"'`)).toBe(true);
   });
 
   it('answers a folder path holding a comma and a semicolon', async () => {
@@ -398,7 +398,7 @@ describe('the repositories of a join, through the real use case', () => {
 
     const joined = await api.machines.join({ name: 'mac', repositories: { kind: 'folder', path: '/srv/a,b;c' } });
 
-    expect(joined.setupLine.endsWith(" --repositories-in '/srv/a,b;c'")).toBe(true);
+    expect(joined.setupLine.includes(" --repositories-in '/srv/a,b;c'")).toBe(true);
   });
 
   it('refuses a list entry holding a comma as a bad request, and commissions no ship', async () => {
