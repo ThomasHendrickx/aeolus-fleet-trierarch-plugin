@@ -725,13 +725,72 @@ describe('the installation (decision 0021)', () => {
       : fetch(`${address}/trpc/${request.procedure}`, { method: 'POST', headers, body: JSON.stringify(request.body) });
   }
 
+  it.each([undefined, 'wrong'])('rejects a missing or wrong installation token: %s', async (sent) => {
+    const { address } = await started(TOKEN);
+    const response = await fetch(`${address}/trpc/installation.connect`, { method: 'POST', headers: { 'content-type': 'application/json', ...(sent === undefined ? {} : { 'x-aeolus-installation-token': sent }) }, body: JSON.stringify({ requestId: newKey(), fleetId: argo.fleetId, shipId, secret }) });
+    expect(response.status).toBe(401);
+  });
+
+  it('hides installation connect without an installation token', async () => {
+    const { address } = await started();
+    expect((await installation(address, { procedure: 'installation.connect', body: { requestId: newKey(), fleetId: argo.fleetId, shipId, secret } })).status).toBe(404);
+  });
+
+  it.each([{ secret: '' }, { extra: true }, { fleetId: 'invalid' }, { shipId: 'invalid' }, { requestId: '' }])('requires the strict installation connect envelope: %j', async (change) => {
+    const { address } = await started(TOKEN);
+    expect((await installation(address, { procedure: 'installation.connect', body: { requestId: newKey(), fleetId: argo.fleetId, shipId, secret, ...change } })).status).toBe(400);
+  });
+
+  it('persists success across a process restart, checks off before replay, and keeps the connection over off/on', async () => {
+    const { app, address } = await started(TOKEN);
+    const fleetId = argo.fleetId;
+    const body = { requestId: newKey(), fleetId, shipId, secret };
+    expect((await installation(address, { procedure: 'installation.connect', body })).status).toBe(403);
+    await installation(address, { procedure: 'installation.setEnabled', body: { requestId: newKey(), fleetId, enabled: true } });
+    await expect(installation(address, { procedure: 'installation.connect', body }).then((response) => response.json())).resolves.toEqual({ result: { data: { enabled: true, connected: true } } });
+    const crewed = await fleetDatabase.lease.findMany({ where: { shipId } });
+    await app.close();
+    apps.splice(apps.indexOf(app), 1);
+    const restarted = await started(TOKEN);
+    const replay = { ...body, secret: 'a-different-secret' };
+    await expect(installation(restarted.address, { procedure: 'installation.connect', body: replay }).then((response) => response.json())).resolves.toEqual({ result: { data: { enabled: true, connected: true } } });
+    expect(await fleetDatabase.lease.findMany({ where: { shipId } })).toEqual(crewed);
+    await installation(restarted.address, { procedure: 'installation.setEnabled', body: { requestId: newKey(), fleetId, enabled: false } });
+    expect((await installation(restarted.address, { procedure: 'installation.connect', body: replay })).status).toBe(403);
+    await expect(installation(restarted.address, { procedure: 'installation.get', body: { fleetId } }).then((response) => response.json())).resolves.toEqual({ result: { data: { enabled: false, connected: true } } });
+    await installation(restarted.address, { procedure: 'installation.setEnabled', body: { requestId: newKey(), fleetId, enabled: true } });
+    expect((await installation(restarted.address, { procedure: 'installation.connect', body: replay })).status).toBe(200);
+    expect((await installation(restarted.address, { procedure: 'installation.connect', body: { ...body, requestId: newKey() } })).status).toBe(409);
+    expect((await installation(restarted.address, { procedure: 'installation.setEnabled', body: { requestId: body.requestId, fleetId, enabled: true } })).status).toBe(409);
+  });
+
+  it('retains one connection when installation hand-overs race', async () => {
+    const { address } = await started(TOKEN);
+    const fleetId = argo.fleetId;
+    await installation(address, { procedure: 'installation.setEnabled', body: { requestId: newKey(), fleetId, enabled: true } });
+    const responses = await Promise.all([newKey(), newKey()].map((requestId) => installation(address, { procedure: 'installation.connect', body: { requestId, fleetId, shipId, secret } })));
+    expect(responses.filter((response) => response.status === 200)).toHaveLength(1);
+    expect(responses.filter((response) => response.status === 400 || response.status === 409)).toHaveLength(1);
+    expect(await fleetDatabase.lease.count({ where: { shipId, endedAt: null } })).toBe(1);
+    await expect(installation(address, { procedure: 'installation.get', body: { fleetId } }).then((response) => response.json())).resolves.toEqual({ result: { data: { enabled: true, connected: true } } });
+  });
+
+  it('allows a refused hand-over to retry the same request id with a fresh secret', async () => {
+    const { address } = await started(TOKEN);
+    const fleetId = argo.fleetId;
+    await installation(address, { procedure: 'installation.setEnabled', body: { requestId: newKey(), fleetId, enabled: true } });
+    const body = { requestId: newKey(), fleetId, shipId, secret };
+    expect((await installation(address, { procedure: 'installation.connect', body: { ...body, secret: 'wrong' } })).status).toBe(400);
+    expect((await installation(address, { procedure: 'installation.connect', body })).status).toBe(200);
+  });
+
   it('serves a fleet only once switched on: until then connect and join are refused', async () => {
     const { address } = await started(TOKEN);
     const fleetId = argo.fleetId;
 
-    await expect(connectPlugin(address, { cookie, shipId, secret }).then((response) => response.status)).resolves.toBe(403);
+    await expect(installation(address, { procedure: 'installation.connect', body: { requestId: newKey(), fleetId, shipId, secret } }).then((response) => response.status)).resolves.toBe(403);
     expect((await installation(address, { procedure: 'installation.setEnabled', body: { requestId: newKey(), fleetId, enabled: true } })).status).toBe(200);
-    expect((await connectPlugin(address, { cookie, shipId, secret })).status).toBe(200);
+    expect((await installation(address, { procedure: 'installation.connect', body: { requestId: newKey(), fleetId, shipId, secret } })).status).toBe(200);
     expect((await installation(address, { procedure: 'installation.setEnabled', body: { requestId: newKey(), fleetId, enabled: false } })).status).toBe(200);
 
     await expect(mutate(address, { procedure: 'machines.join', cookie, body: { name: 'mac-studio' } }).then((response) => response.status)).resolves.toBe(403);
@@ -742,7 +801,7 @@ describe('the installation (decision 0021)', () => {
     const { address } = await started(TOKEN);
     const fleetId = argo.fleetId;
     await installation(address, { procedure: 'installation.setEnabled', body: { requestId: newKey(), fleetId, enabled: true } });
-    expect((await connectPlugin(address, { cookie, shipId, secret })).status).toBe(200);
+    expect((await installation(address, { procedure: 'installation.connect', body: { requestId: newKey(), fleetId, shipId, secret } })).status).toBe(200);
 
     expect((await installation(address, { procedure: 'installation.delete', body: { requestId: newKey(), fleetId } })).status).toBe(200);
 
@@ -753,7 +812,7 @@ describe('the installation (decision 0021)', () => {
     const { app, address } = await started(TOKEN);
     const fleetId = argo.fleetId;
     await installation(address, { procedure: 'installation.setEnabled', body: { requestId: newKey(), fleetId, enabled: true } });
-    expect((await connectPlugin(address, { cookie, shipId, secret })).status).toBe(200);
+    expect((await installation(address, { procedure: 'installation.connect', body: { requestId: newKey(), fleetId, shipId, secret } })).status).toBe(200);
     await app.assignOnce();
     await expect(declared()).resolves.toHaveLength(1);
 
@@ -769,7 +828,7 @@ describe('the installation (decision 0021)', () => {
     const { app, address } = await started(TOKEN);
     const fleetId = argo.fleetId;
     await installation(address, { procedure: 'installation.setEnabled', body: { requestId: newKey(), fleetId, enabled: true } });
-    expect((await connectPlugin(address, { cookie, shipId, secret })).status).toBe(200);
+    expect((await installation(address, { procedure: 'installation.connect', body: { requestId: newKey(), fleetId, shipId, secret } })).status).toBe(200);
     await app.assignOnce();
     const fleetUp = await fleetDown();
 
@@ -785,7 +844,7 @@ describe('the installation (decision 0021)', () => {
     const { app, address } = await started(TOKEN);
     const fleetId = argo.fleetId;
     await installation(address, { procedure: 'installation.setEnabled', body: { requestId: newKey(), fleetId, enabled: true } });
-    expect((await connectPlugin(address, { cookie, shipId, secret })).status).toBe(200);
+    expect((await installation(address, { procedure: 'installation.connect', body: { requestId: newKey(), fleetId, shipId, secret } })).status).toBe(200);
     await app.assignOnce();
     const fleetUp = await fleetDown();
 
