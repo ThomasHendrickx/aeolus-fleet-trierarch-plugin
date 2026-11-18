@@ -17,12 +17,12 @@ export interface FleetSwitches {
 
 /**
  * A request the installation answered, by the caller's request id. A switch
- * names its fleet and what it set, and goes with its fleet; a delete names
- * nothing of the fleet, only the request's hash.
+ * or connect receipt goes with its fleet; only a switch keeps what it set.
+ * A delete names nothing of the fleet, only the request's hash.
  */
 export interface InstallationRequest {
   requestId: string;
-  kind: 'setEnabled' | 'deleteFleet';
+  kind: 'setEnabled' | 'deleteFleet' | 'connect';
   requestHash: string;
   fleetId: FleetId | null;
   isEnabled: boolean | null;

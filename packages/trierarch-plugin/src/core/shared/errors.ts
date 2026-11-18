@@ -8,6 +8,7 @@ export type DomainErrorKind =
   | 'MISSING_SCOPES'
   | 'NOT_THE_OPERATOR'
   | 'REQUEST_ID_USED'
+  | 'OFF'
   | 'NOT_CONNECTED'
   | 'NAME_TAKEN'
   | 'NEEDS_SCOPE'
