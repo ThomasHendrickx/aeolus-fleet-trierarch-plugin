@@ -1,0 +1,26 @@
+# Puts every workspace's node_modules on the runner from the Actions cache. On a miss,
+# it runs npm ci and caches the result. On every run, hit or miss, it then generates the
+# Prisma client, so a change to prisma.config.ts or the generation scripts never reuses
+# an old client. The key holds the runner OS, the exact Node version,
+# the lockfile and the Prisma schema, so a changed dependency or schema installs fresh.
+# Needs the repository checked out and Node set up.
+name: Install
+description: Restores node_modules from the Actions cache, running npm ci on a miss.
+runs:
+  using: composite
+  steps:
+    - id: node
+      shell: bash
+      run: echo "version=$(node --version)" >> "$GITHUB_OUTPUT"
+    - id: modules
+      uses: actions/cache@v6
+      with:
+        path: |
+          node_modules
+          packages/*/node_modules
+        key: node-modules-${{ runner.os }}-${{ steps.node.outputs.version }}-${{ hashFiles('package-lock.json', 'packages/trierarch-plugin/src/adapters/prisma/schema.prisma') }}
+    - if: steps.modules.outputs.cache-hit != 'true'
+      shell: bash
+      run: npm ci
+    - shell: bash
+      run: npm run generate --workspace @aeolus-fleet/trierarch-plugin
