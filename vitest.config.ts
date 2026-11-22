@@ -16,6 +16,11 @@ const postgresGlobalSetup = fileURLToPath(
  * local run takes them one after another too, so no layer's time limits
  * compete with another layer's servers and databases on the same machine.
  */
+/** Migrates this package's schema once into a template database; runs after core's setup. */
+const pluginTemplateGlobalSetup = fileURLToPath(
+  new URL('packages/trierarch-plugin/test/support/plugin-template-global-setup.ts', import.meta.url),
+);
+
 const LAYERS = ['unit', 'integration'];
 
 function inLayerOrder(projects: TestProjectInlineConfiguration[]): TestProjectInlineConfiguration[] {
@@ -76,7 +81,7 @@ export default defineConfig({
           name: 'trierarch-plugin:integration',
           root: 'packages/trierarch-plugin',
           include: ['test/**/*.integration.test.ts'],
-          globalSetup: [postgresGlobalSetup],
+          globalSetup: [postgresGlobalSetup, pluginTemplateGlobalSetup],
           testTimeout: 30_000,
           hookTimeout: 180_000,
         },
