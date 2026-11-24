@@ -6,5 +6,8 @@ export const JOIN_SCOPE = 'trierarch:join';
 
 export const REPOSITORIES_SCOPE = 'trierarch:repositories';
 
+/** Managing rule set repositories and the floor, independently of crew requests. */
+export const GUARD_SCOPE = 'trierarch:guard';
+
 /** The namespace's whole list, each with the one line `fleet.scopes` shows. */
-export const PLUGIN_SCOPES: readonly { scope: string; description: string }[] = [{ scope: JOIN_SCOPE, description: 'Add a computer: join its trierarch to the fleet' }, { scope: REPOSITORIES_SCOPE, description: 'Manage trusted repositories' }];
+export const PLUGIN_SCOPES: readonly { scope: string; description: string }[] = [{ scope: JOIN_SCOPE, description: 'Add a computer: join its trierarch to the fleet' }, { scope: REPOSITORIES_SCOPE, description: 'Manage trusted repositories' }, { scope: GUARD_SCOPE, description: 'Manage guard repositories and floor' }];
