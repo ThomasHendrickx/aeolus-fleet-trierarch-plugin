@@ -2,6 +2,7 @@ import type { FleetId } from '@aeolus-fleet/common';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createPrismaClient, type PrismaClient } from '../src/adapters/prisma/client.js';
+import { createPrismaFleetForgetter } from '../src/adapters/prisma/fleet-forgetter.js';
 import { createPrismaGuardStore } from '../src/adapters/prisma/guard-store.js';
 import { createPluginDatabase } from '../src/testing/database.js';
 import { ok } from '../src/core/shared/result.js';
@@ -32,6 +33,28 @@ describe('guard storage in Postgres', () => {
     expect(await restarted.read(FLEET, repository)).toEqual(snapshot);
     expect(await restarted.read(OTHER, repository)).toBeUndefined();
     expect(await restarted.read(FLEET, { ...repository, folder: 'other' })).toBeUndefined();
+  });
+
+  it('forgets guard credentials and snapshots with the fleet', async () => {
+    const first = store();
+    await first.replace(FLEET, { expectedVersion: 0, configuration });
+    await first.save(FLEET, snapshot);
+    const client = clients[0];
+    if (client === undefined) { throw new Error('missing test client'); }
+    await createPrismaFleetForgetter(client).forget(FLEET);
+    expect(await first.readConfiguration(FLEET)).toEqual({ version: 0, repositories: [], floor: [], secrets: [] });
+    expect(await first.read(FLEET, repository)).toBeUndefined();
+    expect(await client.guardSecret.count({ where: { fleetId: FLEET } })).toBe(0);
+  });
+
+  it('rolls back the version and token deletion when saving a token fails', async () => {
+    const first = store();
+    await first.replace(FLEET, { expectedVersion: 0, configuration });
+    const client = clients[0];
+    if (client === undefined) { throw new Error('missing test client'); }
+    await client.$executeRawUnsafe("ALTER TABLE guard_secrets ADD CONSTRAINT test_token_refused CHECK (value <> 'refused')");
+    await expect(first.replace(FLEET, { expectedVersion: 1, configuration: { ...configuration, version: 2, secrets: [{ name: 'fleet/rules', value: 'refused' }] } })).rejects.toThrow();
+    expect(await first.readConfiguration(FLEET)).toEqual(configuration);
   });
 
   it.each([0, 1])('commits only one concurrent replacement at expected version %i', async (expectedVersion) => {
