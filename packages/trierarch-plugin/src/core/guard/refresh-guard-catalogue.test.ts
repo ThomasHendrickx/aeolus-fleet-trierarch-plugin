@@ -18,11 +18,11 @@ function setup() {
   let files = [{ file: 'guard/base.yaml', blob: 'one' }];
   let failure: string | undefined;
   const source: GuardSource = {
-    latest: async () => failure === undefined ? ok(commit) : err(failure),
-    tree: async () => failure === undefined ? ok(files) : err(failure),
-    read: async (_fleetId, input) => {
+    latest: () => Promise.resolve(failure === undefined ? ok(commit) : err(failure)),
+    tree: () => Promise.resolve(failure === undefined ? ok(files) : err(failure)),
+    read: (_fleetId, input) => {
       const content = contents.get(input.blob);
-      return content === undefined ? err('file unavailable') : ok(content);
+      return Promise.resolve(content === undefined ? err('file unavailable') : ok(content));
     },
   };
   const validation: GuardValidation = {
@@ -31,8 +31,8 @@ function setup() {
   const refresh = createRefreshGuardCatalogue({
     source, validation,
     snapshots: {
-      read: async (fleetId, entry) => snapshots.get(`${fleetId}/${entry.repository}/${entry.folder}`),
-      save: async (fleetId, snapshot) => { snapshots.set(`${fleetId}/${snapshot.repository}/${snapshot.folder}`, snapshot); },
+      read: (fleetId, entry) => Promise.resolve(snapshots.get(`${fleetId}/${entry.repository}/${entry.folder}`)),
+      save: (fleetId, snapshot) => { snapshots.set(`${fleetId}/${snapshot.repository}/${snapshot.folder}`, snapshot); return Promise.resolve(); },
     },
   });
   return {
@@ -112,4 +112,26 @@ describe('refreshing the guard catalogue', () => {
     state.change({ commit: 'larger', files: [{ file: 'guard/base.yaml', blob: 'larger' }] });
     expect((await state.refresh(FLEET_ID, configuration)).errors).toEqual([{ repository: 'fleet/rules', file: 'guard/base.yaml', reason: 'rule set exceeds 64 KB' }]);
   });
+
+  it('keeps the complete previous commit when a changed blob cannot be read and retries it', async () => {
+    const state = setup();
+    await state.refresh(FLEET_ID, configuration);
+    state.change({ commit: 'commit-two', files: [{ file: 'guard/base.yaml', blob: 'two' }] });
+    const failed = await state.refresh(FLEET_ID, configuration);
+    expect(failed.sets).toEqual([{ name: 'base', repository: 'fleet/rules', commit: 'commit-one', file: 'guard/base.yaml' }]);
+    expect(failed.errors).toEqual([{ repository: 'fleet/rules', reason: 'file unavailable' }]);
+    state.contents.set('two', 'base');
+    expect((await state.refresh(FLEET_ID, configuration)).sets).toEqual([{ name: 'base', repository: 'fleet/rules', commit: 'commit-two', file: 'guard/base.yaml' }]);
+  });
+
+  it('caches validation errors and stops exposing a removed repository', async () => {
+    const state = setup();
+    state.contents.set('one', 'invalid');
+    await state.refresh(FLEET_ID, configuration);
+    state.contents.clear();
+    state.change({ commit: 'commit-two', files: [{ file: 'guard/base.yaml', blob: 'one' }] });
+    expect((await state.refresh(FLEET_ID, configuration)).errors).toEqual([{ repository: 'fleet/rules', file: 'guard/base.yaml', reason: 'invalid rules' }]);
+    expect(await state.refresh(FLEET_ID, { ...configuration, repositories: [] })).toEqual({ version: 3, repositories: [], sets: [], errors: [], conflicts: [], floor: ['base', 'missing'] });
+  });
+
 });
