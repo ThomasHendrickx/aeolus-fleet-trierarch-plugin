@@ -1,6 +1,7 @@
 /** Boundaries for the fleet's guard catalogue. Credentials stay behind the source port. */
 import type { FleetId } from '@aeolus-fleet/common';
 
+import type { StoredGuardConfiguration } from './guard-configuration.js';
 import type { Result } from '../shared/result.js';
 
 export interface GuardRepository {
@@ -78,4 +79,10 @@ export interface GuardCatalogue extends GuardConfiguration {
   readonly sets: readonly GuardSet[];
   readonly errors: readonly GuardError[];
   readonly conflicts: readonly { readonly name: string; readonly repositories: readonly string[] }[];
+}
+
+/** The credential store, readable only to the service. A replacement and its tokens commit together. */
+export interface GuardConfigurations {
+  readConfiguration(fleetId: FleetId): Promise<StoredGuardConfiguration>;
+  replace(fleetId: FleetId, input: { expectedVersion: number; configuration: StoredGuardConfiguration }): Promise<'replaced' | 'conflict'>;
 }

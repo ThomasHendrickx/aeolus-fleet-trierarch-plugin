@@ -244,3 +244,32 @@ model PluginDispatchReservation {
   @@index([fleetId, expiresAt])
   @@map("plugin_dispatch_reservations")
 }
+
+/// One versioned guard configuration per fleet. Tokens are kept separately as MCP secrets are.
+model GuardConfiguration {
+  fleetId String @id @map("fleet_id")
+  version Int
+  repositories Json
+  floor String[]
+  @@map("guard_configurations")
+}
+
+/// Write-only repository read tokens, protected as the service's other credentials.
+model GuardSecret {
+  fleetId String @map("fleet_id")
+  name String
+  value String
+  @@id([fleetId, name])
+  @@map("guard_secrets")
+}
+
+/// Complete reads survive a restart and an upstream failure, scoped by repository and folder.
+model GuardSnapshot {
+  fleetId String @map("fleet_id")
+  repository String
+  folder String
+  commit String
+  files Json
+  @@id([fleetId, repository, folder])
+  @@map("guard_snapshots")
+}
