@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import type { GuardReplacement } from './guard-configuration.js';
 import { replaceGuardConfiguration, EMPTY_GUARD_CONFIGURATION } from './guard-configuration.js';
 
 const repository = { repository: 'fleet/rules', folder: 'guard', access: 'private' } as const;
@@ -17,7 +18,7 @@ describe('replacing the guard configuration', () => {
     expect(replaceGuardConfiguration(EMPTY_GUARD_CONFIGURATION, { ...replacement, expectedVersion: 1 })).toMatchObject({ isOk: false, error: { kind: 'VERSION_CONFLICT' } });
   });
 
-  it.each([
+  it.each<Partial<GuardReplacement>>([
     { secrets: [], secretValues: {} },
     { secrets: ['fleet/rules'], secretValues: {} },
     { secrets: ['fleet/rules'], secretValues: { 'fleet/rules': '' } },
