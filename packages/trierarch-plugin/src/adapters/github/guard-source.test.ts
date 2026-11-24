@@ -10,7 +10,7 @@ function setup(responses: readonly unknown[]) {
   const source = createGithubGuardSource({
     configurations: { readConfiguration: () => Promise.resolve({ version: 1, repositories: [repository], floor: [], secrets: [{ name: 'fleet/rules', value: 'test-token' }] }) },
     fetch: (input, init) => {
-      requests.push({ url: String(input), authorization: new Headers(init?.headers).get('authorization') });
+      requests.push({ url: input instanceof Request ? input.url : input.toString(), authorization: new Headers(init?.headers).get('authorization') });
       const response = responses[index++];
       return response instanceof Error ? Promise.reject(response) : Promise.resolve(Response.json(response));
     },
