@@ -9,7 +9,7 @@ import { createGithubGuardSource } from './adapters/github/guard-source.js';
 import { createPrismaGuardStore } from './adapters/prisma/guard-store.js';
 import { guardValidation } from './adapters/yaml/guard-validation.js';
 import { createManageGuardConfiguration, GUARD_REFRESH_INTERVAL_MS } from './core/guard/manage-guard-configuration.js';
-import { createRefreshGuardCatalogue } from './core/guard/refresh-guard-catalogue.js';
+import { createReadGuardCatalogue, createRefreshGuardCatalogue } from './core/guard/refresh-guard-catalogue.js';
 import { createFleetConsoleSessions } from './adapters/fleet/console-sessions.js';
 import { createOperatorFleet } from './adapters/fleet/operator-fleet.js';
 import { createShipWakeups } from './adapters/fleet/ship-wakeups.js';
@@ -185,7 +185,7 @@ export function createTrierarchPluginApp(options: {
   const guardStore = createPrismaGuardStore(prisma);
   const guard = createManageGuardConfiguration({
     configurations: guardStore,
-    clock,
+    read: createReadGuardCatalogue(guardStore),
     refresh: createRefreshGuardCatalogue({
       source: createGithubGuardSource({ configurations: guardStore, fetch: globalThis.fetch }),
       validation: guardValidation,

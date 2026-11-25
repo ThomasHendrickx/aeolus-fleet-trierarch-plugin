@@ -6,7 +6,6 @@ import { createManageGuardConfiguration } from './manage-guard-configuration.js'
 
 function setup() {
   let configuration: StoredGuardConfiguration = EMPTY_GUARD_CONFIGURATION;
-  let now = 0;
   let reads = 0;
   let isConflicting = false;
   const guard = createManageGuardConfiguration({
@@ -18,13 +17,13 @@ function setup() {
         return Promise.resolve('replaced');
       },
     },
-    clock: { now: () => new Date(now) },
+    read: (_fleetId, input) => Promise.resolve({ catalogue: { version: input.version, repositories: input.repositories.map((repository) => ({ ...repository, readCommit: null })), floor: [...input.floor], sets: [], errors: [], conflicts: [] }, definitions: [], isReadFailed: false }),
     refresh: (_fleetId, input) => {
       reads++;
       return Promise.resolve({ catalogue: { version: input.version, repositories: input.repositories.map((repository) => ({ ...repository, readCommit: null })), floor: [...input.floor], sets: [], errors: [], conflicts: [] }, definitions: [], isReadFailed: false });
     },
   });
-  return { guard, reads: () => reads, advance: (milliseconds: number) => { now += milliseconds; }, conflict: () => { isConflicting = true; } };
+  return { guard, reads: () => reads, conflict: () => { isConflicting = true; } };
 }
 const replacement = { expectedVersion: 0, repositories: [{ repository: 'fleet/rules', folder: '', access: 'private' }] as const, floor: ['base'], secrets: ['fleet/rules'], secretValues: { 'fleet/rules': 'test-token' } };
 
@@ -34,13 +33,12 @@ describe('managing guard configuration', () => {
     expect(await guard.get(FLEET_ID)).toEqual({ version: 0, repositories: [], floor: [], sets: [], errors: [], conflicts: [] });
     expect(await guard.replace(FLEET_ID, replacement)).toEqual({ isOk: true, value: { version: 1 } });
     expect(await guard.get(FLEET_ID)).toEqual({ version: 1, repositories: replacement.repositories.map((repository) => ({ ...repository, readCommit: null })), floor: ['base'], sets: [], errors: [], conflicts: [] });
-    expect(reads()).toBe(2);
+    expect(reads()).toBe(1);
   });
 
-  it('reads the stored catalogue without contacting the source, even after five minutes', async () => {
+  it('reads the stored catalogue without contacting the source', async () => {
     const state = setup();
     await state.guard.get(FLEET_ID);
-    state.advance(300000);
     await state.guard.readForAssignment(FLEET_ID);
     expect(state.reads()).toBe(0);
   });

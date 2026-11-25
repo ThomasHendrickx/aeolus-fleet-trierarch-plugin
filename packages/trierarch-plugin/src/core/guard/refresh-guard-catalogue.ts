@@ -85,3 +85,11 @@ export function createRefreshGuardCatalogue(deps: Dependencies): (fleetId: Fleet
     return guardCatalogue({ configuration, snapshots, errors });
   };
 }
+
+/** Reads only the persisted snapshots, without contacting the source. */
+export function createReadGuardCatalogue(snapshots: GuardSnapshots): (fleetId: FleetId, configuration: GuardConfiguration) => Promise<GuardCatalogueRead> {
+  return async (fleetId, configuration) => {
+    const reads = await Promise.all(configuration.repositories.map((repository) => snapshots.read(fleetId, repository)));
+    return guardCatalogue({ configuration, snapshots: reads.filter((snapshot) => snapshot !== undefined), errors: [] });
+  };
+}

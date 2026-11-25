@@ -98,7 +98,7 @@ function caller(session: { kind?: 'operator' | 'viewer'; scopes: readonly ScopeN
         return Promise.resolve('replaced');
       },
     },
-    clock: { now: () => NINE },
+    read: (_fleetId, current) => Promise.resolve({ catalogue: { ...current, repositories: current.repositories.map((repository) => ({ ...repository, readCommit: null })), sets: [], errors: [], conflicts: [] }, definitions: [], isReadFailed: false }),
     refresh: (_fleetId, current) => Promise.resolve({
       catalogue: { ...current, repositories: current.repositories.map((repository) => ({ ...repository, readCommit: null })), sets: [], errors: [], conflicts: [] },
       definitions: [],

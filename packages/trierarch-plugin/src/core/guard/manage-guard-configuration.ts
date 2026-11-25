@@ -1,7 +1,6 @@
-/** Serializes each fleet's replacements and refreshes; catalogue reads have a five-minute staleness bound. */
+/** Serializes each fleet's replacements and updates. */
 import type { FleetId } from '@aeolus-fleet/common';
 
-import type { Clock } from '../shared/clock.js';
 import { refuse, type DomainError } from '../shared/errors.js';
 import { ok, type Result } from '../shared/result.js';
 import { replaceGuardConfiguration, type GuardReplacement } from './guard-configuration.js';
@@ -18,10 +17,9 @@ export interface ManageGuardConfiguration {
 
 export function createManageGuardConfiguration(deps: {
   configurations: GuardConfigurations;
-  clock: Clock;
+  read: (fleetId: FleetId, configuration: GuardConfiguration) => Promise<GuardCatalogueRead>;
   refresh: (fleetId: FleetId, configuration: GuardConfiguration) => Promise<GuardCatalogueRead>;
 }): ManageGuardConfiguration {
-  const catalogues = new Map<FleetId, { at: number; read: GuardCatalogueRead }>();
   const pending = new Map<FleetId, Promise<void>>();
   const exclusive = async <T>(fleetId: FleetId, work: () => Promise<T>): Promise<T> => {
     const previous = pending.get(fleetId);
@@ -36,27 +34,22 @@ export function createManageGuardConfiguration(deps: {
       if (pending.get(fleetId) === next) { pending.delete(fleetId); }
     }
   };
-  const readCatalogue = async (fleetId: FleetId, canUseCache: boolean): Promise<GuardCatalogueRead> => {
+  const readCatalogue = async (fleetId: FleetId, isUpdate: boolean): Promise<GuardCatalogueRead> => {
     const configuration = await deps.configurations.readConfiguration(fleetId);
-    const cached = catalogues.get(fleetId);
-    if (canUseCache && cached?.read.catalogue.version === configuration.version && deps.clock.now().getTime() - cached.at < GUARD_REFRESH_INTERVAL_MS) {
-      return cached.read;
-    }
-    const read = await deps.refresh(fleetId, { version: configuration.version, repositories: configuration.repositories, floor: configuration.floor });
-    catalogues.set(fleetId, { at: deps.clock.now().getTime(), read });
-    return read;
+    const input = { version: configuration.version, repositories: configuration.repositories, floor: configuration.floor };
+    return isUpdate ? deps.refresh(fleetId, input) : deps.read(fleetId, input);
   };
   return {
-    get: async (fleetId) => (await exclusive(fleetId, () => readCatalogue(fleetId, true))).catalogue,
-    readForAssignment: (fleetId) => exclusive(fleetId, () => readCatalogue(fleetId, true)),
-    refresh: async (fleetId) => (await exclusive(fleetId, () => readCatalogue(fleetId, false))).catalogue,
+    get: async (fleetId) => (await exclusive(fleetId, () => readCatalogue(fleetId, false))).catalogue,
+    readForAssignment: (fleetId) => exclusive(fleetId, () => readCatalogue(fleetId, false)),
+    refresh: async (fleetId) => (await exclusive(fleetId, () => readCatalogue(fleetId, true))).catalogue,
     replace: (fleetId, replacement) => exclusive(fleetId, async () => {
       const current = await deps.configurations.readConfiguration(fleetId);
       const changed = replaceGuardConfiguration(current, replacement);
       if (!changed.isOk) { return changed; }
       const saved = await deps.configurations.replace(fleetId, { expectedVersion: current.version, configuration: changed.value });
       if (saved === 'conflict') { return refuse('VERSION_CONFLICT', 'The guard configuration changed: read it again before replacing it'); }
-      await readCatalogue(fleetId, false);
+      await readCatalogue(fleetId, true);
       return ok({ version: changed.value.version });
     }),
   };
