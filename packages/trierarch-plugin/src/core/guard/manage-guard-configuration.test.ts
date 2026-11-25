@@ -42,10 +42,10 @@ describe('managing guard configuration', () => {
     await Promise.all([state.guard.get(FLEET_ID), state.guard.get(FLEET_ID)]);
     expect(state.reads()).toBe(1);
     state.advance(299999);
-    await state.guard.refresh(FLEET_ID);
+    await state.guard.get(FLEET_ID);
     expect(state.reads()).toBe(1);
     state.advance(1);
-    await state.guard.refresh(FLEET_ID);
+    await state.guard.get(FLEET_ID);
     expect(state.reads()).toBe(2);
   });
 
