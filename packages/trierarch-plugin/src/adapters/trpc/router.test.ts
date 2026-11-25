@@ -463,6 +463,19 @@ describe('guard configuration through the console router', () => {
     await expect(refusalOf(caller({ scopes: ['trierarch:guard'], origin }).guard.replace(replacement))).resolves.toBe('FORBIDDEN');
   });
 
+  it('updates a configured repository or all with the guard scope and console Origin', async () => {
+    const guard = caller({ scopes: ['trierarch:guard'], origin: CONSOLE_ORIGIN }).guard;
+    await guard.replace(replacement);
+    await expect(guard.update({ repository: 'org/policy' })).resolves.toMatchObject({ repositories: [{ repository: 'org/policy' }], errors: [] });
+    await expect(guard.update({})).resolves.toMatchObject({ repositories: [{ repository: 'org/policy' }], errors: [] });
+    await expect(refusalOf(guard.update({ repository: 'unknown/repository' }))).resolves.toBe('NOT_FOUND');
+  });
+
+  it('requires the guard scope and console Origin for updates', async () => {
+    await expect(refusalOf(caller({ scopes: OPERATOR, origin: CONSOLE_ORIGIN }).guard.update({}))).resolves.toBe('FORBIDDEN');
+    await expect(refusalOf(caller({ scopes: ['trierarch:guard'] }).guard.update({}))).resolves.toBe('FORBIDDEN');
+  });
+
   it('refuses stale guard replacements as conflicts', async () => {
     const guard = caller({ scopes: ['trierarch:guard'], origin: CONSOLE_ORIGIN }).guard;
     await guard.replace(replacement);
