@@ -55,7 +55,7 @@ async function readRepository(deps: Dependencies, input: { fleetId: FleetId; rep
 }
 
 /**
- * One refresh, called on replacement and every five minutes by the application.
+ * One update, called for newly added repositories and on operator request.
  * Independent repositories read concurrently. Snapshots are scoped to fleet,
  * repository and folder; a failed refresh never replaces the last complete read.
  */
