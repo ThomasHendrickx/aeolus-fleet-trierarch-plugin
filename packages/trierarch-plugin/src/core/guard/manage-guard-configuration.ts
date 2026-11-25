@@ -6,8 +6,6 @@ import { ok, type Result } from '../shared/result.js';
 import { replaceGuardConfiguration, type GuardReplacement } from './guard-configuration.js';
 import type { GuardCatalogue, GuardCatalogueRead, GuardConfiguration, GuardConfigurations } from './ports.js';
 
-export const GUARD_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
-
 export interface ManageGuardConfiguration {
   get(fleetId: FleetId): Promise<GuardCatalogue>;
   readForAssignment(fleetId: FleetId): Promise<GuardCatalogueRead>;

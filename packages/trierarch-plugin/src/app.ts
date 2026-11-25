@@ -8,7 +8,7 @@ import { sealedBoxSealer } from './adapters/crypto/sealed-box-sealer.js';
 import { createGithubGuardSource } from './adapters/github/guard-source.js';
 import { createPrismaGuardStore } from './adapters/prisma/guard-store.js';
 import { guardValidation } from './adapters/yaml/guard-validation.js';
-import { createManageGuardConfiguration, GUARD_REFRESH_INTERVAL_MS } from './core/guard/manage-guard-configuration.js';
+import { createManageGuardConfiguration } from './core/guard/manage-guard-configuration.js';
 import { createReadGuardCatalogue, createRefreshGuardCatalogue } from './core/guard/refresh-guard-catalogue.js';
 import { createFleetConsoleSessions } from './adapters/fleet/console-sessions.js';
 import { createOperatorFleet } from './adapters/fleet/operator-fleet.js';
@@ -468,29 +468,6 @@ export function createTrierarchPluginApp(options: {
       });
   }, PRUNE_USAGE_INTERVAL_MS);
 
-  let guardRefresh: Promise<void> | undefined;
-  const refreshGuard = async (): Promise<void> => {
-    const connected = await connections.connected();
-    await Promise.all(connected.map(async ({ fleetId }) => {
-      try {
-        if (await isServed(fleetId)) {
-          await guard.refresh(fleetId);
-        }
-      } catch {
-        // Database failures may include the guard credentials involved in the read.
-        server.log.warn({ fleet: fleetId }, 'guard catalogue refresh failed; the next pass tries again');
-      }
-    }));
-  };
-  const refreshingGuard = setInterval(() => {
-    if (guardRefresh !== undefined) {
-      return;
-    }
-    guardRefresh = refreshGuard()
-      .catch(() => { server.log.warn('guard catalogue refresh round failed; the next pass tries again'); })
-      .finally(() => { guardRefresh = undefined; });
-  }, GUARD_REFRESH_INTERVAL_MS);
-
   const trpc: FastifyTRPCPluginOptions<TrierarchPluginRouter> = {
     prefix: '/trpc',
     trpcOptions: {
@@ -538,8 +515,6 @@ export function createTrierarchPluginApp(options: {
     clearInterval(answering);
     inboxes.close();
     clearInterval(pruning);
-    clearInterval(refreshingGuard);
-    await guardRefresh;
     await pluginServer.close();
     await prisma.$disconnect();
   });
