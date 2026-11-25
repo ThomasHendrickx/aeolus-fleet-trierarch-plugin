@@ -14,6 +14,7 @@ export type DomainErrorKind =
   | 'NEEDS_SCOPE'
   | 'FLEET_UNAVAILABLE'
   | 'NOT_A_MACHINE'
+  | 'NOT_FOUND'
   | 'FLEET_REFUSED'
   | 'INVALID_RANGE'
   | 'VERSION_CONFLICT'
