@@ -21,7 +21,7 @@ function setup() {
     clock: { now: () => new Date(now) },
     refresh: (_fleetId, input) => {
       reads++;
-      return Promise.resolve({ catalogue: { version: input.version, repositories: [...input.repositories], floor: [...input.floor], sets: [], errors: [], conflicts: [] }, definitions: [], isReadFailed: false });
+      return Promise.resolve({ catalogue: { version: input.version, repositories: input.repositories.map((repository) => ({ ...repository, readCommit: null })), floor: [...input.floor], sets: [], errors: [], conflicts: [] }, definitions: [], isReadFailed: false });
     },
   });
   return { guard, reads: () => reads, advance: (milliseconds: number) => { now += milliseconds; }, conflict: () => { isConflicting = true; } };
@@ -33,7 +33,7 @@ describe('managing guard configuration', () => {
     const { guard, reads } = setup();
     expect(await guard.get(FLEET_ID)).toEqual({ version: 0, repositories: [], floor: [], sets: [], errors: [], conflicts: [] });
     expect(await guard.replace(FLEET_ID, replacement)).toEqual({ isOk: true, value: { version: 1 } });
-    expect(await guard.get(FLEET_ID)).toEqual({ version: 1, repositories: replacement.repositories, floor: ['base'], sets: [], errors: [], conflicts: [] });
+    expect(await guard.get(FLEET_ID)).toEqual({ version: 1, repositories: replacement.repositories.map((repository) => ({ ...repository, readCommit: null })), floor: ['base'], sets: [], errors: [], conflicts: [] });
     expect(reads()).toBe(2);
   });
 

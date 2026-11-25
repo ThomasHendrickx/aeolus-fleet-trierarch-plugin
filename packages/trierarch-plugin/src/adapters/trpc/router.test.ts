@@ -100,7 +100,7 @@ function caller(session: { kind?: 'operator' | 'viewer'; scopes: readonly ScopeN
     },
     clock: { now: () => NINE },
     refresh: (_fleetId, current) => Promise.resolve({
-      catalogue: { ...current, sets: [], errors: [], conflicts: [] },
+      catalogue: { ...current, repositories: current.repositories.map((repository) => ({ ...repository, readCommit: null })), sets: [], errors: [], conflicts: [] },
       definitions: [],
       isReadFailed: false,
     }),
@@ -451,7 +451,7 @@ describe('guard configuration through the console router', () => {
     const guard = caller({ scopes: ['fleet:read', 'trierarch:guard'], origin: CONSOLE_ORIGIN }).guard;
     await expect(guard.replace(replacement)).resolves.toEqual({ version: 1 });
     await expect(guard.get()).resolves.toEqual({
-      version: 1, repositories: replacement.repositories, floor: ['required'], sets: [], errors: [], conflicts: [],
+      version: 1, repositories: replacement.repositories.map((repository) => ({ ...repository, readCommit: null })), floor: ['required'], sets: [], errors: [], conflicts: [],
     });
   });
 

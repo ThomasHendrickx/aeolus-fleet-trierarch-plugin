@@ -225,9 +225,9 @@ const mcpServerSchema = z.strictObject({
 const guardRepositorySchema = z.strictObject({ repository: z.string(), folder: z.string(), access: z.enum(['public', 'private']) });
 const guardCatalogueOutputSchema = z.object({
   version: z.int().nonnegative(),
-  repositories: z.array(guardRepositorySchema),
+  repositories: z.array(guardRepositorySchema.extend({ readCommit: z.string().nullable() })),
   floor: z.array(z.string()),
-  sets: z.array(z.object({ name: z.string(), repository: z.string(), commit: z.string(), file: z.string() })),
+  sets: z.array(z.object({ name: z.string(), repository: z.string(), commit: z.string(), file: z.string(), rulesCount: z.int().nonnegative() })),
   errors: z.array(z.object({ repository: z.string(), file: z.string().optional(), reason: z.string() })),
   conflicts: z.array(z.object({ name: z.string(), repositories: z.array(z.string()) })),
 });
@@ -492,7 +492,7 @@ export const trierarchPluginRouter = t.router({
         }
         return {
           version: catalogue.version,
-          repositories: catalogue.repositories.map(({ repository, folder, access }) => ({ repository, folder, access })),
+          repositories: catalogue.repositories.map(({ repository, folder, access, readCommit }) => ({ repository, folder, access, readCommit })),
           floor: [...catalogue.floor],
           sets: [...catalogue.sets],
           errors: [...catalogue.errors],
