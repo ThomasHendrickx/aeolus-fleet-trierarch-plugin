@@ -5,7 +5,8 @@ import { createPrismaClient, type PrismaClient } from '../src/adapters/prisma/cl
 import { createPrismaFleetForgetter } from '../src/adapters/prisma/fleet-forgetter.js';
 import { createPrismaGuardStore } from '../src/adapters/prisma/guard-store.js';
 import { createPluginDatabase } from '../src/testing/database.js';
-import { ok } from '../src/core/shared/result.js';
+import { err, ok } from '../src/core/shared/result.js';
+import { createReadGuardCatalogue, createRefreshGuardCatalogue } from '../src/core/guard/refresh-guard-catalogue.js';
 
 const FLEET: FleetId = 'flt_01m3tb1zgr5h2ffee12xnch8sv';
 const OTHER: FleetId = 'flt_01m3tb1zgr5h2ffee12xnch8zz';
@@ -33,6 +34,34 @@ describe('guard storage in Postgres', () => {
     expect(await restarted.read(FLEET, repository)).toEqual(snapshot);
     expect(await restarted.read(OTHER, repository)).toBeUndefined();
     expect(await restarted.read(FLEET, { ...repository, folder: 'other' })).toBeUndefined();
+  });
+
+  it('keeps a failed first read across a restart and clears it after a good read', async () => {
+    const first = store();
+    let available = false;
+    const refresh = createRefreshGuardCatalogue({
+      snapshots: first,
+      source: {
+        latest: () => Promise.resolve(available ? ok('commit-one') : err('repository unavailable')),
+        tree: () => Promise.resolve(ok([])),
+        read: () => Promise.resolve(err('unexpected read')),
+      },
+      validation: { read: () => err('unexpected validation') },
+    });
+    const input = { version: 1, repositories: [repository], floor: [] };
+    await refresh(FLEET, input);
+    const restarted = store();
+    const read = createReadGuardCatalogue(restarted);
+    expect((await read(FLEET, input)).catalogue).toMatchObject({
+      repositories: [{ repository: 'fleet/rules', readCommit: null }],
+      errors: [{ repository: 'fleet/rules', reason: 'repository unavailable' }],
+    });
+    expect((await read(OTHER, input)).catalogue.errors).toEqual([]);
+    available = true;
+    await refresh(FLEET, input);
+    expect((await read(FLEET, input)).catalogue).toMatchObject({
+      repositories: [{ repository: 'fleet/rules', readCommit: 'commit-one' }], errors: [],
+    });
   });
 
   it('pins one rules resolution across competing passes, restarts and settings versions', async () => {
