@@ -7,6 +7,8 @@ import { z } from 'zod';
 
 import { createApp, createMigratedDatabase, createPrismaClient, createUseCases, FLEET_URL, newKey, operatorCaller, secretOf, unwrap, type PrismaClient } from '@aeolus-fleet/core/testing';
 
+import { createPrismaGuardStore } from '../src/adapters/prisma/guard-store.js';
+import { createPrismaClient as createPluginPrismaClient } from '../src/adapters/prisma/client.js';
 import { createRestFleetDoor } from '../src/adapters/fleet/rest-fleet-door.js';
 import { machineOutputSchema } from '../src/adapters/trpc/router.js';
 import { createTrierarchPluginApp, type TrierarchPluginApp } from '../src/app.js';
@@ -695,7 +697,7 @@ describe("a fleet's MCP configuration against a real fleet (the fleet crew MCP d
 });
 
 describe('the trierarch plugin\'s scopes against a real fleet (decision 0055)', () => {
-  it('a pass declares the namespace trierarch with trierarch:join and trierarch:repositories, once', async () => {
+  it('a pass declares the namespace trierarch with join, repositories and guard, once', async () => {
     await connected();
 
     await apps[0]?.assignOnce();
@@ -709,6 +711,7 @@ describe('the trierarch plugin\'s scopes against a real fleet (decision 0055)', 
       scopes: [
         { scope: 'trierarch:join', description: 'Add a computer: join its trierarch to the fleet' },
         { scope: 'trierarch:repositories', description: 'Manage trusted repositories' },
+        { scope: 'trierarch:guard', description: 'Manage guard repositories and floor' },
       ],
     });
     await expect(fleetDatabase.event.count({ where: { type: 'ScopesDeclared' } })).resolves.toBe(1);
@@ -967,5 +970,59 @@ it('onClose aborts the fleet wake stream and prevents reopening', async () => {
   } finally {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  }
+});
+
+it('refreshes guard on the five-minute timer once the served fleet is connected', async () => {
+  const fiveMinutes = 5 * 60_000;
+  const repository = { repository: 'org/policy', folder: 'rules', access: 'public' as const };
+  const db = createPluginPrismaClient(pluginDatabaseUrl);
+  const guard = createPrismaGuardStore(db);
+  const originalFetch = globalThis.fetch;
+  let commit = 'first';
+  vi.stubGlobal('fetch', ((input, init) => {
+    const url = input instanceof Request ? input.url : input.toString();
+    if (!url.startsWith('https://api.github.com/repos/org/policy/')) {
+      return originalFetch(input, init);
+    }
+    if (url.endsWith('/commits?per_page=1')) {
+      return Promise.resolve(Response.json([{ sha: commit }]));
+    }
+    if (url.endsWith('/git/trees/rules-tree')) {
+      return Promise.resolve(Response.json({ truncated: false, tree: [{ type: 'blob', path: 'base.yaml', sha: 'base-blob' }] }));
+    }
+    if (url.endsWith(`/git/trees/${commit}`)) {
+      return Promise.resolve(Response.json({ truncated: false, tree: [{ type: 'tree', path: 'rules', sha: 'rules-tree' }] }));
+    }
+    return Promise.resolve(Response.json({ encoding: 'base64', content: Buffer.from('name: base').toString('base64') }));
+  }) satisfies typeof fetch);
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+  try {
+    const { address } = await started();
+    await guard.replace(argo.fleetId, {
+      expectedVersion: 0,
+      configuration: { version: 1, repositories: [repository], floor: [], secrets: [] },
+    });
+
+    await vi.advanceTimersByTimeAsync(fiveMinutes);
+    await expect(guard.read(argo.fleetId, repository)).resolves.toBeUndefined();
+
+    const answer = await connectPlugin(address, { cookie, shipId, secret });
+    expect(answer.status).toBe(200);
+    await vi.advanceTimersByTimeAsync(fiveMinutes - 1);
+    const read = await query(address, { cookie, procedure: 'guard.get' });
+    expect(read.status).toBe(200);
+    await expect(read.json()).resolves.toMatchObject({
+      result: { data: { sets: [{ name: 'base', commit: 'first', file: 'rules/base.yaml' }] } },
+    });
+
+    commit = 'second';
+    await vi.advanceTimersByTimeAsync(1);
+    await expect.poll(async () => (await guard.read(argo.fleetId, repository))?.commit).toBe('second');
+  } finally {
+    await apps.at(-1)?.close();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    await db.$disconnect();
   }
 });

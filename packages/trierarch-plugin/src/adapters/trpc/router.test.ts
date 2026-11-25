@@ -1,3 +1,5 @@
+import { EMPTY_GUARD_CONFIGURATION } from '../../core/guard/guard-configuration.js';
+import { createManageGuardConfiguration } from '../../core/guard/manage-guard-configuration.js';
 import type { FleetId, ScopeName, ShipId } from '@aeolus-fleet/common';
 import { TRPCError } from '@trpc/server';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -87,6 +89,20 @@ beforeEach(async () => {
 
 /** The router as the console's server calls it, for a session of the given scopes, on a fleet served and connected unless it says otherwise. */
 function caller(session: { kind?: 'operator' | 'viewer'; scopes: readonly ScopeName[]; isServed?: boolean; isConnected?: boolean; origin?: string; joinMachine?: Context['joinMachine'] }) {
+  let configuration = EMPTY_GUARD_CONFIGURATION;
+  const guard = createManageGuardConfiguration({
+    configurations: {
+      readConfiguration: () => Promise.resolve(configuration),
+      replace: (_fleetId, input) => {
+        configuration = input.configuration;
+        return Promise.resolve('replaced');
+      },
+    },
+    clock: { now: () => NINE },
+    refresh: (_fleetId, current) => Promise.resolve({
+      ...current, sets: [], errors: [], conflicts: [],
+    }),
+  });
   const context: Context = {
     cookie: 'aeolus_session=a-session',
     origin: session.origin,
@@ -109,6 +125,7 @@ function caller(session: { kind?: 'operator' | 'viewer'; scopes: readonly ScopeN
     checkCrewSettings: notReached,
     listEnabledModels: createListEnabledModels({ models }),
     setModelEnabled: createSetModelEnabled({ models }),
+    guard,
     readMcpConfiguration: createReadMcpConfiguration({ configurations: mcpConfigurations }),
     replaceMcpConfiguration: createReplaceMcpConfiguration({ configurations: mcpConfigurations, clock: { now: () => NINE } }),
     readTokenUsage: createReadTokenUsage({ usage: cannedUsageHistory({ usage: OPUS_HOUR }), door: fakePluginFleet().door, connections: memoryConnectionStore() }),
@@ -406,5 +423,52 @@ describe('the repositories of a join, through the real use case', () => {
 
     await expect(refusalOf(api.machines.join({ name: 'mac', repositories: { kind: 'list', entries: ['/a,b'] } }))).resolves.toBe('BAD_REQUEST');
     expect(fleet.state.commissioned).toEqual([]);
+  });
+});
+
+describe('guard configuration through the console router', () => {
+  const replacement = {
+    expectedVersion: 0,
+    repositories: [{ repository: 'org/policy', folder: 'rules', access: 'private' as const }],
+    secrets: ['org/policy'],
+    secretValues: { 'org/policy': 'a-synthetic-test-value' },
+    floor: ['required'],
+  };
+
+  it('reads guard metadata with fleet:read without requiring an Origin', async () => {
+    await expect(caller({ kind: 'viewer', scopes: VIEWER }).guard.get()).resolves.toEqual({
+      version: 0, repositories: [], sets: [], errors: [], conflicts: [], floor: [],
+    });
+  });
+
+  it('forbids reading guard configuration without fleet:read', async () => {
+    await expect(refusalOf(caller({ scopes: ['trierarch:guard'] }).guard.get())).resolves.toBe('FORBIDDEN');
+  });
+
+  it('replaces guard configuration with the guard scope and console Origin, keeping the token write-only', async () => {
+    const guard = caller({ scopes: ['fleet:read', 'trierarch:guard'], origin: CONSOLE_ORIGIN }).guard;
+    await expect(guard.replace(replacement)).resolves.toEqual({ version: 1 });
+    await expect(guard.get()).resolves.toEqual({
+      version: 1, repositories: replacement.repositories, floor: ['required'], sets: [], errors: [], conflicts: [],
+    });
+  });
+
+  it('forbids replacing guard configuration with fleet:manage alone', async () => {
+    await expect(refusalOf(caller({ scopes: OPERATOR, origin: CONSOLE_ORIGIN }).guard.replace(replacement))).resolves.toBe('FORBIDDEN');
+  });
+
+  it.each([undefined, 'https://other.example'])('forbids replacing guard configuration with Origin %s', async (origin) => {
+    await expect(refusalOf(caller({ scopes: ['trierarch:guard'], origin }).guard.replace(replacement))).resolves.toBe('FORBIDDEN');
+  });
+
+  it('refuses stale guard replacements as conflicts', async () => {
+    const guard = caller({ scopes: ['trierarch:guard'], origin: CONSOLE_ORIGIN }).guard;
+    await guard.replace(replacement);
+    await expect(refusalOf(guard.replace(replacement))).resolves.toBe('CONFLICT');
+  });
+
+  it('refuses invalid guard configurations as bad requests', async () => {
+    const guard = caller({ scopes: ['trierarch:guard'], origin: CONSOLE_ORIGIN }).guard;
+    await expect(refusalOf(guard.replace({ ...replacement, secrets: [] }))).resolves.toBe('BAD_REQUEST');
   });
 });

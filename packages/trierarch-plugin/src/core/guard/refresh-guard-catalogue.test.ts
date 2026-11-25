@@ -7,7 +7,7 @@ import type { GuardSnapshot, GuardRepository, GuardSource, GuardValidation } fro
 import { createRefreshGuardCatalogue } from './refresh-guard-catalogue.js';
 
 const repository: GuardRepository = { repository: 'fleet/rules', folder: 'guard', access: 'private' };
-const other: GuardRepository = { repository: 'fleet/other', folder: '', access: 'public' };
+const other: GuardRepository = { repository: 'fleet/other', folder: 'guard', access: 'public' };
 const OTHER: FleetId = 'flt_01m3tb1zgr5h2ffee12xnch8zz';
 const base = { name: 'base', rules: { tools: { deny: ['web'] } } };
 
@@ -36,7 +36,7 @@ function setup() {
     },
   });
   return {
-    refresh, contents,
+    refresh, contents, snapshots,
     change: (next: { commit: string; files: typeof files }) => { commit = next.commit; files = next.files; },
     fail: (reason: string) => { failure = reason; },
   };
@@ -62,6 +62,21 @@ describe('refreshing the guard catalogue', () => {
     expect(result.sets).toEqual([{ name: 'base', repository: 'fleet/rules', commit: 'commit-one', file: 'guard/base.yaml' }]);
     expect(result.errors).toEqual([{ repository: 'fleet/rules', reason: 'repository unavailable' }]);
     expect((await state.refresh(OTHER, configuration)).sets).toEqual([]);
+  });
+
+  it('excludes nested files from a stored snapshot of an unchanged commit', async () => {
+    const { refresh, snapshots } = setup();
+    snapshots.set(`${FLEET_ID}/fleet/rules/guard`, {
+      repository: repository.repository, folder: repository.folder, commit: 'commit-one',
+      files: [
+        { file: 'guard/base.yaml', blob: 'one', result: ok(base) },
+        { file: 'guard/a/base.yaml', blob: 'nested-a', result: ok(base) },
+        { file: 'guard/b/base.yaml', blob: 'nested-b', result: ok(base) },
+      ],
+    });
+    expect((await refresh(FLEET_ID, configuration)).sets).toEqual([
+      { name: 'base', repository: 'fleet/rules', commit: 'commit-one', file: 'guard/base.yaml' },
+    ]);
   });
 
   it('reuses unchanged commits and blobs without reading their content again', async () => {

@@ -5,6 +5,11 @@ import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastif
 import { randomIdempotencyKeys } from './adapters/crypto/idempotency-keys.js';
 import { sha256RequestHasher } from './adapters/crypto/request-hasher.js';
 import { sealedBoxSealer } from './adapters/crypto/sealed-box-sealer.js';
+import { createGithubGuardSource } from './adapters/github/guard-source.js';
+import { createPrismaGuardStore } from './adapters/prisma/guard-store.js';
+import { guardValidation } from './adapters/yaml/guard-validation.js';
+import { createManageGuardConfiguration, GUARD_REFRESH_INTERVAL_MS } from './core/guard/manage-guard-configuration.js';
+import { createRefreshGuardCatalogue } from './core/guard/refresh-guard-catalogue.js';
 import { createFleetConsoleSessions } from './adapters/fleet/console-sessions.js';
 import { createOperatorFleet } from './adapters/fleet/operator-fleet.js';
 import { createShipWakeups } from './adapters/fleet/ship-wakeups.js';
@@ -105,7 +110,7 @@ export function createTrierarchPluginApp(options: {
   databaseUrl: string;
   fleetUrl: string;
   pluginSecrets?: readonly string[];
-  /** The console's origin, the only Origin a change of a fleet's MCP configuration comes from; the origin of fleetUrl unless given. */
+  /** The console's origin, the only Origin for changes to a fleet's MCP or guard configuration; the origin of fleetUrl unless given. */
   consoleOrigin?: string;
   clock?: Clock;
   logger?: FastifyServerOptions['logger'];
@@ -176,6 +181,16 @@ export function createTrierarchPluginApp(options: {
   const silentAfterMs = options.silentAfterMs ?? DEFAULT_SILENT_AFTER_MS;
   const listMachines = createListMachines({ door, connections, clock, silentAfterMs });
   const models = createPrismaEnabledModels(prisma);
+  const guardStore = createPrismaGuardStore(prisma);
+  const guard = createManageGuardConfiguration({
+    configurations: guardStore,
+    clock,
+    refresh: createRefreshGuardCatalogue({
+      source: createGithubGuardSource({ configurations: guardStore, fetch: globalThis.fetch }),
+      validation: guardValidation,
+      snapshots: guardStore,
+    }),
+  });
   const mcpConfigurations = createPrismaMcpConfigurations(prisma);
   const mcpDeliveries = createPrismaMcpDeliveries(prisma);
   const assignCrews = createAssignCrews({ door, connections, models, configurations: mcpConfigurations, deliveries: mcpDeliveries, clock, silentAfterMs });
@@ -448,6 +463,29 @@ export function createTrierarchPluginApp(options: {
       });
   }, PRUNE_USAGE_INTERVAL_MS);
 
+  let guardRefresh: Promise<void> | undefined;
+  const refreshGuard = async (): Promise<void> => {
+    const connected = await connections.connected();
+    await Promise.all(connected.map(async ({ fleetId }) => {
+      try {
+        if (await isServed(fleetId)) {
+          await guard.refresh(fleetId);
+        }
+      } catch {
+        // Database failures may include the guard credentials involved in the read.
+        server.log.warn({ fleet: fleetId }, 'guard catalogue refresh failed; the next pass tries again');
+      }
+    }));
+  };
+  const refreshingGuard = setInterval(() => {
+    if (guardRefresh !== undefined) {
+      return;
+    }
+    guardRefresh = refreshGuard()
+      .catch(() => { server.log.warn('guard catalogue refresh round failed; the next pass tries again'); })
+      .finally(() => { guardRefresh = undefined; });
+  }, GUARD_REFRESH_INTERVAL_MS);
+
   const trpc: FastifyTRPCPluginOptions<TrierarchPluginRouter> = {
     prefix: '/trpc',
     trpcOptions: {
@@ -479,6 +517,7 @@ export function createTrierarchPluginApp(options: {
         checkCrewSettings,
         listEnabledModels,
         setModelEnabled,
+        guard,
         readMcpConfiguration,
         replaceMcpConfiguration,
         readTokenUsage,
@@ -494,6 +533,8 @@ export function createTrierarchPluginApp(options: {
     clearInterval(answering);
     inboxes.close();
     clearInterval(pruning);
+    clearInterval(refreshingGuard);
+    await guardRefresh;
     await pluginServer.close();
     await prisma.$disconnect();
   });
