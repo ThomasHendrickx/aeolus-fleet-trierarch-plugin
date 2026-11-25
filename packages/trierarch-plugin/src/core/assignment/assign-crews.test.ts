@@ -80,6 +80,36 @@ async function confirmed(applied: { version: number; publicKey: string } | null)
   }
 }
 
+describe('guard rules delivery', () => {
+  it('sends an empty rules message before claiming an assignment without rules', async () => {
+    aTrierarch(MAC);
+    aRequest(SCOUT);
+    const claim = fleet.door.assignCrew;
+    fleet.door.assignCrew = (token, input) => {
+      expect(fleet.state.sent).toEqual([expect.objectContaining({
+        shipId: MAC,
+        contentType: 'application/vnd.aeolus.trierarch.guard-rules+json',
+        payload: JSON.stringify({ fleetId: FLEET_ID, pluginShipId: SHIP_ID, shipId: SCOUT, settingsVersion: 1, sets: [] }),
+      })]);
+      return claim(token, input);
+    };
+
+    await pass();
+
+    expect(assignedTo(SCOUT)).toBe(MAC);
+  });
+
+  it('leaves the request unassigned when the fleet does not accept the rules message', async () => {
+    aTrierarch(MAC);
+    aRequest(SCOUT);
+    fleet.state.isAnsweringSends = false;
+
+    await pass();
+
+    expect(assignedTo(SCOUT)).toBeNull();
+  });
+});
+
 describe("a pass and the fleet's MCP configuration (the fleet crew MCP design, section 5)", () => {
   const NAMING_GRAPH = { ...SETTINGS, mcpServers: ['company-graph'] };
 
