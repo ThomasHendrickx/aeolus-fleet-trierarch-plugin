@@ -100,7 +100,9 @@ function caller(session: { kind?: 'operator' | 'viewer'; scopes: readonly ScopeN
     },
     clock: { now: () => NINE },
     refresh: (_fleetId, current) => Promise.resolve({
-      ...current, sets: [], errors: [], conflicts: [],
+      catalogue: { ...current, sets: [], errors: [], conflicts: [] },
+      definitions: [],
+      isReadFailed: false,
     }),
   });
   const context: Context = {

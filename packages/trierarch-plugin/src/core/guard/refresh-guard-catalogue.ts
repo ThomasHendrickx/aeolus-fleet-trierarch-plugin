@@ -3,7 +3,7 @@ import type { FleetId } from '@aeolus-fleet/common';
 
 import { err, ok, type Result } from '../shared/result.js';
 import { guardCatalogue } from './guard-catalogue.js';
-import type { GuardCatalogue, GuardConfiguration, GuardDefinition, GuardError, GuardReadFile, GuardRepository, GuardSnapshot, GuardSnapshots, GuardSource, GuardValidation } from './ports.js';
+import type { GuardCatalogueRead, GuardConfiguration, GuardDefinition, GuardError, GuardReadFile, GuardRepository, GuardSnapshot, GuardSnapshots, GuardSource, GuardValidation } from './ports.js';
 
 const FILE_MAX_BYTES = 64 * 1024;
 
@@ -59,7 +59,7 @@ async function readRepository(deps: Dependencies, input: { fleetId: FleetId; rep
  * Independent repositories read concurrently. Snapshots are scoped to fleet,
  * repository and folder; a failed refresh never replaces the last complete read.
  */
-export function createRefreshGuardCatalogue(deps: Dependencies): (fleetId: FleetId, configuration: GuardConfiguration) => Promise<GuardCatalogue> {
+export function createRefreshGuardCatalogue(deps: Dependencies): (fleetId: FleetId, configuration: GuardConfiguration) => Promise<GuardCatalogueRead> {
   return async (fleetId, configuration) => {
     const reads = await Promise.all(configuration.repositories.map(async (repository) => {
       const previous = await deps.snapshots.read(fleetId, repository);

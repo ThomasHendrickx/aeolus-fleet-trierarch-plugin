@@ -6,6 +6,7 @@ import { isSilent } from '../machines/silent.js';
 import { isMcpConfigurationCurrent, type McpDelivery } from '../mcp-configuration/mcp-delivery.js';
 import { readSealingKey } from '../mcp-configuration/sealing-key.js';
 import { ok, type Result } from '../shared/result.js';
+import type { GuardRequestVersion } from './guard-rules.js';
 import type { PlacementRequest, PlacementTrierarch } from './placement.js';
 
 /**
@@ -18,13 +19,13 @@ import type { PlacementRequest, PlacementTrierarch } from './placement.js';
 export async function readPlacement(
   door: FleetDoor,
   at: { crewToken: string; now: Date; silentAfterMs: number; mcp: { version: number; deliveries: readonly McpDelivery[] } },
-): Promise<Result<{ requests: PlacementRequest[]; trierarchs: PlacementTrierarch[] }, FleetRefusal>> {
+): Promise<Result<{ requests: (PlacementRequest & GuardRequestVersion)[]; trierarchs: PlacementTrierarch[] }, FleetRefusal>> {
   const listed = await door.listShips(at.crewToken);
   if (!listed.isOk) {
     return listed;
   }
   const trierarchs: PlacementTrierarch[] = [];
-  const requests: PlacementRequest[] = [];
+  const requests: (PlacementRequest & GuardRequestVersion)[] = [];
   for (const ship of listed.value) {
     const isTrierarch = ship.type === TRIERARCH_TYPE && ship.status !== 'retired' && !isSilent(ship.lastSeenAt, { now: at.now, silentAfterMs: at.silentAfterMs });
     const isRequest = ship.status === 'awaitingCrew' && ship.crewRequest !== null && ship.crewRequest.assignedTo === null;
@@ -53,6 +54,7 @@ export async function readPlacement(
       requests.push({
         shipId: ship.shipId,
         requestedAt: ship.crewRequest.requestedAt,
+        settingsVersion: ship.crewRequest.settingsVersion,
         settings: read.value.crewSettings,
         reason: ship.crewRequest.reason,
         givenBack: ship.crewRequest.givenBack,

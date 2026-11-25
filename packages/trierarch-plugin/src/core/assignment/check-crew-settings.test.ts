@@ -45,7 +45,7 @@ function aTrierarch(shipId: ShipId, { lastSeenAt = RECENTLY, details = DETAILS }
 }
 
 const check = (settings: unknown, isReadFailed = false) =>
-  createCheckCrewSettings({ ...{ readGuard: () => Promise.resolve({ floor: [], definitions: [], isReadFailed }) }, door: fleet.door, connections, models, configurations: memoryMcpConfigurations(), deliveries, clock: { now: () => NOW }, silentAfterMs: SILENT_AFTER_MS })(FLEET_ID, settings);
+  createCheckCrewSettings({ readGuard: () => Promise.resolve({ floor: [], definitions: [], isReadFailed }), door: fleet.door, connections, models, configurations: memoryMcpConfigurations(), deliveries, clock: { now: () => NOW }, silentAfterMs: SILENT_AFTER_MS })(FLEET_ID, settings);
 
 it('blocks crew request creation when the rule sets could not be read', async () => {
   aTrierarch(MAC);

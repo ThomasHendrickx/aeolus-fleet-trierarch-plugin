@@ -6,6 +6,7 @@ import type { EnabledModels } from '../models/ports.js';
 import type { Clock } from '../shared/clock.js';
 import { refuse, type DomainError } from '../shared/errors.js';
 import { ok, type Result } from '../shared/result.js';
+import type { ReadAssignmentGuard } from './guard-rules.js';
 import { checkPlacement, type PlacementCheck } from './placement.js';
 import { readPlacement } from './read-placement.js';
 
@@ -24,6 +25,7 @@ export function createCheckCrewSettings(deps: {
   configurations: McpConfigurations;
   deliveries: McpDeliveries;
   clock: Clock;
+  readGuard: ReadAssignmentGuard;
   silentAfterMs: number;
 }): CheckCrewSettings {
   return async (fleetId, settings) => {
@@ -35,6 +37,9 @@ export function createCheckCrewSettings(deps: {
     const read = await readPlacement(deps.door, { crewToken: crew.crewToken, now: deps.clock.now(), silentAfterMs: deps.silentAfterMs, mcp: { version, deliveries } });
     if (!read.isOk) {
       return refuse('FLEET_UNAVAILABLE', `The fleet did not answer the check: ${read.error.message}`);
+    }
+    if ((await deps.readGuard(fleetId)).isReadFailed) {
+      return refuse('FLEET_UNAVAILABLE', 'The fleet rule sets could not be read: try again before requesting crew');
     }
     return ok(checkPlacement(settings, { trierarchs: read.value.trierarchs, enabledModels: await deps.models.list(fleetId) }));
   };

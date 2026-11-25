@@ -1,10 +1,12 @@
-import type { ShipId, TrierarchReportDetails } from '@aeolus-fleet/common';
+import { trierarchGuardRulesMessageSchema, type ShipId, type TrierarchReportDetails } from '@aeolus-fleet/common';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { FLEET_ID, OTHER_ASSIGNEE, SHIP_ID, fakePluginFleet, memoryConnectionStore } from '../../../test/support/connection-fakes.js';
 import { memoryMcpConfigurations } from '../../../test/support/memory-mcp-configurations.js';
 import { memoryMcpDeliveries } from '../../../test/support/memory-mcp-deliveries.js';
 import { memoryEnabledModels } from '../../../test/support/memory-models.js';
+import type { GuardRuleDefinition } from '../guard/ports.js';
+import type { GuardAssignments, ReadAssignmentGuard, ResolvedGuardSet } from './guard-rules.js';
 import { createAssignCrews } from './assign-crews.js';
 
 const AT = new Date('2026-10-06T22:00:00.000Z');
@@ -32,14 +34,16 @@ let connections: ReturnType<typeof memoryConnectionStore>;
 let models: ReturnType<typeof memoryEnabledModels>;
 let configurations: ReturnType<typeof memoryMcpConfigurations>;
 let deliveries: ReturnType<typeof memoryMcpDeliveries>;
-const BASE = { name: 'base', repository: 'fleet/rules', commit: 'a'.repeat(40), file: 'base.yaml', rules: { git: { deny: ['push'] } } };
-const CHOSEN = { name: 'chosen', repository: 'fleet/rules', commit: 'b'.repeat(40), file: 'chosen.yaml', rules: { tools: { deny: ['web'] } } };
+const BASE: GuardRuleDefinition = { name: 'base', repository: 'fleet/rules', commit: 'a'.repeat(40), file: 'base.yaml', rules: { git: { deny: ['push'] } } };
+const CHOSEN: GuardRuleDefinition = { name: 'chosen', repository: 'fleet/rules', commit: 'b'.repeat(40), file: 'chosen.yaml', rules: { tools: { deny: ['web'] } } };
 let floor: string[];
-let definitions: (typeof BASE | typeof CHOSEN)[];
-let pinned: Map<number, unknown>;
-let attempts: Map<ShipId, string>;
+let isReadFailed: boolean;
+let definitions: GuardRuleDefinition[];
+let pinned: Map<string, readonly ResolvedGuardSet[]>;
+let attempts: Map<string, string>;
 
 beforeEach(async () => {
+  isReadFailed = false;
   floor = [];
   definitions = [];
   pinned = new Map();
@@ -76,23 +80,31 @@ function aRequest(shipId: ShipId, at: { status?: 'awaitingCrew' | 'crewed'; assi
 
 const assignedTo = (shipId: ShipId) => fleet.state.ships.find((ship) => ship.shipId === shipId)?.crewRequest?.assignedTo;
 
-const guardDependencies = () => ({
-  readGuard: () => Promise.resolve({ floor, definitions, isReadFailed: false }),
-  guardAssignments: {
-    read: (_fleetId: string, { settingsVersion }: { settingsVersion: number }) => Promise.resolve(pinned.get(settingsVersion)),
-    pin: (_fleetId: string, { settingsVersion }: { settingsVersion: number }, sets: unknown) => {
-      if (!pinned.has(settingsVersion)) { pinned.set(settingsVersion, sets); }
-      return Promise.resolve(pinned.get(settingsVersion));
-    },
-    attempt: (_fleetId: string, { trierarchShipId }: { trierarchShipId: ShipId }, key: string) => {
-      if (!attempts.has(trierarchShipId)) { attempts.set(trierarchShipId, key); }
-      return Promise.resolve(attempts.get(trierarchShipId));
-    },
+const readGuard: ReadAssignmentGuard = () => Promise.resolve({ floor, definitions, isReadFailed });
+const guardAssignments: GuardAssignments = {
+  readPinnedFor: (fleetId, requests) => {
+    const results = new Map<ShipId, readonly ResolvedGuardSet[]>();
+    for (const { shipId, settingsVersion } of requests) {
+      const stored = pinned.get(`${fleetId}/${shipId}/${String(settingsVersion)}`);
+      if (stored !== undefined) { results.set(shipId, stored); }
+    }
+    return Promise.resolve(results);
   },
-  keys: { next: () => String(attempts.size + 1) },
-});
+  pin: (fleetId, { shipId, settingsVersion, sets }) => {
+    const key = `${fleetId}/${shipId}/${String(settingsVersion)}`;
+    const stored = pinned.get(key) ?? sets;
+    pinned.set(key, stored);
+    return Promise.resolve(stored);
+  },
+  attempt: (fleetId, { shipId, settingsVersion, trierarchShipId, idempotencyKey }) => {
+    const key = `${fleetId}/${shipId}/${String(settingsVersion)}/${trierarchShipId}`;
+    const stored = attempts.get(key) ?? idempotencyKey;
+    attempts.set(key, stored);
+    return Promise.resolve(stored);
+  },
+};
 
-const pass = () => createAssignCrews({ ...guardDependencies(), door: fleet.door, connections, models, configurations, deliveries, clock: { now: () => NOW }, silentAfterMs: SILENT_AFTER_MS })(FLEET_ID);
+const pass = () => createAssignCrews({ readGuard, guardAssignments, keys: { next: () => String(attempts.size + 1) }, door: fleet.door, connections, models, configurations, deliveries, clock: { now: () => NOW }, silentAfterMs: SILENT_AFTER_MS })(FLEET_ID);
 
 const MAC_KEY = `${'mac'.padEnd(43, 'A')}=`;
 /** What a trierarch offering company-graph on Claude Code reports, with its sealing key. */
@@ -110,7 +122,7 @@ describe('guard rules delivery', () => {
   it('sends an empty rules message before claiming an assignment without rules', async () => {
     aTrierarch(MAC);
     aRequest(SCOUT);
-    const claim = fleet.door.assignCrew;
+    const claim = fleet.door.assignCrew.bind(fleet.door);
     fleet.door.assignCrew = (token, input) => {
       expect(fleet.state.sent).toEqual([expect.objectContaining({
         shipId: MAC,
@@ -135,13 +147,15 @@ describe('guard rules delivery', () => {
     await pass();
 
     expect(assignedTo(SCOUT)).toBe(LINUX);
-    expect(fleet.state.sent).toEqual([expect.objectContaining({
-      shipId: LINUX,
-      payload: JSON.stringify({
-        fleetId: FLEET_ID, pluginShipId: SHIP_ID, shipId: SCOUT, settingsVersion: 1,
-        sets: [{ name: 'base', repository: 'fleet/rules', commit: 'a'.repeat(40), file: 'base.yaml', floor: true, rules: { git: { deny: ['push'] } } }, { name: 'chosen', repository: 'fleet/rules', commit: 'b'.repeat(40), file: 'chosen.yaml', floor: false, rules: { tools: { deny: ['web'] } } }],
-      }),
-    })]);
+    const [message] = fleet.state.sent;
+    expect(message?.shipId).toBe(LINUX);
+    expect(trierarchGuardRulesMessageSchema.parse(JSON.parse(message?.payload ?? '{}'))).toEqual({
+      fleetId: FLEET_ID,
+      pluginShipId: SHIP_ID,
+      shipId: SCOUT,
+      settingsVersion: 1,
+      sets: [{ ...BASE, floor: true }, { ...CHOSEN, floor: false }],
+    });
   });
 
   it.each([
@@ -180,7 +194,7 @@ describe('guard rules delivery', () => {
   });
 
   it.each([65536, 65537])('checks the receiver limit at %i bytes of resolved sets', async (bytes) => {
-    const makeSet = (argument: string) => ({ ...BASE, rules: { git: BASE.rules.git, commands: { deny: [{ command: 'npm', args: [argument] }] } } });
+    const makeSet = (argument: string) => ({ ...BASE, rules: { ...BASE.rules, commands: { deny: [{ command: 'npm', args: [argument] }] } } });
     const empty = Buffer.byteLength(JSON.stringify([{ ...makeSet(''), floor: true }]));
     const padding = bytes - empty;
     floor = ['base'];
@@ -194,6 +208,19 @@ describe('guard rules delivery', () => {
     expect(fleet.state.explained).toEqual(bytes === 65536 ? [] : [{ shipId: SCOUT, reason: 'rule sets too large' }]);
   });
 
+  it('resolves an existing request from the last valid read while the repository is unavailable', async () => {
+    floor = ['base'];
+    definitions = [BASE];
+    isReadFailed = true;
+    aTrierarch(MAC, { details: { ...DETAILS, guardedHarnesses: ['claude-code'] } });
+    aRequest(SCOUT);
+
+    await pass();
+
+    const [message] = fleet.state.sent;
+    expect(trierarchGuardRulesMessageSchema.parse(JSON.parse(message?.payload ?? '{}')).sets).toEqual([{ ...BASE, floor: true }]);
+  });
+
   it('reuses the pinned rule sets after a give-back and resolves again for new settings', async () => {
     floor = ['base'];
     definitions = [BASE];
@@ -203,7 +230,7 @@ describe('guard rules delivery', () => {
     aRequest(SCOUT);
     await pass();
     const ship = fleet.state.ships.find(({ shipId }) => shipId === SCOUT);
-    if (ship?.crewRequest == null) { throw new Error('missing request'); }
+    if (ship?.crewRequest == null) { return expect.unreachable('The crew request must exist'); }
     ship.crewRequest = { ...ship.crewRequest, assignedTo: null, givenBack: [{ trierarchShipId: MAC, reason: 'gave it back' }] };
     definitions = [{ ...BASE, commit: 'c'.repeat(40) }];
 
@@ -221,7 +248,7 @@ describe('guard rules delivery', () => {
   it('retries an accepted send under the same key if its answer was lost', async () => {
     aTrierarch(MAC);
     aRequest(SCOUT);
-    const send = fleet.door.send;
+    const send = fleet.door.send.bind(fleet.door);
     fleet.door.send = async (token, message) => {
       await send(token, message);
       return { isOk: false, error: { code: 'UNAVAILABLE', message: 'The fleet did not answer' } };

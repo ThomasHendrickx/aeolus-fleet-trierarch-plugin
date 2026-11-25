@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { FLEET_ID } from '../../../test/support/connection-fakes.js';
 import { err, ok } from '../shared/result.js';
-import type { GuardSnapshot, GuardRepository, GuardSource, GuardValidation } from './ports.js';
+import type { GuardSnapshot, GuardRepository, GuardConfiguration, GuardSource, GuardValidation } from './ports.js';
 import { createRefreshGuardCatalogue } from './refresh-guard-catalogue.js';
 
 const repository: GuardRepository = { repository: 'fleet/rules', folder: 'guard', access: 'private' };
@@ -28,7 +28,7 @@ function setup() {
   const validation: GuardValidation = {
     read: (content) => content.trim() === 'base' ? ok(base) : content === 'wrong-name' ? ok({ name: 'other', rules: {} }) : err('invalid rules'),
   };
-  const refresh = createRefreshGuardCatalogue({
+  const read = createRefreshGuardCatalogue({
     source, validation,
     snapshots: {
       read: (fleetId, entry) => Promise.resolve(snapshots.get(`${fleetId}/${entry.repository}/${entry.folder}`)),
@@ -36,7 +36,7 @@ function setup() {
     },
   });
   return {
-    refresh, contents, snapshots,
+    refresh: async (fleetId: FleetId, input: GuardConfiguration) => (await read(fleetId, input)).catalogue, contents, snapshots,
     change: (next: { commit: string; files: typeof files }) => { commit = next.commit; files = next.files; },
     fail: (reason: string) => { failure = reason; },
   };

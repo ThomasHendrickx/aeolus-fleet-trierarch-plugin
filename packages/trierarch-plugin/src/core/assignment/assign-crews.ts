@@ -1,11 +1,13 @@
-import type { FleetId } from '@aeolus-fleet/common';
+import { TRIERARCH_GUARD_RULES_CONTENT_TYPE, readCrewSettings, type FleetId, type ShipId } from '@aeolus-fleet/common';
 
 import type { ConnectionStore, FleetDoor, FleetRefusal } from '../connection/ports.js';
 import type { McpConfigurations, McpDeliveries } from '../mcp-configuration/ports.js';
+import type { IdempotencyKeys } from '../machines/ports.js';
 import type { EnabledModels } from '../models/ports.js';
 import type { Clock } from '../shared/clock.js';
 import { refuse, type DomainError } from '../shared/errors.js';
 import { ok, type Result } from '../shared/result.js';
+import { resolveGuardSets, type GuardAssignments, type ReadAssignmentGuard, type ResolvedGuardSet } from './guard-rules.js';
 import { place } from './placement.js';
 import { readPlacement } from './read-placement.js';
 
@@ -39,6 +41,9 @@ export function createAssignCrews(deps: {
   configurations: McpConfigurations;
   deliveries: McpDeliveries;
   clock: Clock;
+  guardAssignments: GuardAssignments;
+  readGuard: ReadAssignmentGuard;
+  keys: IdempotencyKeys;
   silentAfterMs: number;
 }): AssignCrews {
   const unavailable = (refusal: FleetRefusal) => refuse('FLEET_UNAVAILABLE', `The fleet did not answer the assignment: ${refusal.message}`);
@@ -53,14 +58,56 @@ export function createAssignCrews(deps: {
       return unavailable(read.error);
     }
     const { requests, trierarchs } = read.value;
-    const enabledModels = await deps.models.list(fleetId);
+    const [enabledModels, pinned] = await Promise.all([
+      deps.models.list(fleetId),
+      deps.guardAssignments.readPinnedFor(fleetId, requests),
+    ]);
+    let catalogue: ReturnType<ReadAssignmentGuard> | undefined;
+    const guardSelections = new Map<ShipId, Result<readonly ResolvedGuardSet[], string>>();
+    const byShip = new Map(requests.map((request) => [request.shipId, request]));
+    for (const request of requests) {
+      const stored = pinned.get(request.shipId);
+      if (stored !== undefined) {
+        guardSelections.set(request.shipId, ok(stored));
+        continue;
+      }
+      const settings = readCrewSettings(request.settings);
+      if ('settings' in settings) {
+        catalogue ??= deps.readGuard(fleetId);
+        guardSelections.set(request.shipId, resolveGuardSets(await catalogue, settings.settings.ruleSet));
+      }
+    }
 
     const outcome: AssignOutcome = { assigned: 0, explained: 0, lost: 0 };
-    for (const placement of place(requests, { trierarchs, enabledModels })) {
-      const done =
-        placement.kind === 'assign'
-          ? await deps.door.assignCrew(crew.crewToken, { shipId: placement.shipId, trierarchShipId: placement.trierarchShipId })
-          : await deps.door.explainCrewRequest(crew.crewToken, { shipId: placement.shipId, reason: placement.reason });
+    for (const placement of place(requests, { trierarchs, enabledModels, guardSelections })) {
+      if (placement.kind === 'assign') {
+        const request = byShip.get(placement.shipId);
+        const selection = guardSelections.get(placement.shipId);
+        if (request === undefined || !selection?.isOk) {
+          continue;
+        }
+        const { shipId, settingsVersion } = request;
+        const sets = pinned.get(shipId) ?? await deps.guardAssignments.pin(fleetId, { shipId, settingsVersion, sets: selection.value });
+        if (sets.length > 0 && selection.value.length === 0) {
+          // A concurrent pass pinned rules after this pass picked an unguarded target.
+          // Read that pin and make the placement again on the next pass.
+          continue;
+        }
+        const { trierarchShipId } = placement;
+        const idempotencyKey = await deps.guardAssignments.attempt(fleetId, { shipId, settingsVersion, trierarchShipId, idempotencyKey: deps.keys.next() });
+        const sent = await deps.door.send(crew.crewToken, {
+          shipId: trierarchShipId,
+          contentType: TRIERARCH_GUARD_RULES_CONTENT_TYPE,
+          payload: JSON.stringify({ fleetId, pluginShipId: crew.shipId, shipId, settingsVersion, sets }),
+          idempotencyKey,
+        });
+        if (!sent.isOk) {
+          return unavailable(sent.error);
+        }
+      }
+      const done = placement.kind === 'assign'
+        ? await deps.door.assignCrew(crew.crewToken, { shipId: placement.shipId, trierarchShipId: placement.trierarchShipId })
+        : await deps.door.explainCrewRequest(crew.crewToken, { shipId: placement.shipId, reason: placement.reason });
       if (!done.isOk && !CHANGED.has(done.error.code)) {
         return unavailable(done.error);
       }

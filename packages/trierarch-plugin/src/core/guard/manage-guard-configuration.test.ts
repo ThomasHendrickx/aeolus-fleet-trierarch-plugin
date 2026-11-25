@@ -21,7 +21,7 @@ function setup() {
     clock: { now: () => new Date(now) },
     refresh: (_fleetId, input) => {
       reads++;
-      return Promise.resolve({ version: input.version, repositories: [...input.repositories], floor: [...input.floor], sets: [], errors: [], conflicts: [] });
+      return Promise.resolve({ catalogue: { version: input.version, repositories: [...input.repositories], floor: [...input.floor], sets: [], errors: [], conflicts: [] }, definitions: [], isReadFailed: false });
     },
   });
   return { guard, reads: () => reads, advance: (milliseconds: number) => { now += milliseconds; }, conflict: () => { isConflicting = true; } };
