@@ -39,6 +39,19 @@ describe('managing guard configuration', () => {
     expect(reads()).toBe(1);
   });
 
+  it('reports a failed first read on replacement and subsequent catalogue reads', async () => {
+    const state = setup();
+    state.fail('repository unavailable');
+    expect(await state.guard.replace(FLEET_ID, replacement)).toMatchObject({ isOk: true, value: {
+      version: 1, repositories: [{ repository: 'fleet/rules', readCommit: null }],
+      errors: [{ repository: 'fleet/rules', reason: 'repository unavailable' }],
+    } });
+    expect(await state.guard.get(FLEET_ID)).toMatchObject({
+      repositories: [{ repository: 'fleet/rules', readCommit: null }],
+      errors: [{ repository: 'fleet/rules', reason: 'repository unavailable' }],
+    });
+  });
+
   it('reads the stored catalogue without contacting the source', async () => {
     const state = setup();
     await state.guard.get(FLEET_ID);
