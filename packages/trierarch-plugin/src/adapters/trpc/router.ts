@@ -521,7 +521,7 @@ export const trierarchPluginRouter = t.router({
         secrets: z.array(z.string()),
         secretValues: z.record(z.string(), z.string()),
       }))
-      .output(z.object({ version: z.int().positive() }))
+      .output(guardCatalogueOutputSchema)
       .mutation(async ({ ctx, input }) => {
         const replaced = await ctx.guard.replace(ctx.fleetId, input).catch(() => undefined);
         if (replaced === undefined) {
@@ -531,7 +531,8 @@ export const trierarchPluginRouter = t.router({
         if (!replaced.isOk) {
           throw new TRPCError({ code: REPLACE_CONFIGURATION_CODES[replaced.error.kind], message: replaced.error.message });
         }
-        return replaced.value;
+        const catalogue = replaced.value;
+        return { ...catalogue, repositories: [...catalogue.repositories], floor: [...catalogue.floor], sets: [...catalogue.sets], errors: [...catalogue.errors], conflicts: catalogue.conflicts.map(({ name, repositories }) => ({ name, repositories: [...repositories] })) };
       }),
   }),
   mcp: t.router({

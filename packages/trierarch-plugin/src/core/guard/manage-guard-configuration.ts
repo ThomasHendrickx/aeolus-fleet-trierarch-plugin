@@ -10,7 +10,7 @@ export interface ManageGuardConfiguration {
   get(fleetId: FleetId): Promise<GuardCatalogue>;
   readForAssignment(fleetId: FleetId): Promise<GuardCatalogueRead>;
   update(fleetId: FleetId, repository?: string): Promise<Result<GuardCatalogue, DomainError<'NOT_FOUND'>>>;
-  replace(fleetId: FleetId, replacement: GuardReplacement): Promise<Result<{ version: number }, DomainError<'VERSION_CONFLICT' | 'INVALID_CONFIGURATION'>>>;
+  replace(fleetId: FleetId, replacement: GuardReplacement): Promise<Result<GuardCatalogue, DomainError<'VERSION_CONFLICT' | 'INVALID_CONFIGURATION'>>>;
 }
 
 export function createManageGuardConfiguration(deps: {
@@ -46,7 +46,8 @@ export function createManageGuardConfiguration(deps: {
       if (repository !== undefined && repositories.length === 0) { return refuse('NOT_FOUND', 'The guard repository is not configured'); }
       const read = await deps.refresh(fleetId, { version: configuration.version, repositories, floor: configuration.floor });
       const stored = await deps.read(fleetId, { version: configuration.version, repositories: configuration.repositories, floor: configuration.floor });
-      return ok({ ...stored.catalogue, errors: [...stored.catalogue.errors, ...read.catalogue.errors.filter((error) => error.file === undefined)] });
+      const failures = read.catalogue.errors.filter((error) => error.file === undefined);
+      return ok({ ...stored.catalogue, errors: [...stored.catalogue.errors.filter((error) => error.file !== undefined || !failures.some((failure) => failure.repository === error.repository)), ...failures] });
     }),
     replace: (fleetId, replacement) => exclusive(fleetId, async () => {
       const current = await deps.configurations.readConfiguration(fleetId);
@@ -55,10 +56,10 @@ export function createManageGuardConfiguration(deps: {
       const saved = await deps.configurations.replace(fleetId, { expectedVersion: current.version, configuration: changed.value });
       if (saved === 'conflict') { return refuse('VERSION_CONFLICT', 'The guard configuration changed: read it again before replacing it'); }
       const repositories = changed.value.repositories.filter((repository) => !current.repositories.some((old) => old.repository === repository.repository && old.folder === repository.folder));
-      if (repositories.length > 0) {
-        await deps.refresh(fleetId, { version: changed.value.version, repositories, floor: changed.value.floor });
-      }
-      return ok({ version: changed.value.version });
+      const read = repositories.length === 0 ? undefined : await deps.refresh(fleetId, { version: changed.value.version, repositories, floor: changed.value.floor });
+      const stored = await deps.read(fleetId, { version: changed.value.version, repositories: changed.value.repositories, floor: changed.value.floor });
+      const failures = read?.catalogue.errors.filter((error) => error.file === undefined) ?? [];
+      return ok({ ...stored.catalogue, errors: [...stored.catalogue.errors.filter((error) => error.file !== undefined || !failures.some((failure) => failure.repository === error.repository)), ...failures] });
     }),
   };
 }

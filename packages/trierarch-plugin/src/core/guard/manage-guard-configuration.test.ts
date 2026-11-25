@@ -10,6 +10,7 @@ function setup() {
   const updated: string[][] = [];
   let isConflicting = false;
   let failure: string | undefined;
+  let storedFailure: string | undefined;
   const guard = createManageGuardConfiguration({
     configurations: {
       readConfiguration: () => Promise.resolve(configuration),
@@ -19,9 +20,10 @@ function setup() {
         return Promise.resolve('replaced');
       },
     },
-    read: (_fleetId, input) => Promise.resolve({ catalogue: { version: input.version, repositories: input.repositories.map((repository) => ({ ...repository, readCommit: null })), floor: [...input.floor], sets: [], errors: [], conflicts: [] }, definitions: [], isReadFailed: false }),
+    read: (_fleetId, input) => Promise.resolve({ catalogue: { version: input.version, repositories: input.repositories.map((repository) => ({ ...repository, readCommit: null })), floor: [...input.floor], sets: [], errors: storedFailure === undefined ? [] : [{ repository: input.repositories[0]?.repository ?? '', reason: storedFailure }], conflicts: [] }, definitions: [], isReadFailed: false }),
     refresh: (_fleetId, input) => {
       reads++;
+      storedFailure = failure;
       updated.push(input.repositories.map(({ repository }) => repository));
       return Promise.resolve({ catalogue: { version: input.version, repositories: input.repositories.map((repository) => ({ ...repository, readCommit: null })), floor: [...input.floor], sets: [], errors: failure === undefined ? [] : [{ repository: input.repositories[0]?.repository ?? '', reason: failure }], conflicts: [] }, definitions: [], isReadFailed: failure !== undefined });
     },
@@ -34,7 +36,7 @@ describe('managing guard configuration', () => {
   it('reads exact catalogue metadata and refreshes immediately after replacement', async () => {
     const { guard, reads } = setup();
     expect(await guard.get(FLEET_ID)).toEqual({ version: 0, repositories: [], floor: [], sets: [], errors: [], conflicts: [] });
-    expect(await guard.replace(FLEET_ID, replacement)).toEqual({ isOk: true, value: { version: 1 } });
+    expect(await guard.replace(FLEET_ID, replacement)).toMatchObject({ isOk: true, value: { version: 1 } });
     expect(await guard.get(FLEET_ID)).toEqual({ version: 1, repositories: replacement.repositories.map((repository) => ({ ...repository, readCommit: null })), floor: ['base'], sets: [], errors: [], conflicts: [] });
     expect(reads()).toBe(1);
   });

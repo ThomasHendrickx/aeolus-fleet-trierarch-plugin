@@ -13,6 +13,7 @@ const base = { name: 'base', rules: { tools: { deny: ['web'] } } };
 
 function setup() {
   const snapshots = new Map<string, GuardSnapshot>();
+  const failures = new Map<string, { reason: string; at: Date }>();
   const contents = new Map([['one', 'base']]);
   let commit = 'commit-one';
   let files = [{ file: 'guard/base.yaml', blob: 'one' }];
@@ -31,7 +32,9 @@ function setup() {
   };
   const store = {
       read: (fleetId: FleetId, entry: GuardRepository) => Promise.resolve(snapshots.get(`${fleetId}/${entry.repository}/${entry.folder}`)),
-      save: (fleetId: FleetId, snapshot: GuardSnapshot) => { snapshots.set(`${fleetId}/${snapshot.repository}/${snapshot.folder}`, snapshot); return Promise.resolve(); },
+      save: (fleetId: FleetId, snapshot: GuardSnapshot) => { const key = `${fleetId}/${snapshot.repository}/${snapshot.folder}`; snapshots.set(key, snapshot); failures.delete(key); return Promise.resolve(); },
+      fail: (fleetId: FleetId, input: { repository: GuardRepository; reason: string }) => { failures.set(`${fleetId}/${input.repository.repository}/${input.repository.folder}`, { reason: input.reason, at: new Date(0) }); return Promise.resolve(); },
+      readFailure: (fleetId: FleetId, entry: GuardRepository) => Promise.resolve(failures.get(`${fleetId}/${entry.repository}/${entry.folder}`)),
     };
   const read = createRefreshGuardCatalogue({ source, validation, snapshots: store });
   return {

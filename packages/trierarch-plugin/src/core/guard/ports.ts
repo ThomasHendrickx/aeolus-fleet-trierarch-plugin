@@ -42,6 +42,8 @@ export interface GuardSnapshot {
 export interface GuardSnapshots {
   read(fleetId: FleetId, repository: GuardRepository): Promise<GuardSnapshot | undefined>;
   save(fleetId: FleetId, snapshot: GuardSnapshot): Promise<void>;
+  fail(fleetId: FleetId, input: { repository: GuardRepository; reason: string }): Promise<void>;
+  readFailure(fleetId: FleetId, repository: GuardRepository): Promise<{ reason: string; at: Date } | undefined>;
 }
 
 /**

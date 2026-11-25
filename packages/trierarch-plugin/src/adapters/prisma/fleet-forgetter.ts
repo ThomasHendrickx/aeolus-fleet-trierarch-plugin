@@ -6,7 +6,7 @@ export function createPrismaFleetForgetter(db: PrismaClient): FleetForgetter {
   return {
     forget: async (fleetId) => {
       const where = { where: { fleetId } };
-      await db.$transaction([db.guardDeliveryAttempt.deleteMany(where), db.guardResolution.deleteMany(where), db.guardSecret.deleteMany(where), db.guardConfiguration.deleteMany(where), db.guardSnapshot.deleteMany(where), db.pluginDispatchReservation.deleteMany(where), db.repositoryList.deleteMany(where), db.repositoryEvent.deleteMany(where), db.connection.deleteMany(where), db.fleetSwitch.deleteMany(where), db.enabledModel.deleteMany(where), db.usageHour.deleteMany(where), db.usageDay.deleteMany(where), db.subscriptionReading.deleteMany(where), db.mcpConfiguration.deleteMany(where), db.mcpSecret.deleteMany(where), db.mcpConfigurationEvent.deleteMany(where), db.mcpDelivery.deleteMany(where), db.installationRequest.deleteMany(where)]);
+      await db.$transaction([db.guardDeliveryAttempt.deleteMany(where), db.guardResolution.deleteMany(where), db.guardSecret.deleteMany(where), db.guardConfiguration.deleteMany(where), db.guardSnapshot.deleteMany(where), db.guardReadFailure.deleteMany(where), db.pluginDispatchReservation.deleteMany(where), db.repositoryList.deleteMany(where), db.repositoryEvent.deleteMany(where), db.connection.deleteMany(where), db.fleetSwitch.deleteMany(where), db.enabledModel.deleteMany(where), db.usageHour.deleteMany(where), db.usageDay.deleteMany(where), db.subscriptionReading.deleteMany(where), db.mcpConfiguration.deleteMany(where), db.mcpSecret.deleteMany(where), db.mcpConfigurationEvent.deleteMany(where), db.mcpDelivery.deleteMany(where), db.installationRequest.deleteMany(where)]);
     },
   };
 }

@@ -60,9 +60,21 @@ export function createPrismaGuardStore(db: PrismaClient): GuardConfigurations & 
       const row = await db.guardSnapshot.findUnique({ where: { fleetId_repository_folder: { fleetId, repository, folder } } });
       return row === null ? undefined : { repository, folder, commit: row.commit, files: filesSchema.parse(row.files) };
     },
+    readFailure: async (fleetId, { repository, folder }) => {
+      const row = await db.guardReadFailure.findUnique({ where: { fleetId_repository_folder: { fleetId, repository, folder } } });
+      return row === null ? undefined : { reason: row.reason, at: row.at };
+    },
+    fail: async (fleetId, { repository, reason }) => {
+      const identity = { fleetId, repository: repository.repository, folder: repository.folder };
+      await db.guardReadFailure.upsert({ where: { fleetId_repository_folder: identity }, create: { ...identity, reason }, update: { reason, at: new Date() } });
+    },
     save: async (fleetId, snapshot) => {
       const files = z.array(z.json()).parse(snapshot.files);
-      await db.guardSnapshot.upsert({ where: { fleetId_repository_folder: { fleetId, repository: snapshot.repository, folder: snapshot.folder } }, create: { fleetId, repository: snapshot.repository, folder: snapshot.folder, commit: snapshot.commit, files }, update: { commit: snapshot.commit, files } });
+      const identity = { fleetId, repository: snapshot.repository, folder: snapshot.folder };
+      await db.$transaction([
+        db.guardSnapshot.upsert({ where: { fleetId_repository_folder: identity }, create: { ...identity, commit: snapshot.commit, files }, update: { commit: snapshot.commit, files } }),
+        db.guardReadFailure.deleteMany({ where: identity }),
+      ]);
     },
   };
 }

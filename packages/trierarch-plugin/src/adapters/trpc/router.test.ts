@@ -449,7 +449,7 @@ describe('guard configuration through the console router', () => {
 
   it('replaces guard configuration with the guard scope and console Origin, keeping the token write-only', async () => {
     const guard = caller({ scopes: ['fleet:read', 'trierarch:guard'], origin: CONSOLE_ORIGIN }).guard;
-    await expect(guard.replace(replacement)).resolves.toEqual({ version: 1 });
+    await expect(guard.replace(replacement)).resolves.toMatchObject({ version: 1 });
     await expect(guard.get()).resolves.toEqual({
       version: 1, repositories: replacement.repositories.map((repository) => ({ ...repository, readCommit: null })), floor: ['required'], sets: [], errors: [], conflicts: [],
     });

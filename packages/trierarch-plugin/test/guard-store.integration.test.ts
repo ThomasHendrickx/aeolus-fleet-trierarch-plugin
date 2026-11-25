@@ -38,11 +38,11 @@ describe('guard storage in Postgres', () => {
 
   it('keeps a failed first read across a restart and clears it after a good read', async () => {
     const first = store();
-    let available = false;
+    let isAvailable = false;
     const refresh = createRefreshGuardCatalogue({
       snapshots: first,
       source: {
-        latest: () => Promise.resolve(available ? ok('commit-one') : err('repository unavailable')),
+        latest: () => Promise.resolve(isAvailable ? ok('commit-one') : err('repository unavailable')),
         tree: () => Promise.resolve(ok([])),
         read: () => Promise.resolve(err('unexpected read')),
       },
@@ -51,14 +51,18 @@ describe('guard storage in Postgres', () => {
     const input = { version: 1, repositories: [repository], floor: [] };
     await refresh(FLEET, input);
     const restarted = store();
+    const failure = await restarted.readFailure(FLEET, repository);
+    expect(failure?.reason).toBe('repository unavailable');
+    expect(failure?.at).toBeInstanceOf(Date);
     const read = createReadGuardCatalogue(restarted);
     expect((await read(FLEET, input)).catalogue).toMatchObject({
       repositories: [{ repository: 'fleet/rules', readCommit: null }],
       errors: [{ repository: 'fleet/rules', reason: 'repository unavailable' }],
     });
     expect((await read(OTHER, input)).catalogue.errors).toEqual([]);
-    available = true;
+    isAvailable = true;
     await refresh(FLEET, input);
+    expect(await restarted.readFailure(FLEET, repository)).toBeUndefined();
     expect((await read(FLEET, input)).catalogue).toMatchObject({
       repositories: [{ repository: 'fleet/rules', readCommit: 'commit-one' }], errors: [],
     });
