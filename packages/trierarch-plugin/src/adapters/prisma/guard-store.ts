@@ -2,7 +2,7 @@
 import { guardRulesSchema, idSchema, trierarchGuardRulesMessageSchema } from '@aeolus-fleet/common';
 import { z } from 'zod';
 
-import type { GuardAssignments } from '../../core/assignment/guard-rules.js';
+import type { GuardAssignments } from '../../core/assignment/ports.js';
 import { EMPTY_GUARD_CONFIGURATION } from '../../core/guard/guard-configuration.js';
 import type { GuardConfigurations, GuardSnapshots } from '../../core/guard/ports.js';
 import type { PrismaClient } from './client.js';

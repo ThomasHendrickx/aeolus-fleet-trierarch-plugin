@@ -6,7 +6,7 @@ import type { EnabledModels } from '../models/ports.js';
 import type { Clock } from '../shared/clock.js';
 import { refuse, type DomainError } from '../shared/errors.js';
 import { ok, type Result } from '../shared/result.js';
-import type { ReadAssignmentGuard } from './guard-rules.js';
+import type { ReadAssignmentGuard } from './ports.js';
 import { checkPlacement, type PlacementCheck } from './placement.js';
 import { readPlacement } from './read-placement.js';
 

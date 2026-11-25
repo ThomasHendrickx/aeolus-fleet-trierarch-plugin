@@ -41,7 +41,7 @@ import type { InstallationMode } from './core/installation/ports.js';
 import { createReadFleet } from './core/installation/read-fleet.js';
 import { createIsServed } from './core/installation/served.js';
 import { createSetFleetEnabled } from './core/installation/set-fleet-enabled.js';
-import type { ReadAssignmentGuard } from './core/assignment/guard-rules.js';
+import type { ReadAssignmentGuard } from './core/assignment/ports.js';
 import { createAssignCrews, type AssignOutcome } from './core/assignment/assign-crews.js';
 import { createLabelMachines } from './core/machines/label-machines.js';
 import { createCheckCrewSettings } from './core/assignment/check-crew-settings.js';

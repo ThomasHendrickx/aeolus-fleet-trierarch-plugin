@@ -6,7 +6,7 @@ import { memoryMcpConfigurations } from '../../../test/support/memory-mcp-config
 import { memoryMcpDeliveries } from '../../../test/support/memory-mcp-deliveries.js';
 import { memoryEnabledModels } from '../../../test/support/memory-models.js';
 import type { GuardRuleDefinition } from '../guard/ports.js';
-import type { GuardAssignments, ReadAssignmentGuard, ResolvedGuardSet } from './guard-rules.js';
+import type { GuardAssignments, ReadAssignmentGuard, ResolvedGuardSet } from './ports.js';
 import { createAssignCrews } from './assign-crews.js';
 
 const AT = new Date('2026-10-06T22:00:00.000Z');

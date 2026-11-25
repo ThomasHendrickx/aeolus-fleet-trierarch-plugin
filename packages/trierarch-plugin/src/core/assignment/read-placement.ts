@@ -6,7 +6,7 @@ import { isSilent } from '../machines/silent.js';
 import { isMcpConfigurationCurrent, type McpDelivery } from '../mcp-configuration/mcp-delivery.js';
 import { readSealingKey } from '../mcp-configuration/sealing-key.js';
 import { ok, type Result } from '../shared/result.js';
-import type { GuardRequestVersion } from './guard-rules.js';
+import type { GuardRequestVersion } from './ports.js';
 import type { PlacementRequest, PlacementTrierarch } from './placement.js';
 
 /**

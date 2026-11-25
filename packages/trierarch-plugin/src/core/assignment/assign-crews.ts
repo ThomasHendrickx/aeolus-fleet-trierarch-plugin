@@ -7,7 +7,8 @@ import type { EnabledModels } from '../models/ports.js';
 import type { Clock } from '../shared/clock.js';
 import { refuse, type DomainError } from '../shared/errors.js';
 import { ok, type Result } from '../shared/result.js';
-import { resolveGuardSets, type GuardAssignments, type ReadAssignmentGuard, type ResolvedGuardSet } from './guard-rules.js';
+import type { GuardAssignments, ReadAssignmentGuard, ResolvedGuardSet } from './ports.js';
+import { resolveGuardSets, type GuardResolutionError } from './resolve-guard-sets.js';
 import { place } from './placement.js';
 import { readPlacement } from './read-placement.js';
 
@@ -63,7 +64,7 @@ export function createAssignCrews(deps: {
       deps.guardAssignments.readPinnedFor(fleetId, requests),
     ]);
     let catalogue: ReturnType<ReadAssignmentGuard> | undefined;
-    const guardSelections = new Map<ShipId, Result<readonly ResolvedGuardSet[], string>>();
+    const guardSelections = new Map<ShipId, Result<readonly ResolvedGuardSet[], GuardResolutionError>>();
     const byShip = new Map(requests.map((request) => [request.shipId, request]));
     for (const request of requests) {
       const stored = pinned.get(request.shipId);

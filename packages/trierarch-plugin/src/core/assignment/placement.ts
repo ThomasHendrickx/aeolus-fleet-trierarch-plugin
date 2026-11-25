@@ -2,9 +2,11 @@ import { CREW_REQUEST_REASON_MAX_LENGTH, NO_MACHINE_MATCHES_REASON, readCrewSett
 import { z } from 'zod';
 
 import type { Result } from '../shared/result.js';
-import { areGuardSetsWithinLimit, type ResolvedGuardSet } from './guard-rules.js';
+import { areGuardSetsWithinLimit } from './are-guard-sets-within-limit.js';
+import type { ResolvedGuardSet } from './ports.js';
+import type { GuardResolutionError } from './resolve-guard-sets.js';
 
-type GuardSelection = Result<readonly ResolvedGuardSet[], string>;
+type GuardSelection = Result<readonly ResolvedGuardSet[], GuardResolutionError>;
 
 /** An unassigned crew request whose ship awaits crew: its settings as the fleet holds them, and the reason written on it now. */
 export interface PlacementRequest {
@@ -252,7 +254,7 @@ function fit(settings: CrewSettings, { trierarchs, enabledModels, givenBack, gua
     return { reason: `no trierarch with room: all ${String(left.length)} that fit are full` };
   }
   if (guard?.isOk === false) {
-    return { reason: guard.error };
+    return { reason: `${guard.error.kind === 'ruleSetUnknown' ? 'rule set unknown' : 'floor unavailable'}: ${guard.error.name}` };
   }
   const eligible = guard?.value.length
     ? withRoom.filter(({ trierarch, harness }) => trierarch.details.guardedHarnesses?.includes(harness.harness))
