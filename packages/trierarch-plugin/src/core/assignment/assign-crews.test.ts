@@ -32,8 +32,18 @@ let connections: ReturnType<typeof memoryConnectionStore>;
 let models: ReturnType<typeof memoryEnabledModels>;
 let configurations: ReturnType<typeof memoryMcpConfigurations>;
 let deliveries: ReturnType<typeof memoryMcpDeliveries>;
+const BASE = { name: 'base', repository: 'fleet/rules', commit: 'a'.repeat(40), file: 'base.yaml', rules: { git: { deny: ['push'] } } };
+const CHOSEN = { name: 'chosen', repository: 'fleet/rules', commit: 'b'.repeat(40), file: 'chosen.yaml', rules: { tools: { deny: ['web'] } } };
+let floor: string[];
+let definitions: (typeof BASE | typeof CHOSEN)[];
+let pinned: Map<number, unknown>;
+let attempts: Map<ShipId, string>;
 
 beforeEach(async () => {
+  floor = [];
+  definitions = [];
+  pinned = new Map();
+  attempts = new Map();
   fleet = fakePluginFleet();
   connections = memoryConnectionStore();
   models = memoryEnabledModels();
@@ -50,7 +60,7 @@ function aTrierarch(shipId: ShipId, at: { lastSeenAt?: Date; details?: Trierarch
 }
 
 /** A ship with a crew request, unassigned unless it says otherwise. */
-function aRequest(shipId: ShipId, at: { status?: 'awaitingCrew' | 'crewed'; assignedTo?: ShipId; requestedAt?: Date; settings?: unknown } = {}): void {
+function aRequest(shipId: ShipId, at: { status?: 'awaitingCrew' | 'crewed'; assignedTo?: ShipId; requestedAt?: Date; settings?: unknown; settingsVersion?: number } = {}): void {
   fleet.state.ships.push({
     shipId,
     name: `ship-${shipId.slice(-2)}`,
@@ -58,7 +68,7 @@ function aRequest(shipId: ShipId, at: { status?: 'awaitingCrew' | 'crewed'; assi
     status: at.status ?? 'awaitingCrew',
     lastSeenAt: null,
     model: null,
-    crewRequest: { settingsVersion: 1, requestedAt: at.requestedAt ?? AT, assignedTo: at.assignedTo ?? null, reason: null, startedAt: null, givenBack: [], requestedBy: null },
+    crewRequest: { settingsVersion: at.settingsVersion ?? 1, requestedAt: at.requestedAt ?? AT, assignedTo: at.assignedTo ?? null, reason: null, startedAt: null, givenBack: [], requestedBy: null },
     labels: [],
   });
   fleet.state.settings.set(shipId, at.settings ?? SETTINGS);
@@ -66,7 +76,23 @@ function aRequest(shipId: ShipId, at: { status?: 'awaitingCrew' | 'crewed'; assi
 
 const assignedTo = (shipId: ShipId) => fleet.state.ships.find((ship) => ship.shipId === shipId)?.crewRequest?.assignedTo;
 
-const pass = () => createAssignCrews({ door: fleet.door, connections, models, configurations, deliveries, clock: { now: () => NOW }, silentAfterMs: SILENT_AFTER_MS })(FLEET_ID);
+const guardDependencies = () => ({
+  readGuard: () => Promise.resolve({ floor, definitions, isReadFailed: false }),
+  guardAssignments: {
+    read: (_fleetId: string, { settingsVersion }: { settingsVersion: number }) => Promise.resolve(pinned.get(settingsVersion)),
+    pin: (_fleetId: string, { settingsVersion }: { settingsVersion: number }, sets: unknown) => {
+      if (!pinned.has(settingsVersion)) { pinned.set(settingsVersion, sets); }
+      return Promise.resolve(pinned.get(settingsVersion));
+    },
+    attempt: (_fleetId: string, { trierarchShipId }: { trierarchShipId: ShipId }, key: string) => {
+      if (!attempts.has(trierarchShipId)) { attempts.set(trierarchShipId, key); }
+      return Promise.resolve(attempts.get(trierarchShipId));
+    },
+  },
+  keys: { next: () => String(attempts.size + 1) },
+});
+
+const pass = () => createAssignCrews({ ...guardDependencies(), door: fleet.door, connections, models, configurations, deliveries, clock: { now: () => NOW }, silentAfterMs: SILENT_AFTER_MS })(FLEET_ID);
 
 const MAC_KEY = `${'mac'.padEnd(43, 'A')}=`;
 /** What a trierarch offering company-graph on Claude Code reports, with its sealing key. */
@@ -96,6 +122,117 @@ describe('guard rules delivery', () => {
 
     await pass();
 
+    expect(assignedTo(SCOUT)).toBe(MAC);
+  });
+
+  it('sends the resolved floor and selected set to an eligible guarded harness', async () => {
+    floor = ['base'];
+    definitions = [BASE, CHOSEN];
+    aTrierarch(MAC);
+    aTrierarch(LINUX, { details: { ...DETAILS, guardedHarnesses: ['claude-code'] } });
+    aRequest(SCOUT, { settings: { ...SETTINGS, ruleSet: 'chosen' } });
+
+    await pass();
+
+    expect(assignedTo(SCOUT)).toBe(LINUX);
+    expect(fleet.state.sent).toEqual([expect.objectContaining({
+      shipId: LINUX,
+      payload: JSON.stringify({
+        fleetId: FLEET_ID, pluginShipId: SHIP_ID, shipId: SCOUT, settingsVersion: 1,
+        sets: [{ name: 'base', repository: 'fleet/rules', commit: 'a'.repeat(40), file: 'base.yaml', floor: true, rules: { git: { deny: ['push'] } } }, { name: 'chosen', repository: 'fleet/rules', commit: 'b'.repeat(40), file: 'chosen.yaml', floor: false, rules: { tools: { deny: ['web'] } } }],
+      }),
+    })]);
+  });
+
+  it.each([
+    { label: 'unknown selected set', names: [], ruleSet: 'missing', reason: 'rule set unknown: missing' },
+    { label: 'unavailable floor', names: ['missing'], ruleSet: undefined, reason: 'floor unavailable: missing' },
+    { label: 'unguarded harness', names: ['base'], ruleSet: undefined, reason: 'no guarded harness: claude-code' },
+  ])('explains an $label and sends no rules', async ({ names, ruleSet, reason }) => {
+    floor = names;
+    definitions = [BASE];
+    aTrierarch(MAC);
+    aRequest(SCOUT, { settings: { ...SETTINGS, ruleSet } });
+
+    await pass();
+
+    expect(fleet.state.explained).toEqual([{ shipId: SCOUT, reason }]);
+    expect(fleet.state.sent).toEqual([]);
+  });
+
+  it.each([
+    { defaults: ['codex'], reason: 'no guarded harness: codex' },
+    { defaults: ['codex', 'claude-code', 'codex'], reason: 'no guarded harness: claude-code, codex' },
+  ])('names the distinct eligible default harnesses $defaults when none is guarded', async ({ defaults, reason }) => {
+    floor = ['base'];
+    definitions = [BASE];
+    [MAC, LINUX, LOOKOUT].forEach((id, index) => {
+      const harness = defaults[index];
+      if (harness !== undefined) {
+        aTrierarch(id, { details: { ...DETAILS, harnesses: [{ harness, flags: [], options: {} }] } });
+      }
+    });
+    aRequest(SCOUT, { settings: { ...SETTINGS, harness: undefined } });
+
+    await pass();
+
+    expect(fleet.state.explained).toEqual([{ shipId: SCOUT, reason }]);
+  });
+
+  it.each([65536, 65537])('checks the receiver limit at %i bytes of resolved sets', async (bytes) => {
+    const makeSet = (argument: string) => ({ ...BASE, rules: { git: BASE.rules.git, commands: { deny: [{ command: 'npm', args: [argument] }] } } });
+    const empty = Buffer.byteLength(JSON.stringify([{ ...makeSet(''), floor: true }]));
+    const padding = bytes - empty;
+    floor = ['base'];
+    definitions = [makeSet('é'.repeat(Math.floor(padding / 2)) + 'a'.repeat(padding % 2))];
+    aTrierarch(MAC, { details: { ...DETAILS, guardedHarnesses: ['claude-code'] } });
+    aRequest(SCOUT);
+
+    await pass();
+
+    expect(assignedTo(SCOUT)).toBe(bytes === 65536 ? MAC : null);
+    expect(fleet.state.explained).toEqual(bytes === 65536 ? [] : [{ shipId: SCOUT, reason: 'rule sets too large' }]);
+  });
+
+  it('reuses the pinned rule sets after a give-back and resolves again for new settings', async () => {
+    floor = ['base'];
+    definitions = [BASE];
+    const details = { ...DETAILS, guardedHarnesses: ['claude-code'] };
+    aTrierarch(MAC, { details });
+    aTrierarch(LINUX, { details });
+    aRequest(SCOUT);
+    await pass();
+    const ship = fleet.state.ships.find(({ shipId }) => shipId === SCOUT);
+    if (ship?.crewRequest == null) { throw new Error('missing request'); }
+    ship.crewRequest = { ...ship.crewRequest, assignedTo: null, givenBack: [{ trierarchShipId: MAC, reason: 'gave it back' }] };
+    definitions = [{ ...BASE, commit: 'c'.repeat(40) }];
+
+    await pass();
+
+    expect(assignedTo(SCOUT)).toBe(LINUX);
+    expect(fleet.state.sent[1]?.payload).toContain('a'.repeat(40));
+    ship.crewRequest = { ...ship.crewRequest, assignedTo: null, givenBack: [], settingsVersion: 2 };
+
+    await pass();
+
+    expect(fleet.state.sent[2]?.payload).toContain('c'.repeat(40));
+  });
+
+  it('retries an accepted send under the same key if its answer was lost', async () => {
+    aTrierarch(MAC);
+    aRequest(SCOUT);
+    const send = fleet.door.send;
+    fleet.door.send = async (token, message) => {
+      await send(token, message);
+      return { isOk: false, error: { code: 'UNAVAILABLE', message: 'The fleet did not answer' } };
+    };
+    await pass();
+    expect(assignedTo(SCOUT)).toBeNull();
+    fleet.door.send = send;
+
+    await pass();
+
+    expect(fleet.state.sent).toHaveLength(1);
     expect(assignedTo(SCOUT)).toBe(MAC);
   });
 
