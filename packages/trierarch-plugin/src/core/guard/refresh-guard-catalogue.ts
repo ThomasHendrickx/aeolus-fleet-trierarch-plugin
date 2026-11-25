@@ -55,7 +55,7 @@ async function readRepository(deps: Dependencies, input: { fleetId: FleetId; rep
 }
 
 /**
- * One refresh, called on replacement and every five minutes by the application.
+ * One update, called for newly added repositories and on operator request.
  * Independent repositories read concurrently. Snapshots are scoped to fleet,
  * repository and folder; a failed refresh never replaces the last complete read.
  */
@@ -65,11 +65,10 @@ export function createRefreshGuardCatalogue(deps: Dependencies): (fleetId: Fleet
       const previous = await deps.snapshots.read(fleetId, repository);
       const read = await readRepository(deps, { fleetId, repository, previous });
       if (!read.isOk) {
+        await deps.snapshots.fail(fleetId, { repository, reason: read.error });
         return { snapshot: previous, error: { repository: repository.repository, reason: read.error } };
       }
-      if (read.value !== previous) {
-        await deps.snapshots.save(fleetId, read.value);
-      }
+      await deps.snapshots.save(fleetId, read.value);
       return { snapshot: read.value, error: undefined };
     }));
     const snapshots: GuardSnapshot[] = [];
@@ -83,5 +82,17 @@ export function createRefreshGuardCatalogue(deps: Dependencies): (fleetId: Fleet
       }
     }
     return guardCatalogue({ configuration, snapshots, errors });
+  };
+}
+
+/** Reads only the persisted snapshots, without contacting the source. */
+export function createReadGuardCatalogue(snapshots: GuardSnapshots): (fleetId: FleetId, configuration: GuardConfiguration) => Promise<GuardCatalogueRead> {
+  return async (fleetId, configuration) => {
+    const reads = await Promise.all(configuration.repositories.map(async (repository) => {
+      const snapshot = await snapshots.read(fleetId, repository);
+      const failure = snapshot === undefined ? await snapshots.readFailure(fleetId, repository) : undefined;
+      return { snapshot, error: failure === undefined ? undefined : { repository: repository.repository, reason: failure.reason } };
+    }));
+    return guardCatalogue({ configuration, snapshots: reads.flatMap(({ snapshot }) => snapshot === undefined ? [] : [snapshot]), errors: reads.flatMap(({ error }) => error === undefined ? [] : [error]) });
   };
 }

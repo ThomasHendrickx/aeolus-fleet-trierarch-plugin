@@ -973,28 +973,17 @@ it('onClose aborts the fleet wake stream and prevents reopening', async () => {
   }
 });
 
-it('refreshes guard on the five-minute timer once the served fleet is connected', async () => {
-  const fiveMinutes = 5 * 60_000;
+it('does not update stored guard snapshots on the five-minute timer', async () => {
   const repository = { repository: 'org/policy', folder: 'rules', access: 'public' as const };
   const db = createPluginPrismaClient(pluginDatabaseUrl);
   const guard = createPrismaGuardStore(db);
   const originalFetch = globalThis.fetch;
-  let commit = 'first';
+  let sourceReads = 0;
   vi.stubGlobal('fetch', ((input, init) => {
     const url = input instanceof Request ? input.url : input.toString();
-    if (!url.startsWith('https://api.github.com/repos/org/policy/')) {
-      return originalFetch(input, init);
-    }
-    if (url.endsWith('/commits?per_page=1')) {
-      return Promise.resolve(Response.json([{ sha: commit }]));
-    }
-    if (url.endsWith('/git/trees/rules-tree')) {
-      return Promise.resolve(Response.json({ truncated: false, tree: [{ type: 'blob', path: 'base.yaml', sha: 'base-blob' }] }));
-    }
-    if (url.endsWith(`/git/trees/${commit}`)) {
-      return Promise.resolve(Response.json({ truncated: false, tree: [{ type: 'tree', path: 'rules', sha: 'rules-tree' }] }));
-    }
-    return Promise.resolve(Response.json({ encoding: 'base64', content: Buffer.from('name: base').toString('base64') }));
+    if (!url.startsWith('https://api.github.com/repos/org/policy/')) { return originalFetch(input, init); }
+    sourceReads++;
+    return Promise.resolve(Response.json([{ sha: 'second' }]));
   }) satisfies typeof fetch);
   vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
   try {
@@ -1003,26 +992,54 @@ it('refreshes guard on the five-minute timer once the served fleet is connected'
       expectedVersion: 0,
       configuration: { version: 1, repositories: [repository], floor: [], secrets: [] },
     });
-
-    await vi.advanceTimersByTimeAsync(fiveMinutes);
-    await expect(guard.read(argo.fleetId, repository)).resolves.toBeUndefined();
-
+    await guard.save(argo.fleetId, { repository: repository.repository, folder: repository.folder, commit: 'first', files: [] });
     const answer = await connectPlugin(address, { cookie, shipId, secret });
     expect(answer.status).toBe(200);
-    await vi.advanceTimersByTimeAsync(fiveMinutes - 1);
-    const read = await query(address, { cookie, procedure: 'guard.get' });
-    expect(read.status).toBe(200);
-    await expect(read.json()).resolves.toMatchObject({
-      result: { data: { repositories: [{ ...repository, readCommit: 'first' }], sets: [{ name: 'base', commit: 'first', file: 'rules/base.yaml', rulesCount: 0 }] } },
-    });
-
-    commit = 'second';
-    await vi.advanceTimersByTimeAsync(1);
-    await expect.poll(async () => (await guard.read(argo.fleetId, repository))?.commit).toBe('second');
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    await new Promise<void>((resolve) => { setTimeout(resolve, 100); });
+    expect(sourceReads).toBe(0);
+    await expect(guard.read(argo.fleetId, repository)).resolves.toMatchObject({ commit: 'first' });
   } finally {
     await apps.at(-1)?.close();
     vi.useRealTimers();
     vi.unstubAllGlobals();
     await db.$disconnect();
+  }
+});
+
+
+it('keeps stored guard rules when an operator update cannot read GitHub', async () => {
+  const originalFetch = globalThis.fetch;
+  let isUnavailable = false;
+  let commit = 'first';
+  vi.stubGlobal('fetch', (async (input, init) => {
+    const url = input instanceof Request ? input.url : input.toString();
+    if (url.endsWith('/trpc/console.session')) {
+      const response = await originalFetch(input, init);
+      const session = z.looseObject({ result: z.looseObject({ data: z.looseObject({ scopes: z.array(z.string()) }) }) }).parse(await response.json());
+      return Response.json({ ...session, result: { ...session.result, data: { ...session.result.data, scopes: [...session.result.data.scopes, 'trierarch:guard'] } } });
+    }
+    if (!url.startsWith('https://api.github.com/repos/org/policy/')) { return originalFetch(input, init); }
+    if (isUnavailable) { return Promise.resolve(new Response('', { status: 503 })); }
+    if (url.endsWith('/commits?per_page=1')) { return Promise.resolve(Response.json([{ sha: commit }])); }
+    if (url.endsWith(`/git/trees/${commit}`)) { return Promise.resolve(Response.json({ truncated: false, tree: [{ type: 'tree', path: 'rules', sha: 'rules-tree' }] })); }
+    if (url.endsWith('/git/trees/rules-tree')) { return Promise.resolve(Response.json({ truncated: false, tree: [{ type: 'blob', path: 'base.yaml', sha: 'base-blob' }] })); }
+    return Promise.resolve(Response.json({ encoding: 'base64', content: Buffer.from('name: base').toString('base64') }));
+  }) satisfies typeof fetch);
+  try {
+    const address = await connected();
+    const origin = new URL(fleetUrl).origin;
+    const replacement = { expectedVersion: 0, repositories: [{ repository: 'org/policy', folder: 'rules', access: 'public' }], floor: ['base'], secrets: [], secretValues: {} };
+    const replaced = await mutate(address, { procedure: 'guard.replace', cookie, origin, body: replacement });
+    expect(replaced.status, await replaced.clone().text()).toBe(200);
+    commit = 'second';
+    isUnavailable = true;
+    const update = await mutate(address, { procedure: 'guard.update', cookie, origin, body: { repository: 'org/policy' } });
+    expect(update.status).toBe(200);
+    expect(await update.json()).toMatchObject({ result: { data: { repositories: [{ readCommit: 'first' }], sets: [{ name: 'base', commit: 'first' }], errors: [{ repository: 'org/policy', reason: 'repository unavailable' }] } } });
+    const read = await query(address, { procedure: 'guard.get', cookie });
+    expect(await read.json()).toMatchObject({ result: { data: { repositories: [{ readCommit: 'first' }], sets: [{ name: 'base', commit: 'first' }] } } });
+  } finally {
+    vi.unstubAllGlobals();
   }
 });

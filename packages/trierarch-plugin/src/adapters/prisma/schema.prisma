@@ -296,3 +296,14 @@ model GuardDeliveryAttempt {
   @@id([fleetId, shipId, settingsVersion, trierarchShipId])
   @@map("guard_delivery_attempts")
 }
+
+/// Latest unsuccessful repository read, cleared with the next complete snapshot.
+model GuardReadFailure {
+  fleetId String @map("fleet_id")
+  repository String
+  folder String
+  reason String
+  at DateTime @default(now())
+  @@id([fleetId, repository, folder])
+  @@map("guard_read_failures")
+}

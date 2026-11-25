@@ -98,7 +98,7 @@ function caller(session: { kind?: 'operator' | 'viewer'; scopes: readonly ScopeN
         return Promise.resolve('replaced');
       },
     },
-    clock: { now: () => NINE },
+    read: (_fleetId, current) => Promise.resolve({ catalogue: { ...current, repositories: current.repositories.map((repository) => ({ ...repository, readCommit: null })), sets: [], errors: [], conflicts: [] }, definitions: [], isReadFailed: false }),
     refresh: (_fleetId, current) => Promise.resolve({
       catalogue: { ...current, repositories: current.repositories.map((repository) => ({ ...repository, readCommit: null })), sets: [], errors: [], conflicts: [] },
       definitions: [],
@@ -449,7 +449,7 @@ describe('guard configuration through the console router', () => {
 
   it('replaces guard configuration with the guard scope and console Origin, keeping the token write-only', async () => {
     const guard = caller({ scopes: ['fleet:read', 'trierarch:guard'], origin: CONSOLE_ORIGIN }).guard;
-    await expect(guard.replace(replacement)).resolves.toEqual({ version: 1 });
+    await expect(guard.replace(replacement)).resolves.toMatchObject({ version: 1 });
     await expect(guard.get()).resolves.toEqual({
       version: 1, repositories: replacement.repositories.map((repository) => ({ ...repository, readCommit: null })), floor: ['required'], sets: [], errors: [], conflicts: [],
     });
@@ -461,6 +461,19 @@ describe('guard configuration through the console router', () => {
 
   it.each([undefined, 'https://other.example'])('forbids replacing guard configuration with Origin %s', async (origin) => {
     await expect(refusalOf(caller({ scopes: ['trierarch:guard'], origin }).guard.replace(replacement))).resolves.toBe('FORBIDDEN');
+  });
+
+  it('updates a configured repository or all with the guard scope and console Origin', async () => {
+    const guard = caller({ scopes: ['trierarch:guard'], origin: CONSOLE_ORIGIN }).guard;
+    await guard.replace(replacement);
+    await expect(guard.update({ repository: 'org/policy' })).resolves.toMatchObject({ repositories: [{ repository: 'org/policy' }], errors: [] });
+    await expect(guard.update({})).resolves.toMatchObject({ repositories: [{ repository: 'org/policy' }], errors: [] });
+    await expect(refusalOf(guard.update({ repository: 'unknown/repository' }))).resolves.toBe('NOT_FOUND');
+  });
+
+  it('requires the guard scope and console Origin for updates', async () => {
+    await expect(refusalOf(caller({ scopes: OPERATOR, origin: CONSOLE_ORIGIN }).guard.update({}))).resolves.toBe('FORBIDDEN');
+    await expect(refusalOf(caller({ scopes: ['trierarch:guard'] }).guard.update({}))).resolves.toBe('FORBIDDEN');
   });
 
   it('refuses stale guard replacements as conflicts', async () => {
