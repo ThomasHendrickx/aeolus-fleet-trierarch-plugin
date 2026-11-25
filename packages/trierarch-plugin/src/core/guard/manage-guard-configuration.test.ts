@@ -7,6 +7,7 @@ import { createManageGuardConfiguration } from './manage-guard-configuration.js'
 function setup() {
   let configuration: StoredGuardConfiguration = EMPTY_GUARD_CONFIGURATION;
   let reads = 0;
+  const updated: string[][] = [];
   let isConflicting = false;
   const guard = createManageGuardConfiguration({
     configurations: {
@@ -20,10 +21,11 @@ function setup() {
     read: (_fleetId, input) => Promise.resolve({ catalogue: { version: input.version, repositories: input.repositories.map((repository) => ({ ...repository, readCommit: null })), floor: [...input.floor], sets: [], errors: [], conflicts: [] }, definitions: [], isReadFailed: false }),
     refresh: (_fleetId, input) => {
       reads++;
+      updated.push(input.repositories.map(({ repository }) => repository));
       return Promise.resolve({ catalogue: { version: input.version, repositories: input.repositories.map((repository) => ({ ...repository, readCommit: null })), floor: [...input.floor], sets: [], errors: [], conflicts: [] }, definitions: [], isReadFailed: false });
     },
   });
-  return { guard, reads: () => reads, conflict: () => { isConflicting = true; } };
+  return { guard, updated, reads: () => reads, conflict: () => { isConflicting = true; } };
 }
 const replacement = { expectedVersion: 0, repositories: [{ repository: 'fleet/rules', folder: '', access: 'private' }] as const, floor: ['base'], secrets: ['fleet/rules'], secretValues: { 'fleet/rules': 'test-token' } };
 
@@ -41,6 +43,33 @@ describe('managing guard configuration', () => {
     await state.guard.get(FLEET_ID);
     await state.guard.readForAssignment(FLEET_ID);
     expect(state.reads()).toBe(0);
+  });
+
+  it('updates one configured repository or all on request', async () => {
+    const state = setup();
+    const repositories = [...replacement.repositories, { repository: 'fleet/other', folder: '', access: 'public' as const }];
+    await state.guard.replace(FLEET_ID, { ...replacement, repositories });
+    state.updated.length = 0;
+    await state.guard.update(FLEET_ID, 'fleet/other');
+    expect(state.updated).toEqual([['fleet/other']]);
+    await state.guard.update(FLEET_ID);
+    expect(state.updated).toEqual([['fleet/other'], ['fleet/rules', 'fleet/other']]);
+  });
+
+  it('refuses an update for an unknown repository', async () => {
+    const state = setup();
+    expect(await state.guard.update(FLEET_ID, 'unknown/repository')).toMatchObject({ isOk: false, error: { kind: 'NOT_FOUND' } });
+    expect(state.reads()).toBe(0);
+  });
+
+  it('reads only newly added repositories when configuration is replaced', async () => {
+    const state = setup();
+    await state.guard.replace(FLEET_ID, replacement);
+    state.updated.length = 0;
+    await state.guard.replace(FLEET_ID, { ...replacement, expectedVersion: 1, floor: [] });
+    expect(state.updated).toEqual([]);
+    await state.guard.replace(FLEET_ID, { ...replacement, expectedVersion: 2, repositories: [...replacement.repositories, { repository: 'fleet/other', folder: '', access: 'public' }] });
+    expect(state.updated).toEqual([['fleet/other']]);
   });
 
   it('refuses a concurrent store replacement without refreshing or exposing tokens', async () => {
