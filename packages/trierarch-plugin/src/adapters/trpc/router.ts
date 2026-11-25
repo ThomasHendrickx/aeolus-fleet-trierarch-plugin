@@ -7,16 +7,18 @@
  * (switched off) gets only `connection.status`; only `connection` works
  * before the trierarch plugin is connected to the fleet. The installation
  * procedures take the installation token instead (decision 0021). A change
- * of a fleet's MCP configuration also needs the console's Origin.
+ * of a fleet's MCP or guard configuration also needs the console's Origin.
  */
 import { timingSafeEqual } from 'node:crypto';
 
-import { crewLineSchema, harnessSchema, idempotencyKeySchema, idSchema, modelSchema, shipHandleSchema, trierarchReportDetailsSchema, type FleetId } from '@aeolus-fleet/common';
+import { crewLineSchema, harnessSchema, idempotencyKeySchema, idSchema, modelSchema, shipHandleSchema, trierarchReportDetailsSchema, type FleetId, type ScopeName } from '@aeolus-fleet/common';
 import { initTRPC, TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import type { Connect } from '../../core/connection/connect.js';
 import type { ReadConnection } from '../../core/connection/read-connection.js';
+import type { ManageGuardConfiguration } from '../../core/guard/manage-guard-configuration.js';
+import { GUARD_SCOPE } from '../../core/scopes/plugin-scopes.js';
 import type { InstallationConnect } from '../../core/installation/installation-connect.js';
 import type { DeleteFleet } from '../../core/installation/delete-fleet.js';
 import type { InstallationMode } from '../../core/installation/ports.js';
@@ -45,7 +47,7 @@ export interface Context {
   cookie: string | undefined;
   /** The Origin header the console's server forwarded: the browser's, which the fleet checks on a change made with the cookie. */
   origin: string | undefined;
-  /** The console's origin, as the configuration holds it: the only Origin a change of a fleet's MCP configuration comes from. */
+  /** The configured Origin for changes to a fleet's MCP or guard configuration. */
   consoleOrigin: string;
   authenticateOperator: AuthenticateOperator;
   /** Whether the trierarch plugin is connected to the fleet. */
@@ -68,6 +70,7 @@ export interface Context {
   checkCrewSettings: CheckCrewSettings;
   listEnabledModels: ListEnabledModels;
   setModelEnabled: SetModelEnabled;
+  guard: ManageGuardConfiguration;
   readMcpConfiguration: ReadMcpConfiguration;
   replaceMcpConfiguration: ReplaceMcpConfiguration;
   readTokenUsage: ReadTokenUsage;
@@ -100,6 +103,15 @@ function managing(procedure: typeof operatorProcedure) {
   return procedure.use(({ ctx, next }) => {
     if (!ctx.scopes.includes('fleet:manage')) {
       throw new TRPCError({ code: 'FORBIDDEN', message: 'Needs fleet:manage: a viewer session only reads' });
+    }
+    return next();
+  });
+}
+
+function withScope(procedure: typeof operatorProcedure, scope: ScopeName) {
+  return procedure.use(({ ctx, next }) => {
+    if (!ctx.scopes.includes(scope)) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: `Needs ${scope}` });
     }
     return next();
   });
@@ -148,10 +160,10 @@ const connectedProcedure = servedProcedure.use(async ({ ctx, next }) => {
  * own console's: the forwarded Origin is exactly the configured console
  * origin, or FORBIDDEN before the input is read or anything written.
  */
-function fromTheConsole(procedure: typeof operatorProcedure) {
+function fromTheConsole(procedure: typeof operatorProcedure, configuration = 'MCP') {
   return procedure.use(({ ctx, next }) => {
     if (ctx.origin !== ctx.consoleOrigin) {
-      throw new TRPCError({ code: 'FORBIDDEN', message: "Needs the console's Origin: a change of the MCP configuration comes only from the console" });
+      throw new TRPCError({ code: 'FORBIDDEN', message: `Needs the console's Origin: a change of the ${configuration} configuration comes only from the console` });
     }
     return next();
   });
@@ -208,6 +220,16 @@ const mcpServerSchema = z.strictObject({
   url: z.string(),
   tools: z.array(z.string()),
   credential: z.strictObject({ secret: z.string(), header: z.string() }).optional(),
+});
+
+const guardRepositorySchema = z.strictObject({ repository: z.string(), folder: z.string(), access: z.enum(['public', 'private']) });
+const guardCatalogueOutputSchema = z.object({
+  version: z.int().nonnegative(),
+  repositories: z.array(guardRepositorySchema),
+  floor: z.array(z.string()),
+  sets: z.array(z.object({ name: z.string(), repository: z.string(), commit: z.string(), file: z.string() })),
+  errors: z.array(z.object({ repository: z.string(), file: z.string().optional(), reason: z.string() })),
+  conflicts: z.array(z.object({ name: z.string(), repositories: z.array(z.string()) })),
 });
 
 /** A fleet's MCP configuration as `mcp.get` answers it: secret names, never a value. */
@@ -459,6 +481,45 @@ export const trierarchPluginRouter = t.router({
       .input(z.strictObject({ model: modelSchema }))
       .output(z.array(z.string()))
       .mutation(({ ctx, input }) => ctx.setModelEnabled({ fleetId: ctx.fleetId, model: input.model, isEnabled: false })),
+  }),
+  guard: t.router({
+    get: withScope(servedProcedure, 'fleet:read')
+      .output(guardCatalogueOutputSchema)
+      .query(async ({ ctx }) => {
+        const catalogue = await ctx.guard.get(ctx.fleetId).catch(() => undefined);
+        if (catalogue === undefined) {
+          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'The guard catalogue could not be read' });
+        }
+        return {
+          version: catalogue.version,
+          repositories: catalogue.repositories.map(({ repository, folder, access }) => ({ repository, folder, access })),
+          floor: [...catalogue.floor],
+          sets: [...catalogue.sets],
+          errors: [...catalogue.errors],
+          conflicts: catalogue.conflicts.map(({ name, repositories }) => ({ name, repositories: [...repositories] })),
+        };
+      }),
+    replace: fromTheConsole(withScope(servedProcedure, GUARD_SCOPE), 'guard')
+      .input(z.strictObject({
+        expectedVersion: z.int().nonnegative(),
+        repositories: z.array(guardRepositorySchema),
+        floor: z.array(z.string()),
+        secrets: z.array(z.string()),
+        secretValues: z.record(z.string(), z.string()),
+      }))
+      .output(z.object({ version: z.int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        const replaced = await ctx.guard.replace(ctx.fleetId, input).catch(() => undefined);
+        if (replaced === undefined) {
+          // A store failure may quote credential values. Neither the cause nor its message goes on.
+          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'The guard configuration could not be saved' });
+        }
+        if (!replaced.isOk) {
+          const codes = { VERSION_CONFLICT: 'CONFLICT', INVALID_CONFIGURATION: 'BAD_REQUEST' } as const;
+          throw new TRPCError({ code: codes[replaced.error.kind], message: replaced.error.message });
+        }
+        return replaced.value;
+      }),
   }),
   mcp: t.router({
     /** The fleet's MCP configuration (the fleet crew MCP design, section 4): its version, servers and secret names, never a value. fleet:manage only. */
