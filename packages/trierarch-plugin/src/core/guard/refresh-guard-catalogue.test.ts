@@ -7,7 +7,7 @@ import type { GuardSnapshot, GuardRepository, GuardSource, GuardValidation } fro
 import { createRefreshGuardCatalogue } from './refresh-guard-catalogue.js';
 
 const repository: GuardRepository = { repository: 'fleet/rules', folder: 'guard', access: 'private' };
-const other: GuardRepository = { repository: 'fleet/other', folder: '', access: 'public' };
+const other: GuardRepository = { repository: 'fleet/other', folder: 'guard', access: 'public' };
 const OTHER: FleetId = 'flt_01m3tb1zgr5h2ffee12xnch8zz';
 const base = { name: 'base', rules: { tools: { deny: ['web'] } } };
 

@@ -5,7 +5,11 @@ export function guardCatalogue(input: { configuration: GuardConfiguration; snaps
   const sets: GuardSet[] = [];
   const errors = [...input.errors];
   for (const snapshot of input.snapshots) {
+    const folder = snapshot.folder.replace(/\/$/, '');
     for (const file of snapshot.files) {
+      // An existing snapshot can contain files from a recursive tree read.
+      const parent = file.file.slice(0, Math.max(0, file.file.lastIndexOf('/')));
+      if (parent !== folder) { continue; }
       if (file.result.isOk) {
         sets.push({ name: file.result.value.name, repository: snapshot.repository, commit: snapshot.commit, file: file.file });
       } else {

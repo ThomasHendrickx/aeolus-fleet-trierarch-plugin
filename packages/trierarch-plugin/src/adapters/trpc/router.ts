@@ -208,8 +208,8 @@ const USAGE_CODES = {
   FLEET_UNAVAILABLE: 'BAD_GATEWAY',
 } as const satisfies Record<string, TRPCError['code']>;
 
-/** The refusals of replacing a fleet's MCP configuration, as the API states them. */
-const MCP_REPLACE_CODES = {
+/** The API codes for refusals shared by MCP and guard configuration replacement. */
+const REPLACE_CONFIGURATION_CODES = {
   VERSION_CONFLICT: 'CONFLICT',
   INVALID_CONFIGURATION: 'BAD_REQUEST',
 } as const satisfies Record<string, TRPCError['code']>;
@@ -515,8 +515,7 @@ export const trierarchPluginRouter = t.router({
           throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'The guard configuration could not be saved' });
         }
         if (!replaced.isOk) {
-          const codes = { VERSION_CONFLICT: 'CONFLICT', INVALID_CONFIGURATION: 'BAD_REQUEST' } as const;
-          throw new TRPCError({ code: codes[replaced.error.kind], message: replaced.error.message });
+          throw new TRPCError({ code: REPLACE_CONFIGURATION_CODES[replaced.error.kind], message: replaced.error.message });
         }
         return replaced.value;
       }),
@@ -546,7 +545,7 @@ export const trierarchPluginRouter = t.router({
           throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'The MCP configuration could not be saved' });
         }
         if (!replaced.isOk) {
-          throw new TRPCError({ code: MCP_REPLACE_CODES[replaced.error.kind], message: replaced.error.message });
+          throw new TRPCError({ code: REPLACE_CONFIGURATION_CODES[replaced.error.kind], message: replaced.error.message });
         }
         return replaced.value;
       }),

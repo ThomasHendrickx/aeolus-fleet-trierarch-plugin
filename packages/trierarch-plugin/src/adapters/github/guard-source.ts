@@ -30,10 +30,21 @@ export function createGithubGuardSource(deps: { configurations: Pick<GuardConfig
       return commit === undefined ? err('repository unavailable') : ok(commit);
     },
     tree: async (fleetId, { repository, commit }) => {
-      const response = treeSchema.safeParse(await read(fleetId, { repository, path: `git/trees/${encodeURIComponent(commit)}?recursive=1` }).catch(() => undefined));
+      const folder = repository.folder.replace(/\/$/, '');
+      const segments = folder === '' ? [] : folder.split('/');
+      const readTree = async (sha: string) => treeSchema.safeParse(
+        await read(fleetId, { repository, path: `git/trees/${encodeURIComponent(sha)}` }).catch(() => undefined),
+      );
+      let response = await readTree(commit);
+      for (const segment of segments) {
+        if (!response.success) { return err('repository tree unavailable'); }
+        const child = response.data.tree.find(({ path, type }) => path === segment && type === 'tree');
+        if (child === undefined) { return ok([]); }
+        response = await readTree(child.sha);
+      }
       if (!response.success) { return err('repository tree unavailable'); }
-      const prefix = repository.folder === '' ? '' : `${repository.folder.replace(/\/$/, '')}/`;
-      return ok(response.data.tree.filter(({ path, type }) => type === 'blob' && path.startsWith(prefix) && path.endsWith('.yaml')).map(({ path, sha }) => ({ file: path, blob: sha })));
+      const prefix = folder === '' ? '' : `${folder}/`;
+      return ok(response.data.tree.filter(({ path, type }) => type === 'blob' && path.endsWith('.yaml')).map(({ path, sha }) => ({ file: `${prefix}${path}`, blob: sha })));
     },
     read: async (fleetId, { repository, blob }) => {
       const response = blobSchema.safeParse(await read(fleetId, { repository, path: `git/blobs/${encodeURIComponent(blob)}` }).catch(() => undefined));
