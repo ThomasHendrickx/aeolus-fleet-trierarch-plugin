@@ -988,8 +988,11 @@ it('refreshes guard on the five-minute timer once the served fleet is connected'
     if (url.endsWith('/commits?per_page=1')) {
       return Promise.resolve(Response.json([{ sha: commit }]));
     }
-    if (url.includes('/git/trees/')) {
-      return Promise.resolve(Response.json({ truncated: false, tree: [{ type: 'blob', path: 'rules/base.yaml', sha: 'base-blob' }] }));
+    if (url.endsWith('/git/trees/rules-tree')) {
+      return Promise.resolve(Response.json({ truncated: false, tree: [{ type: 'blob', path: 'base.yaml', sha: 'base-blob' }] }));
+    }
+    if (url.endsWith(`/git/trees/${commit}`)) {
+      return Promise.resolve(Response.json({ truncated: false, tree: [{ type: 'tree', path: 'rules', sha: 'rules-tree' }] }));
     }
     return Promise.resolve(Response.json({ encoding: 'base64', content: Buffer.from('name: base').toString('base64') }));
   }) satisfies typeof fetch);
