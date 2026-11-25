@@ -37,16 +37,12 @@ describe('managing guard configuration', () => {
     expect(reads()).toBe(2);
   });
 
-  it('refreshes at exactly five minutes and avoids overlapping reads for a fleet', async () => {
+  it('reads the stored catalogue without contacting the source, even after five minutes', async () => {
     const state = setup();
-    await Promise.all([state.guard.get(FLEET_ID), state.guard.get(FLEET_ID)]);
-    expect(state.reads()).toBe(1);
-    state.advance(299999);
     await state.guard.get(FLEET_ID);
-    expect(state.reads()).toBe(1);
-    state.advance(1);
-    await state.guard.get(FLEET_ID);
-    expect(state.reads()).toBe(2);
+    state.advance(300000);
+    await state.guard.readForAssignment(FLEET_ID);
+    expect(state.reads()).toBe(0);
   });
 
   it('refuses a concurrent store replacement without refreshing or exposing tokens', async () => {
