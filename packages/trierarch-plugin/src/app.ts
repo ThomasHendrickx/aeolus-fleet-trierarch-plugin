@@ -41,6 +41,7 @@ import type { InstallationMode } from './core/installation/ports.js';
 import { createReadFleet } from './core/installation/read-fleet.js';
 import { createIsServed } from './core/installation/served.js';
 import { createSetFleetEnabled } from './core/installation/set-fleet-enabled.js';
+import type { ReadAssignmentGuard } from './core/assignment/ports.js';
 import { createAssignCrews, type AssignOutcome } from './core/assignment/assign-crews.js';
 import { createLabelMachines } from './core/machines/label-machines.js';
 import { createCheckCrewSettings } from './core/assignment/check-crew-settings.js';
@@ -191,9 +192,13 @@ export function createTrierarchPluginApp(options: {
       snapshots: guardStore,
     }),
   });
+  const readGuard: ReadAssignmentGuard = async (fleetId) => {
+    const { catalogue, definitions, isReadFailed } = await guard.readForAssignment(fleetId);
+    return { floor: catalogue.floor, definitions, isReadFailed };
+  };
   const mcpConfigurations = createPrismaMcpConfigurations(prisma);
   const mcpDeliveries = createPrismaMcpDeliveries(prisma);
-  const assignCrews = createAssignCrews({ door, connections, models, configurations: mcpConfigurations, deliveries: mcpDeliveries, clock, silentAfterMs });
+  const assignCrews = createAssignCrews({ door, connections, models, configurations: mcpConfigurations, deliveries: mcpDeliveries, guardAssignments: guardStore, readGuard, keys: randomIdempotencyKeys, clock, silentAfterMs });
   const labelMachines = createLabelMachines({ door, connections });
   /** The fleets whose machine labels were last skipped, so the reason is logged once, not every pass. */
   const skippedLabels = new Set<FleetId>();
@@ -331,7 +336,7 @@ export function createTrierarchPluginApp(options: {
       server.log.info({ fleet: fleetId, ...shared.value }, 'trusted repositories sent');
     }
   };
-  const checkCrewSettings = createCheckCrewSettings({ door, connections, models, configurations: mcpConfigurations, deliveries: mcpDeliveries, clock, silentAfterMs });
+  const checkCrewSettings = createCheckCrewSettings({ door, connections, models, configurations: mcpConfigurations, deliveries: mcpDeliveries, readGuard, clock, silentAfterMs });
   const listEnabledModels = createListEnabledModels({ models });
   const setModelEnabled = createSetModelEnabled({ models });
   const readMcpConfiguration = createReadMcpConfiguration({ configurations: mcpConfigurations });

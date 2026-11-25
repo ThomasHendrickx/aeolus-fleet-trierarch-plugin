@@ -44,8 +44,14 @@ function aTrierarch(shipId: ShipId, { lastSeenAt = RECENTLY, details = DETAILS }
   fleet.state.reports.set(shipId, { state: 'idle', note: null, reportedAt: lastSeenAt, details });
 }
 
-const check = (settings: unknown) =>
-  createCheckCrewSettings({ door: fleet.door, connections, models, configurations: memoryMcpConfigurations(), deliveries, clock: { now: () => NOW }, silentAfterMs: SILENT_AFTER_MS })(FLEET_ID, settings);
+const check = (settings: unknown, isReadFailed = false) =>
+  createCheckCrewSettings({ readGuard: () => Promise.resolve({ floor: [], definitions: [], isReadFailed }), door: fleet.door, connections, models, configurations: memoryMcpConfigurations(), deliveries, clock: { now: () => NOW }, silentAfterMs: SILENT_AFTER_MS })(FLEET_ID, settings);
+
+it('blocks crew request creation when the rule sets could not be read', async () => {
+  aTrierarch(MAC);
+
+  await expect(check(SETTINGS, true)).resolves.toMatchObject({ isOk: false, error: { kind: 'FLEET_UNAVAILABLE' } });
+});
 
 describe("checking crew settings naming an MCP server (the fleet crew MCP design, section 5)", () => {
   const MAC_KEY = `${'mac'.padEnd(43, 'A')}=`;

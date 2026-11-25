@@ -273,3 +273,26 @@ model GuardSnapshot {
   @@id([fleetId, repository, folder])
   @@map("guard_snapshots")
 }
+
+/// The exact rules for one settings version, including when no sets apply.
+model GuardResolution {
+  fleetId         String @map("fleet_id")
+  shipId          String @map("ship_id")
+  settingsVersion Int    @map("settings_version")
+  sets            Json
+
+  @@id([fleetId, shipId, settingsVersion])
+  @@map("guard_resolutions")
+}
+
+/// The key is recorded before a send and reused if its answer is lost.
+model GuardDeliveryAttempt {
+  fleetId         String @map("fleet_id")
+  shipId          String @map("ship_id")
+  settingsVersion Int    @map("settings_version")
+  trierarchShipId String @map("trierarch_ship_id")
+  idempotencyKey  String @map("idempotency_key")
+
+  @@id([fleetId, shipId, settingsVersion, trierarchShipId])
+  @@map("guard_delivery_attempts")
+}

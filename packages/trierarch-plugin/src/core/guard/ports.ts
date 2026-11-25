@@ -1,5 +1,5 @@
 /** Boundaries for the fleet's guard catalogue. Credentials stay behind the source port. */
-import type { FleetId } from '@aeolus-fleet/common';
+import type { FleetId, GuardRules } from '@aeolus-fleet/common';
 
 import type { StoredGuardConfiguration } from './guard-configuration.js';
 import type { Result } from '../shared/result.js';
@@ -19,7 +19,7 @@ export interface GuardConfiguration {
 /** Validated by the shared common schema at the boundary, never an unvalidated YAML object. */
 export interface GuardDefinition {
   readonly name: string;
-  readonly rules: Readonly<Record<string, unknown>>;
+  readonly rules: Readonly<GuardRules>;
 }
 
 export interface GuardFile {
@@ -66,6 +66,16 @@ export interface GuardSet {
   readonly repository: string;
   readonly commit: string;
   readonly file: string;
+}
+
+export interface GuardRuleDefinition extends GuardSet {
+  readonly rules: GuardDefinition['rules'];
+}
+
+export interface GuardCatalogueRead {
+  readonly catalogue: GuardCatalogue;
+  readonly definitions: readonly GuardRuleDefinition[];
+  readonly isReadFailed: boolean;
 }
 
 export interface GuardError {

@@ -1,4 +1,4 @@
-import type { FleetId } from '@aeolus-fleet/common';
+import type { FleetId, ShipId } from '@aeolus-fleet/common';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createPrismaClient, type PrismaClient } from '../src/adapters/prisma/client.js';
@@ -33,6 +33,30 @@ describe('guard storage in Postgres', () => {
     expect(await restarted.read(FLEET, repository)).toEqual(snapshot);
     expect(await restarted.read(OTHER, repository)).toBeUndefined();
     expect(await restarted.read(FLEET, { ...repository, folder: 'other' })).toBeUndefined();
+  });
+
+  it('pins one rules resolution across competing passes, restarts and settings versions', async () => {
+    const first = store();
+    const second = store();
+    const shipId: ShipId = 'shp_01m3tbfspe96yf1rnr4ank9h3a';
+    const trierarchShipId: ShipId = 'shp_01m3tbfspe96yf1rnr4ank9h2a';
+    const at = { shipId, settingsVersion: 1 };
+    const base = { name: 'base', repository: 'fleet/rules', commit: 'a'.repeat(40), file: 'guard/base.yaml', floor: true, rules: {} };
+    const resolutions = await Promise.all([first.pin(FLEET, { ...at, sets: [base] }), second.pin(FLEET, { ...at, sets: [] })]);
+    expect(resolutions[0]).toEqual(resolutions[1]);
+    const target = { ...at, trierarchShipId };
+    const keys = await Promise.all([first.attempt(FLEET, { ...target, idempotencyKey: 'first' }), second.attempt(FLEET, { ...target, idempotencyKey: 'second' })]);
+    expect(keys[0]).toBe(keys[1]);
+    const restarted = store();
+    expect((await restarted.readPinnedFor(FLEET, [at])).get(shipId)).toEqual(resolutions[0]);
+    expect(await restarted.attempt(FLEET, { ...target, idempotencyKey: 'restarted' })).toBe(keys[0]);
+    expect((await restarted.readPinnedFor(FLEET, [{ ...at, settingsVersion: 2 }])).get(shipId)).toBeUndefined();
+    expect((await restarted.readPinnedFor(OTHER, [at])).get(shipId)).toBeUndefined();
+    const client = clients[0];
+    if (client === undefined) { throw new Error('missing test client'); }
+    await createPrismaFleetForgetter(client).forget(FLEET);
+    expect((await restarted.readPinnedFor(FLEET, [at])).has(shipId)).toBe(false);
+    expect(await client.guardDeliveryAttempt.count({ where: { fleetId: FLEET } })).toBe(0);
   });
 
   it('forgets guard credentials and snapshots with the fleet', async () => {

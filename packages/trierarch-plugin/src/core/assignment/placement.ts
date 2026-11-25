@@ -1,6 +1,13 @@
 import { CREW_REQUEST_REASON_MAX_LENGTH, NO_MACHINE_MATCHES_REASON, readCrewSettings, type CrewSettings, type ShipId, type TrierarchReportDetails } from '@aeolus-fleet/common';
 import { z } from 'zod';
 
+import type { Result } from '../shared/result.js';
+import { areGuardSetsWithinLimit } from './are-guard-sets-within-limit.js';
+import type { ResolvedGuardSet } from './ports.js';
+import type { GuardResolutionError } from './resolve-guard-sets.js';
+
+type GuardSelection = Result<readonly ResolvedGuardSet[], GuardResolutionError>;
+
 /** An unassigned crew request whose ship awaits crew: its settings as the fleet holds them, and the reason written on it now. */
 export interface PlacementRequest {
   shipId: ShipId;
@@ -190,7 +197,7 @@ function givenBackReason(givenBack: readonly { reason: string }[]): string {
  * model for a request naming none; then the trierarchs that gave the request
  * back (#382), then room.
  */
-function fit(settings: CrewSettings, { trierarchs, enabledModels, givenBack }: PlacementFleet & { givenBack: PlacementRequest['givenBack'] }): { trierarch: PlacementTrierarch } | Misfit {
+function fit(settings: CrewSettings, { trierarchs, enabledModels, givenBack, guard }: PlacementFleet & { givenBack: PlacementRequest['givenBack']; guard?: GuardSelection | undefined }): { trierarch: PlacementTrierarch } | Misfit {
   const disabled = namedModelRefusal(settings, enabledModels);
   if (disabled !== undefined) {
     return disabled;
@@ -238,14 +245,30 @@ function fit(settings: CrewSettings, { trierarchs, enabledModels, givenBack }: P
   if (allowed.length === 0) {
     return { reason: modelNotAvailableReason(`no enabled default model for ${harnessWords}`), field: 'options' };
   }
-  const left = allowed.map(({ trierarch }) => trierarch).filter((trierarch) => !givenBack.some((back) => back.trierarchShipId === trierarch.shipId));
+  const left = allowed.filter(({ trierarch }) => !givenBack.some((back) => back.trierarchShipId === trierarch.shipId));
   if (left.length === 0) {
     return { reason: givenBackReason(givenBack) };
   }
-  const [best] = left
-    .filter((trierarch) => trierarch.assigned < trierarch.details.caps.ships)
-    .sort((first, second) => roomShare(second) - roomShare(first) || first.commissionedAt.getTime() - second.commissionedAt.getTime() || first.shipId.localeCompare(second.shipId));
-  return best === undefined ? { reason: `no trierarch with room: all ${String(left.length)} that fit are full` } : { trierarch: best };
+  const withRoom = left.filter(({ trierarch }) => trierarch.assigned < trierarch.details.caps.ships);
+  if (withRoom.length === 0) {
+    return { reason: `no trierarch with room: all ${String(left.length)} that fit are full` };
+  }
+  if (guard?.isOk === false) {
+    return { reason: `${guard.error.kind === 'ruleSetUnknown' ? 'rule set unknown' : 'floor unavailable'}: ${guard.error.name}` };
+  }
+  const eligible = guard?.value.length
+    ? withRoom.filter(({ trierarch, harness }) => trierarch.details.guardedHarnesses?.includes(harness.harness))
+    : withRoom;
+  if (eligible.length === 0) {
+    const harnesses = [...new Set(withRoom.map(({ harness }) => harness.harness))].sort().join(', ');
+    return { reason: `no guarded harness: ${harnesses}`.slice(0, CREW_REQUEST_REASON_MAX_LENGTH) };
+  }
+  if (guard !== undefined && !areGuardSetsWithinLimit(guard.value)) {
+    return { reason: 'rule sets too large' };
+  }
+  const best = eligible.map(({ trierarch }) => trierarch)
+    .sort((first, second) => roomShare(second) - roomShare(first) || first.commissionedAt.getTime() - second.commissionedAt.getTime() || first.shipId.localeCompare(second.shipId))[0];
+  return best === undefined ? { reason: 'no trierarch with room' } : { trierarch: best };
 }
 
 /** The settings as crew settings, or why not: common's reading, the one the fleet refuses a request by (#809). */
@@ -278,7 +301,7 @@ export function checkPlacement(settings: unknown, fleet: PlacementFleet): Placem
  * assigns counts against the room of later requests in the same pass. A
  * request none fits gets the reason, unless that reason is written already.
  */
-export function place(requests: readonly PlacementRequest[], { trierarchs, enabledModels }: PlacementFleet): Placement[] {
+export function place(requests: readonly PlacementRequest[], { trierarchs, enabledModels, guardSelections }: PlacementFleet & { guardSelections?: ReadonlyMap<ShipId, GuardSelection> }): Placement[] {
   const assigned = new Map(trierarchs.map((trierarch) => [trierarch.shipId, trierarch.assigned]));
   const placements: Placement[] = [];
   const oldestFirst = [...requests].sort((first, second) => first.requestedAt.getTime() - second.requestedAt.getTime() || first.shipId.localeCompare(second.shipId));
@@ -290,6 +313,7 @@ export function place(requests: readonly PlacementRequest[], { trierarchs, enabl
             enabledModels,
             trierarchs: trierarchs.map((trierarch) => ({ ...trierarch, assigned: assigned.get(trierarch.shipId) ?? trierarch.assigned })),
             givenBack: request.givenBack,
+            guard: guardSelections?.get(request.shipId),
           })
         : read;
     if ('trierarch' in fitted) {
