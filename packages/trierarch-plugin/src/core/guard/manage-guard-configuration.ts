@@ -45,7 +45,8 @@ export function createManageGuardConfiguration(deps: {
       const repositories = repository === undefined ? configuration.repositories : configuration.repositories.filter((item) => item.repository === repository);
       if (repository !== undefined && repositories.length === 0) { return refuse('NOT_FOUND', 'The guard repository is not configured'); }
       const read = await deps.refresh(fleetId, { version: configuration.version, repositories, floor: configuration.floor });
-      return ok(read.catalogue);
+      const stored = await deps.read(fleetId, { version: configuration.version, repositories: configuration.repositories, floor: configuration.floor });
+      return ok({ ...stored.catalogue, errors: [...stored.catalogue.errors, ...read.catalogue.errors.filter((error) => error.file === undefined)] });
     }),
     replace: (fleetId, replacement) => exclusive(fleetId, async () => {
       const current = await deps.configurations.readConfiguration(fleetId);
