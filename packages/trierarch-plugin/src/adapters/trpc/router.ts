@@ -499,6 +499,20 @@ export const trierarchPluginRouter = t.router({
           conflicts: catalogue.conflicts.map(({ name, repositories }) => ({ name, repositories: [...repositories] })),
         };
       }),
+    update: fromTheConsole(withScope(servedProcedure, GUARD_SCOPE), 'guard')
+      .input(z.strictObject({ repository: z.string().optional() }))
+      .output(guardCatalogueOutputSchema)
+      .mutation(async ({ ctx, input }) => {
+        const updated = await ctx.guard.update(ctx.fleetId, input.repository).catch(() => undefined);
+        if (updated === undefined) {
+          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'The guard repositories could not be updated' });
+        }
+        if (!updated.isOk) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: updated.error.message });
+        }
+        const catalogue = updated.value;
+        return { ...catalogue, repositories: [...catalogue.repositories], floor: [...catalogue.floor], sets: [...catalogue.sets], errors: [...catalogue.errors], conflicts: catalogue.conflicts.map(({ name, repositories }) => ({ name, repositories: [...repositories] })) };
+      }),
     replace: fromTheConsole(withScope(servedProcedure, GUARD_SCOPE), 'guard')
       .input(z.strictObject({
         expectedVersion: z.int().nonnegative(),
