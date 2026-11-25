@@ -85,8 +85,9 @@ export interface GuardError {
 }
 
 /** Exactly the data guard.get exposes, without rule definitions or credentials. */
-export interface GuardCatalogue extends GuardConfiguration {
-  readonly sets: readonly GuardSet[];
+export interface GuardCatalogue extends Omit<GuardConfiguration, 'repositories'> {
+  readonly repositories: readonly (GuardRepository & { readonly readCommit: string | null })[];
+  readonly sets: readonly (GuardSet & { readonly rulesCount: number })[];
   readonly errors: readonly GuardError[];
   readonly conflicts: readonly { readonly name: string; readonly repositories: readonly string[] }[];
 }

@@ -1013,7 +1013,7 @@ it('refreshes guard on the five-minute timer once the served fleet is connected'
     const read = await query(address, { cookie, procedure: 'guard.get' });
     expect(read.status).toBe(200);
     await expect(read.json()).resolves.toMatchObject({
-      result: { data: { sets: [{ name: 'base', commit: 'first', file: 'rules/base.yaml' }] } },
+      result: { data: { repositories: [{ ...repository, readCommit: 'first' }], sets: [{ name: 'base', commit: 'first', file: 'rules/base.yaml', rulesCount: 0 }] } },
     });
 
     commit = 'second';

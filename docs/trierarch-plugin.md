@@ -22,15 +22,15 @@ The plugin's tRPC router authenticates the forwarded console session and uses it
 ```typescript
 {
   version: number;
-  repositories: { repository: string; folder: string; access: 'public' | 'private' }[];
-  sets: { name: string; repository: string; commit: string; file: string }[];
+  repositories: { repository: string; folder: string; access: 'public' | 'private'; readCommit: string | null }[];
+  sets: { name: string; repository: string; commit: string; file: string; rulesCount: number }[];
   errors: { repository: string; file?: string; reason: string }[];
   conflicts: { name: string; repositories: string[] }[];
   floor: string[];
 }
 ```
 
-Only valid, non-conflicting sets are offered. The floor retains configured names even when unavailable. Repository errors omit `file`. No answer includes tokens, credentials or rules. The console forwards this through `GET /api/trierarch-plugin/guard.get`.
+Each repository’s `readCommit` is its last complete read, or null before its first complete read. Each set’s `rulesCount` counts each entry in commands allow and deny, git deny, write paths allow and deny, and tools allow and deny once; a command and its arguments count as one entry. Only valid, non-conflicting sets are offered. The floor retains configured names even when unavailable. Repository errors omit `file`. No answer includes tokens, credentials or rules. The console forwards this through `GET /api/trierarch-plugin/guard.get`.
 
 `POST /trpc/guard.replace` requires `trierarch:guard` and the console's forwarded Origin. Its input follows MCP replacement field names:
 

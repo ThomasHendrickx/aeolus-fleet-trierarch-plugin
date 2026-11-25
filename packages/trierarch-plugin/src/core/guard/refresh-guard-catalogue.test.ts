@@ -42,16 +42,35 @@ function setup() {
   };
 }
 
-const configuration = { version: 3, repositories: [repository], floor: ['base', 'missing'] };
+const configuration = { version: 3, repositories: [{ ...repository, readCommit: 'commit-one' }], floor: ['base', 'missing'] };
 
 describe('refreshing the guard catalogue', () => {
   it('answers exactly public metadata, retaining unavailable floor names and omitting rules', async () => {
     const { refresh } = setup();
     await expect(refresh(FLEET_ID, configuration)).resolves.toEqual({
-      version: 3, repositories: [repository],
-      sets: [{ name: 'base', repository: 'fleet/rules', commit: 'commit-one', file: 'guard/base.yaml' }],
+      version: 3, repositories: [{ ...repository, readCommit: 'commit-one' }],
+      sets: [{ name: 'base', repository: 'fleet/rules', commit: 'commit-one', file: 'guard/base.yaml', rulesCount: 1 }],
       errors: [], conflicts: [], floor: ['base', 'missing'],
     });
+  });
+
+  it('counts every list entry once and exposes the last complete repository read', async () => {
+    const state = setup();
+    state.snapshots.set(`${FLEET_ID}/fleet/rules/guard`, {
+      repository: repository.repository, folder: repository.folder, commit: 'commit-one',
+      files: [{ file: 'guard/base.yaml', blob: 'one', result: ok({ name: 'base', rules: {
+        commands: { allow: [{ command: 'npm', args: ['run', 'test'] }], deny: [{ command: 'git', args: ['push'] }] },
+        git: { deny: ['push', 'skip-hooks'] },
+        writePaths: { allow: ['src/**'], deny: ['secrets/**'] },
+        tools: { allow: ['shell'], deny: ['web', 'agent'] },
+      } }) }],
+    });
+    const result = await state.refresh(FLEET_ID, configuration);
+    expect(result.repositories).toEqual([{ ...repository, readCommit: 'commit-one' }]);
+    expect(result.sets).toEqual([{ name: 'base', repository: 'fleet/rules', commit: 'commit-one', file: 'guard/base.yaml', rulesCount: 9 }]);
+    state.fail('repository unavailable');
+    expect((await state.refresh(FLEET_ID, configuration)).repositories).toEqual([{ ...repository, readCommit: 'commit-one' }]);
+    expect((await state.refresh(OTHER, configuration)).repositories).toEqual([{ ...repository, readCommit: null }]);
   });
 
   it('keeps the last valid sets on a repository error, scoped to the fleet', async () => {
@@ -59,7 +78,7 @@ describe('refreshing the guard catalogue', () => {
     await state.refresh(FLEET_ID, configuration);
     state.fail('repository unavailable');
     const result = await state.refresh(FLEET_ID, configuration);
-    expect(result.sets).toEqual([{ name: 'base', repository: 'fleet/rules', commit: 'commit-one', file: 'guard/base.yaml' }]);
+    expect(result.sets).toEqual([{ name: 'base', repository: 'fleet/rules', commit: 'commit-one', file: 'guard/base.yaml', rulesCount: 1 }]);
     expect(result.errors).toEqual([{ repository: 'fleet/rules', reason: 'repository unavailable' }]);
     expect((await state.refresh(OTHER, configuration)).sets).toEqual([]);
   });
@@ -75,7 +94,7 @@ describe('refreshing the guard catalogue', () => {
       ],
     });
     expect((await refresh(FLEET_ID, configuration)).sets).toEqual([
-      { name: 'base', repository: 'fleet/rules', commit: 'commit-one', file: 'guard/base.yaml' },
+      { name: 'base', repository: 'fleet/rules', commit: 'commit-one', file: 'guard/base.yaml', rulesCount: 1 },
     ]);
   });
 
@@ -85,7 +104,7 @@ describe('refreshing the guard catalogue', () => {
     state.contents.clear();
     expect((await state.refresh(FLEET_ID, configuration)).errors).toEqual([]);
     state.change({ commit: 'commit-two', files: [{ file: 'guard/base.yaml', blob: 'one' }] });
-    expect((await state.refresh(FLEET_ID, configuration)).sets).toEqual([{ name: 'base', repository: 'fleet/rules', commit: 'commit-two', file: 'guard/base.yaml' }]);
+    expect((await state.refresh(FLEET_ID, configuration)).sets).toEqual([{ name: 'base', repository: 'fleet/rules', commit: 'commit-two', file: 'guard/base.yaml', rulesCount: 1 }]);
   });
 
   it('reads changed YAML blobs and removes deleted files', async () => {
@@ -122,7 +141,7 @@ describe('refreshing the guard catalogue', () => {
     const atLimit = ' '.repeat(65532) + 'base';
     state.contents.set('large', atLimit);
     state.change({ commit: 'large', files: [{ file: 'guard/base.yaml', blob: 'large' }] });
-    expect((await state.refresh(FLEET_ID, configuration)).sets).toEqual([{ name: 'base', repository: 'fleet/rules', commit: 'large', file: 'guard/base.yaml' }]);
+    expect((await state.refresh(FLEET_ID, configuration)).sets).toEqual([{ name: 'base', repository: 'fleet/rules', commit: 'large', file: 'guard/base.yaml', rulesCount: 1 }]);
     state.contents.set('larger', atLimit + 'x');
     state.change({ commit: 'larger', files: [{ file: 'guard/base.yaml', blob: 'larger' }] });
     expect((await state.refresh(FLEET_ID, configuration)).errors).toEqual([{ repository: 'fleet/rules', file: 'guard/base.yaml', reason: 'rule set exceeds 64 KB' }]);
@@ -133,10 +152,10 @@ describe('refreshing the guard catalogue', () => {
     await state.refresh(FLEET_ID, configuration);
     state.change({ commit: 'commit-two', files: [{ file: 'guard/base.yaml', blob: 'two' }] });
     const failed = await state.refresh(FLEET_ID, configuration);
-    expect(failed.sets).toEqual([{ name: 'base', repository: 'fleet/rules', commit: 'commit-one', file: 'guard/base.yaml' }]);
+    expect(failed.sets).toEqual([{ name: 'base', repository: 'fleet/rules', commit: 'commit-one', file: 'guard/base.yaml', rulesCount: 1 }]);
     expect(failed.errors).toEqual([{ repository: 'fleet/rules', reason: 'file unavailable' }]);
     state.contents.set('two', 'base');
-    expect((await state.refresh(FLEET_ID, configuration)).sets).toEqual([{ name: 'base', repository: 'fleet/rules', commit: 'commit-two', file: 'guard/base.yaml' }]);
+    expect((await state.refresh(FLEET_ID, configuration)).sets).toEqual([{ name: 'base', repository: 'fleet/rules', commit: 'commit-two', file: 'guard/base.yaml', rulesCount: 1 }]);
   });
 
   it('caches validation errors and stops exposing a removed repository', async () => {

@@ -31,9 +31,16 @@ export function guardCatalogue(input: { configuration: GuardConfiguration; snaps
     isReadFailed: input.errors.length > 0,
     catalogue: {
       version: input.configuration.version,
-      repositories: input.configuration.repositories.map(({ repository, folder, access }) => ({ repository, folder, access })),
+      repositories: input.configuration.repositories.map(({ repository, folder, access }) => ({
+        repository, folder, access, readCommit: input.snapshots.find((snapshot) => snapshot.repository === repository && snapshot.folder === folder)?.commit ?? null,
+      })),
       floor: [...input.configuration.floor],
-      sets: definitions.map(({ name, repository, commit, file }) => ({ name, repository, commit, file })),
+      sets: definitions.map(({ name, repository, commit, file, rules }) => ({
+        name, repository, commit, file,
+        rulesCount: (rules.commands?.allow?.length ?? 0) + (rules.commands?.deny?.length ?? 0)
+          + (rules.git?.deny?.length ?? 0) + (rules.writePaths?.allow?.length ?? 0)
+          + (rules.writePaths?.deny?.length ?? 0) + (rules.tools?.allow?.length ?? 0) + (rules.tools?.deny?.length ?? 0),
+      })),
       errors,
       conflicts,
     },
