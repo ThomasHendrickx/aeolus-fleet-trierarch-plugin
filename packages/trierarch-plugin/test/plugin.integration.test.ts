@@ -1006,3 +1006,40 @@ it('does not update stored guard snapshots on the five-minute timer', async () =
     await db.$disconnect();
   }
 });
+
+
+it('keeps stored guard rules when an operator update cannot read GitHub', async () => {
+  const originalFetch = globalThis.fetch;
+  let isUnavailable = false;
+  let commit = 'first';
+  vi.stubGlobal('fetch', (async (input, init) => {
+    const url = input instanceof Request ? input.url : input.toString();
+    if (url.endsWith('/trpc/console.session')) {
+      const response = await originalFetch(input, init);
+      const session = z.looseObject({ result: z.looseObject({ data: z.looseObject({ scopes: z.array(z.string()) }) }) }).parse(await response.json());
+      return Response.json({ ...session, result: { ...session.result, data: { ...session.result.data, scopes: [...session.result.data.scopes, 'trierarch:guard'] } } });
+    }
+    if (!url.startsWith('https://api.github.com/repos/org/policy/')) { return originalFetch(input, init); }
+    if (isUnavailable) { return Promise.resolve(new Response('', { status: 503 })); }
+    if (url.endsWith('/commits?per_page=1')) { return Promise.resolve(Response.json([{ sha: commit }])); }
+    if (url.endsWith(`/git/trees/${commit}`)) { return Promise.resolve(Response.json({ truncated: false, tree: [{ type: 'tree', path: 'rules', sha: 'rules-tree' }] })); }
+    if (url.endsWith('/git/trees/rules-tree')) { return Promise.resolve(Response.json({ truncated: false, tree: [{ type: 'blob', path: 'base.yaml', sha: 'base-blob' }] })); }
+    return Promise.resolve(Response.json({ encoding: 'base64', content: Buffer.from('name: base').toString('base64') }));
+  }) satisfies typeof fetch);
+  try {
+    const address = await connected();
+    const origin = new URL(fleetUrl).origin;
+    const replacement = { expectedVersion: 0, repositories: [{ repository: 'org/policy', folder: 'rules', access: 'public' }], floor: ['base'], secrets: [], secretValues: {} };
+    const replaced = await mutate(address, { procedure: 'guard.replace', cookie, origin, body: replacement });
+    expect(replaced.status, await replaced.clone().text()).toBe(200);
+    commit = 'second';
+    isUnavailable = true;
+    const update = await mutate(address, { procedure: 'guard.update', cookie, origin, body: { repository: 'org/policy' } });
+    expect(update.status).toBe(200);
+    expect(await update.json()).toMatchObject({ result: { data: { repositories: [{ readCommit: 'first' }], sets: [{ name: 'base', commit: 'first' }], errors: [{ repository: 'org/policy', reason: 'repository unavailable' }] } } });
+    const read = await query(address, { procedure: 'guard.get', cookie });
+    expect(await read.json()).toMatchObject({ result: { data: { repositories: [{ readCommit: 'first' }], sets: [{ name: 'base', commit: 'first' }] } } });
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

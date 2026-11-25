@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { FLEET_ID } from '../../../test/support/connection-fakes.js';
 import { err, ok } from '../shared/result.js';
 import type { GuardSnapshot, GuardRepository, GuardConfiguration, GuardSource, GuardValidation } from './ports.js';
-import { createRefreshGuardCatalogue } from './refresh-guard-catalogue.js';
+import { createReadGuardCatalogue, createRefreshGuardCatalogue } from './refresh-guard-catalogue.js';
 
 const repository: GuardRepository = { repository: 'fleet/rules', folder: 'guard', access: 'private' };
 const other: GuardRepository = { repository: 'fleet/other', folder: 'guard', access: 'public' };
@@ -17,9 +17,10 @@ function setup() {
   let commit = 'commit-one';
   let files = [{ file: 'guard/base.yaml', blob: 'one' }];
   let failure: string | undefined;
+  let failedRepository: string | undefined;
   const source: GuardSource = {
-    latest: () => Promise.resolve(failure === undefined ? ok(commit) : err(failure)),
-    tree: () => Promise.resolve(failure === undefined ? ok(files) : err(failure)),
+    latest: (_fleetId, entry) => Promise.resolve(failure === undefined || (failedRepository !== undefined && failedRepository !== entry.repository) ? ok(commit) : err(failure)),
+    tree: (_fleetId, input) => Promise.resolve(failure === undefined || (failedRepository !== undefined && failedRepository !== input.repository.repository) ? ok(files) : err(failure)),
     read: (_fleetId, input) => {
       const content = contents.get(input.blob);
       return Promise.resolve(content === undefined ? err('file unavailable') : ok(content));
@@ -28,17 +29,15 @@ function setup() {
   const validation: GuardValidation = {
     read: (content) => content.trim() === 'base' ? ok(base) : content === 'wrong-name' ? ok({ name: 'other', rules: {} }) : err('invalid rules'),
   };
-  const read = createRefreshGuardCatalogue({
-    source, validation,
-    snapshots: {
-      read: (fleetId, entry) => Promise.resolve(snapshots.get(`${fleetId}/${entry.repository}/${entry.folder}`)),
-      save: (fleetId, snapshot) => { snapshots.set(`${fleetId}/${snapshot.repository}/${snapshot.folder}`, snapshot); return Promise.resolve(); },
-    },
-  });
+  const store = {
+      read: (fleetId: FleetId, entry: GuardRepository) => Promise.resolve(snapshots.get(`${fleetId}/${entry.repository}/${entry.folder}`)),
+      save: (fleetId: FleetId, snapshot: GuardSnapshot) => { snapshots.set(`${fleetId}/${snapshot.repository}/${snapshot.folder}`, snapshot); return Promise.resolve(); },
+    };
+  const read = createRefreshGuardCatalogue({ source, validation, snapshots: store });
   return {
-    refresh: async (fleetId: FleetId, input: GuardConfiguration) => (await read(fleetId, input)).catalogue, contents, snapshots,
+    refresh: async (fleetId: FleetId, input: GuardConfiguration) => (await read(fleetId, input)).catalogue, stored: createReadGuardCatalogue(store), contents, snapshots,
     change: (next: { commit: string; files: typeof files }) => { commit = next.commit; files = next.files; },
-    fail: (reason: string) => { failure = reason; },
+    fail: (reason: string, onlyRepository?: string) => { failure = reason; failedRepository = onlyRepository; },
   };
 }
 
@@ -81,6 +80,26 @@ describe('refreshing the guard catalogue', () => {
     expect(result.sets).toEqual([{ name: 'base', repository: 'fleet/rules', commit: 'commit-one', file: 'guard/base.yaml', rulesCount: 1 }]);
     expect(result.errors).toEqual([{ repository: 'fleet/rules', reason: 'repository unavailable' }]);
     expect((await state.refresh(OTHER, configuration)).sets).toEqual([]);
+  });
+
+  it('updates other repositories when one repository is unavailable', async () => {
+    const state = setup();
+    const both = { ...configuration, repositories: [repository, other] };
+    await state.refresh(FLEET_ID, both);
+    state.change({ commit: 'commit-two', files: [{ file: 'guard/base.yaml', blob: 'one' }] });
+    state.fail('repository unavailable', 'fleet/rules');
+    const updated = await state.refresh(FLEET_ID, both);
+    expect(updated.repositories.map(({ readCommit }) => readCommit)).toEqual(['commit-one', 'commit-two']);
+    expect(updated.errors).toEqual([{ repository: 'fleet/rules', reason: 'repository unavailable' }]);
+  });
+
+  it('reads stored definitions and their exact commits while the source is unavailable', async () => {
+    const state = setup();
+    await state.refresh(FLEET_ID, configuration);
+    state.fail('repository unavailable');
+    const stored = await state.stored(FLEET_ID, configuration);
+    expect(stored.isReadFailed).toBe(false);
+    expect(stored.definitions).toEqual([{ name: 'base', repository: 'fleet/rules', commit: 'commit-one', file: 'guard/base.yaml', rules: { tools: { deny: ['web'] } } }]);
   });
 
   it('excludes nested files from a stored snapshot of an unchanged commit', async () => {
