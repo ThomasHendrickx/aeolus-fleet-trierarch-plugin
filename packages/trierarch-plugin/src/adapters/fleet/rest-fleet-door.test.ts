@@ -119,6 +119,7 @@ function aListedShip(id: string, name: string): Record<string, unknown> {
     ownerShipId: null,
     activity: null,
     openAlertCount: 0,
+    pluginReads: null,
   };
 }
 

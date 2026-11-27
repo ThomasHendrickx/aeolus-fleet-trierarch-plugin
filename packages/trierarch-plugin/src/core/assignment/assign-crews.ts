@@ -81,40 +81,43 @@ export function createAssignCrews(deps: {
 
     const outcome: AssignOutcome = { assigned: 0, explained: 0, lost: 0 };
     for (const placement of place(requests, { trierarchs, enabledModels, guardSelections })) {
-      if (placement.kind === 'assign') {
-        const request = byShip.get(placement.shipId);
-        const selection = guardSelections.get(placement.shipId);
-        if (request === undefined || !selection?.isOk) {
-          continue;
+      if (placement.kind === 'explain') {
+        const done = await deps.door.explainCrewRequest(crew.crewToken, { shipId: placement.shipId, reason: placement.reason });
+        if (!done.isOk && !CHANGED.has(done.error.code)) {
+          return unavailable(done.error);
         }
-        const { shipId, settingsVersion } = request;
-        const sets = pinned.get(shipId) ?? await deps.guardAssignments.pin(fleetId, { shipId, settingsVersion, sets: selection.value });
-        if (sets.length > 0 && selection.value.length === 0) {
-          // A concurrent pass pinned rules after this pass picked an unguarded target.
-          // Read that pin and make the placement again on the next pass.
-          continue;
-        }
-        const { trierarchShipId } = placement;
-        const idempotencyKey = await deps.guardAssignments.attempt(fleetId, { shipId, settingsVersion, trierarchShipId, idempotencyKey: deps.keys.next() });
-        const sent = await deps.door.send(crew.crewToken, {
-          shipId: trierarchShipId,
-          contentType: TRIERARCH_GUARD_RULES_CONTENT_TYPE,
-          payload: JSON.stringify({ fleetId, pluginShipId: crew.shipId, shipId, settingsVersion, sets }),
-          idempotencyKey,
-        });
-        if (!sent.isOk) {
-          return unavailable(sent.error);
-        }
+        outcome.explained += done.isOk ? 1 : 0;
+        continue;
       }
-      const done = placement.kind === 'assign'
-        ? await deps.door.assignCrew(crew.crewToken, { shipId: placement.shipId, trierarchShipId: placement.trierarchShipId })
-        : await deps.door.explainCrewRequest(crew.crewToken, { shipId: placement.shipId, reason: placement.reason });
+      const request = byShip.get(placement.shipId);
+      const selection = guardSelections.get(placement.shipId);
+      if (request === undefined || !selection?.isOk) {
+        continue;
+      }
+      const { shipId, settingsVersion } = request;
+      const sets = pinned.get(shipId) ?? await deps.guardAssignments.pin(fleetId, { shipId, settingsVersion, sets: selection.value });
+      if (sets.length > 0 && selection.value.length === 0) {
+        // A concurrent pass pinned rules after this pass picked an unguarded target.
+        // Read that pin and make the placement again on the next pass.
+        continue;
+      }
+      const { trierarchShipId } = placement;
+      const idempotencyKey = await deps.guardAssignments.attempt(fleetId, { shipId, settingsVersion, trierarchShipId, idempotencyKey: deps.keys.next() });
+      const sent = await deps.door.send(crew.crewToken, {
+        shipId: trierarchShipId,
+        contentType: TRIERARCH_GUARD_RULES_CONTENT_TYPE,
+        payload: JSON.stringify({ fleetId, pluginShipId: crew.shipId, shipId, settingsVersion, sets }),
+        idempotencyKey,
+      });
+      if (!sent.isOk) {
+        return unavailable(sent.error);
+      }
+      // The claim names the settings version this pass read, so core refuses it if the request changed since (aeolus-fleet #2084).
+      const done = await deps.door.assignCrew(crew.crewToken, { shipId, trierarchShipId, settingsVersion });
       if (!done.isOk && !CHANGED.has(done.error.code)) {
         return unavailable(done.error);
       }
-      if (placement.kind === 'explain') {
-        outcome.explained += done.isOk ? 1 : 0;
-      } else if (done.isOk) {
+      if (done.isOk) {
         outcome.assigned += 1;
       } else {
         outcome.lost += 1;
