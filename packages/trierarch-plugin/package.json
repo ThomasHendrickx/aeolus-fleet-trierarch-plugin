@@ -63,7 +63,7 @@
   },
   "devDependencies": {
     "@aeolus-fleet/core": "^0.48.0",
-    "@testcontainers/postgresql": "^12.2.0",
+    "@testcontainers/postgresql": "^12.2.2",
     "@types/libsodium-wrappers": "^0.8.2"
   }
 }
