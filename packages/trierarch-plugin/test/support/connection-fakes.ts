@@ -173,13 +173,17 @@ export function fakePluginFleet() {
         ? Promise.resolve(ok(state.ships.filter((ship) => filter.statuses.includes(ship.status)).map((ship) => ({ ...ship, crewRequest: ship.crewRequest && { ...ship.crewRequest }, labels: [...ship.labels] }))))
         : released();
     },
-    assignCrew: (crewToken, { shipId, trierarchShipId }) => {
+    // As core's fleet.assignCrew since core 0.48.0 (aeolus-fleet #2084): the claim names the settings version placement read.
+    assignCrew: (crewToken, { shipId, trierarchShipId, settingsVersion }) => {
       if (!state.liveTokens.has(crewToken)) {
         return released();
       }
       const ship = state.ships.find((each) => each.shipId === shipId);
       if (ship?.crewRequest == null) {
         return Promise.resolve(err({ code: 'NOT_FOUND', message: 'No crew request' }));
+      }
+      if (settingsVersion !== ship.crewRequest.settingsVersion) {
+        return Promise.resolve(err({ code: 'CONFLICT', message: 'The crew request settings changed since they were read' }));
       }
       if (state.isLosingClaims && ship.crewRequest.assignedTo === null) {
         ship.crewRequest = { ...ship.crewRequest, assignedTo: OTHER_ASSIGNEE, reason: null };
