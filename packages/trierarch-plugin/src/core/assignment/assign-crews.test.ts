@@ -331,6 +331,14 @@ describe("a pass of the trierarch plugin's assignment", () => {
     expect(assignedTo(SCOUT)).toBe(MAC);
   });
 
+  it('claims a request at the settings version the pass read (aeolus-fleet #2084)', async () => {
+    aTrierarch(MAC);
+    aRequest(SCOUT, { settingsVersion: 3 });
+
+    await expect(pass()).resolves.toEqual({ isOk: true, value: { assigned: 1, explained: 0, lost: 0 } });
+    expect(assignedTo(SCOUT)).toBe(MAC);
+  });
+
   it('places a request given back on another trierarch, never on the one that gave it back (#382)', async () => {
     aTrierarch(MAC);
     aTrierarch(LINUX);

@@ -422,7 +422,7 @@ describe('a request given back (#382)', () => {
     const machine = unwrap(await useCases.commissionShip(argo, { idempotencyKey: newKey(), name: 'mac-studio', type: 'trierarch', scopes: ['crew:run'] }));
     const scout = unwrap(await useCases.commissionShip(argo, { idempotencyKey: newKey(), name: 'scout', type: 'implementer' }));
     unwrap(await useCases.requestCrew(argo, { shipId: scout.shipId, settings: { workspace: { kind: 'repositories', main: { repository: 'aeolus-fleet' }, subRepositories: [] }, options: {} } }));
-    await door.assignCrew(crewToken, { shipId: scout.shipId, trierarchShipId: machine.shipId });
+    await door.assignCrew(crewToken, { shipId: scout.shipId, trierarchShipId: machine.shipId, settingsVersion: 1 });
     const machineCaller = { fleetId: argo.fleetId, shipId: machine.shipId, kind: 'agent' as const, scopes: ['messages:send' as const, 'messages:receive' as const, 'crew:run' as const] };
     unwrap(await useCases.giveBackCrewRequest(machineCaller, { shipId: scout.shipId, settingsVersion: 1, reason: 'mac-studio: claude-code 2.1.293 refused claude-opus-5-5' }));
 

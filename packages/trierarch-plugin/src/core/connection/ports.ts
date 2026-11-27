@@ -101,7 +101,7 @@ export interface FleetDoor {
   /** The fleet's active ships, retired ones too when the statuses ask for them, as `fleet.list` answers (fleet:read). */
   listShips(crewToken: string, filter?: { statuses: readonly ShipStatus[] }): Promise<Result<ListedShip[], FleetRefusal>>;
   /** Claims a ship's crew request for a trierarch (crew:assign), only while it is unassigned: a lost claim is CONFLICT. */
-  assignCrew(crewToken: string, claim: { shipId: ShipId; trierarchShipId: ShipId }): Promise<Result<undefined, FleetRefusal>>;
+  assignCrew(crewToken: string, claim: { shipId: ShipId; trierarchShipId: ShipId; settingsVersion: number }): Promise<Result<undefined, FleetRefusal>>;
   /** Every label of the fleet, with its owner (fleet:read). */
   listLabels(crewToken: string): Promise<Result<ListedLabel[], FleetRefusal>>;
   /** Defines a label the crew token's ship owns (labels:define); a key the fleet has already is CONFLICT. */
